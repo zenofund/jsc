@@ -1,0 +1,154 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+ 
+@layer base {
+  :root {
+    --font-size: 16px;
+    --background: #ffffff;
+    --foreground: #020817; /* oklch(0.145 0 0) converted to hex approx or just use hex */
+    --card: #ffffff;
+    --card-foreground: #020817;
+    --popover: #ffffff; /* oklch(1 0 0) */
+    --popover-foreground: #020817;
+    --primary: #008000;
+    --primary-foreground: #ffffff;
+    --secondary: #f5f5f5;
+    --secondary-foreground: #1a1a1a;
+    --muted: #f5f5f5;
+    --muted-foreground: #717182;
+    --accent: #b5a642;
+    --accent-foreground: #ffffff;
+    --destructive: #d4183d;
+    --destructive-foreground: #ffffff;
+    --border: rgba(2, 8, 23, 0.18);
+    --input: transparent;
+    --input-background: #f9f9f9;
+    --switch-background: #cbced4;
+    --font-weight-medium: 500;
+    --font-weight-normal: 400;
+    --ring: #008000;
+    --chart-1: #008000;
+    --chart-2: #b5a642;
+    --chart-3: #006600;
+    --chart-4: #d4af37;
+    --chart-5: #00b300;
+    --radius: 0.625rem;
+    --sidebar: #fafafa;
+    --sidebar-foreground: #1a1a1a;
+    --sidebar-primary: #008000;
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: #f0f0f0;
+    --sidebar-accent-foreground: #1a1a1a;
+    --sidebar-border: #e5e5e5;
+    --sidebar-ring: #008000;
+  }
+ 
+  .dark {
+    --background: #0a0a0a;
+    --foreground: #fafafa;
+    --card: #141414;
+    --card-foreground: #fafafa;
+    --popover: #141414;
+    --popover-foreground: #fafafa;
+    --primary: #00b300;
+    --primary-foreground: #0a0a0a;
+    --secondary: #1f1f1f;
+    --secondary-foreground: #fafafa;
+    --muted: #1f1f1f;
+    --muted-foreground: #a3a3a3;
+    --accent: #d4af37;
+    --accent-foreground: #0a0a0a;
+    --destructive: #ff4444;
+    --destructive-foreground: #fafafa;
+    --border: rgba(255, 255, 255, 0.2);
+    --input: rgba(255, 255, 255, 0.15);
+    --input-background: #242424;
+    --switch-background: #3a3a3a;
+    --ring: #00b300;
+    --font-weight-medium: 500;
+    --font-weight-normal: 400;
+    --chart-1: #00b300;
+    --chart-2: #d4af37;
+    --chart-3: #00ff00;
+    --chart-4: #ffd700;
+    --chart-5: #32cd32;
+    --sidebar: #0f0f0f;
+    --sidebar-foreground: #fafafa;
+    --sidebar-primary: #00b300;
+    --sidebar-primary-foreground: #0a0a0a;
+    --sidebar-accent: #1a1a1a;
+    --sidebar-accent-foreground: #fafafa;
+    --sidebar-border: #262626;
+    --sidebar-ring: #00b300;
+  }
+}
+ 
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+ 
+@layer base {
+  :where(:not(:has([class*=' text-']), :not(:has([class^='text-'])))) {
+    h1 {
+      @apply text-2xl font-medium leading-normal;
+    }
+    h2 {
+      @apply text-xl font-medium leading-normal;
+    }
+    h3 {
+      @apply text-lg font-medium leading-normal;
+    }
+    h4 {
+      @apply text-base font-medium leading-normal;
+    }
+    p, label, button, input {
+      @apply text-base font-normal leading-normal;
+    }
+  }
+}
+
+html {
+  font-size: var(--font-size);
+}
+
+@media (max-width: 640px) {
+  html {
+    font-size: 15px;
+  }
+  button, a, input, select, textarea {
+    min-height: 44px;
+  }
+  * {
+    -webkit-tap-highlight-color: rgba(59, 130, 246, 0.1);
+  }
+}
+
+body {
+  overflow-x: hidden;
+}
+
+* {
+  -webkit-overflow-scrolling: touch;
+}
+
+input, select, textarea {
+  font-size: 16px;
+}
+
+@media (min-width: 640px) {
+  input, select, textarea {
+    font-size: 1rem;
+  }
+}
+
+@layer components {
+  .page-title {
+    @apply text-foreground mb-1 sm:mb-2 text-lg sm:text-2xl;
+  }
+}
