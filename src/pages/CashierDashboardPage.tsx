@@ -10,7 +10,7 @@ import {
   DollarSign, CheckCircle, Clock, TrendingUp, 
   Calendar, AlertCircle, Receipt, CreditCard, FileText 
 } from 'lucide-react';
-import { formatCurrency } from '../utils/format';
+import { formatCurrency, formatCompactCurrency } from '../utils/format';
 
 interface PayrollBatch {
   id: string;
@@ -120,7 +120,8 @@ export function CashierDashboardPage() {
     },
     {
       title: 'Pending Amount',
-      value: formatCurrency(totalPendingAmount),
+      value: totalPendingAmount,
+      isCurrency: true,
       icon: DollarSign,
       color: 'blue',
       subtitle: 'Total to be paid',
@@ -134,7 +135,8 @@ export function CashierDashboardPage() {
     },
     {
       title: 'Amount Paid',
-      value: formatCurrency(totalPaidThisMonth),
+      value: totalPaidThisMonth,
+      isCurrency: true,
       icon: TrendingUp,
       color: 'green',
       subtitle: 'This month',
@@ -167,7 +169,14 @@ export function CashierDashboardPage() {
                   <Icon className="w-4 h-4 sm:w-5 sm:h-5" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-xl sm:text-2xl font-semibold text-foreground mb-0.5">{stat.value}</div>
+                  <div className="flex flex-col">
+                    <span className="text-xl sm:text-2xl font-bold text-foreground">
+                      {(stat as any).isCurrency ? formatCompactCurrency(stat.value as number).short : stat.value}
+                    </span>
+                    {(stat as any).isCurrency && typeof stat.value === 'number' && stat.value > 999999 && (
+                       <span className="text-xs text-muted-foreground font-mono mt-0.5">{formatCompactCurrency(stat.value).full}</span>
+                    )}
+                  </div>
                   <div className="text-xs sm:text-sm text-muted-foreground">{stat.title}</div>
                 </div>
               </div>

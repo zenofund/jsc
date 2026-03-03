@@ -10,6 +10,7 @@ import { loanApplicationAPI, loanTypeAPI, disbursementAPI, loanStatsAPI, coopera
 import type { LoanType, LoanApplication, LoanDisbursement } from '../types/entities';
 import { PageSkeleton } from '../components/PageLoader';
 import { showToast } from '../utils/toast';
+import { formatCompactCurrency } from '../utils/format';
 
 type TabType = 'overview' | 'applications' | 'loan-types' | 'disbursements' | 'reports';
 
@@ -124,11 +125,11 @@ function OverviewTab({ stats }: { stats: any }) {
     { title: 'Total Applications', value: stats.total_applications, icon: FileText, color: 'text-blue-500' },
     { title: 'Pending Applications', value: stats.pending_applications, icon: Clock, color: 'text-yellow-500' },
     { title: 'Active Loans', value: stats.active_loans, icon: TrendingUp, color: 'text-green-500' },
-    { title: 'Total Disbursed', value: `₦${stats.total_disbursed.toLocaleString()}`, icon: DollarSign, color: 'text-purple-500' },
-    { title: 'Outstanding Balance', value: `₦${stats.total_outstanding.toLocaleString()}`, icon: Wallet, color: 'text-red-500' },
-    { title: 'Total Repaid', value: `₦${stats.total_repaid.toLocaleString()}`, icon: CheckCircle, color: 'text-green-500' },
+    { title: 'Total Disbursed', value: formatCompactCurrency(stats.total_disbursed), icon: DollarSign, color: 'text-purple-500', isCurrency: true },
+    { title: 'Outstanding Balance', value: formatCompactCurrency(stats.total_outstanding), icon: Wallet, color: 'text-red-500', isCurrency: true },
+    { title: 'Total Repaid', value: formatCompactCurrency(stats.total_repaid), icon: CheckCircle, color: 'text-green-500', isCurrency: true },
     { title: 'Cooperative Members', value: stats.cooperative_members, icon: Users, color: 'text-indigo-500' },
-    { title: 'Total Contributions', value: `₦${stats.total_contributions.toLocaleString()}`, icon: Building2, color: 'text-teal-500' },
+    { title: 'Total Contributions', value: formatCompactCurrency(stats.total_contributions), icon: Building2, color: 'text-teal-500', isCurrency: true },
   ];
 
   return (
@@ -139,12 +140,19 @@ function OverviewTab({ stats }: { stats: any }) {
           className="p-6 rounded-lg border border-border bg-card"
         >
           <div className="flex items-center justify-between mb-4">
-            <div className="p-3 rounded-lg bg-muted">
-              <stat.icon className={`w-6 h-6 ${stat.color}`} />
-            </div>
+            <h3 className="text-sm font-medium text-muted-foreground">{stat.title}</h3>
+            <stat.icon className={`w-5 h-5 ${stat.color}`} />
           </div>
-          <p className="text-sm mb-1 text-muted-foreground">{stat.title}</p>
-          <p className="text-2xl text-card-foreground">{stat.value}</p>
+          <div className="flex flex-col">
+            <p className="text-2xl font-bold text-foreground">
+              {(stat as any).isCurrency ? stat.value.short : stat.value}
+            </p>
+            {(stat as any).isCurrency && (stat.value.full !== stat.value.short) && (
+              <p className="text-xs text-muted-foreground font-mono mt-1">
+                {stat.value.full}
+              </p>
+            )}
+          </div>
         </div>
       ))}
     </div>

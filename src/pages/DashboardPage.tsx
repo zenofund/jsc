@@ -11,7 +11,7 @@ import {
 
 import { PageSkeleton } from '../components/PageLoader';
 import { Skeleton } from '../components/ui/skeleton';
-import { formatCurrency } from '../utils/format';
+import { formatCurrency, formatCompactCurrency } from '../utils/format';
 
 export function DashboardPage() {
   const { user } = useAuth();
@@ -125,21 +125,41 @@ export function DashboardPage() {
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 md:gap-6 mb-4 sm:mb-6 justify-items-center sm:justify-items-stretch max-w-sm sm:max-w-none mx-auto">
-        {statCards.map((stat, index) => {
+        {statCards.map((stat: any, index) => {
           const Icon = stat.icon;
           return (
-            <div key={index} className="bg-card border border-border rounded-lg p-4 sm:p-6 w-full">
-              <div className="flex items-center gap-3 sm:gap-4">
-                <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg ${colorClasses[stat.color as keyof typeof colorClasses]} flex items-center justify-center flex-shrink-0`}>
-                  <Icon className="w-4 h-4 sm:w-5 sm:h-5" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-xl sm:text-2xl font-semibold text-foreground mb-0.5">{stat.value}</div>
-                  <div className="text-xs sm:text-sm text-muted-foreground">{stat.title}</div>
+            <button 
+              key={index}
+              onClick={stat.onClick}
+              disabled={!stat.onClick}
+              className={`p-4 sm:p-6 rounded-lg border border-border bg-card transition-all w-full text-left ${
+                stat.onClick ? 'hover:shadow-md cursor-pointer' : ''
+              }`}
+            >
+              <div className="flex items-start justify-between mb-3 sm:mb-4">
+                <div className={`p-2 sm:p-3 rounded-lg ${colorClasses[stat.color as keyof typeof colorClasses]}`}>
+                  <Icon className="w-5 h-5 sm:w-6 sm:h-6" />
                 </div>
               </div>
-              <div className="text-xs text-muted-foreground/80 mt-2 ml-11 sm:ml-14">{stat.subtitle}</div>
-            </div>
+              <div>
+                <p className="text-sm font-medium text-muted-foreground mb-1">{stat.title}</p>
+                <div className="flex flex-col items-start">
+                   <h3 className="text-2xl sm:text-3xl font-bold text-foreground">
+                      {typeof stat.value === 'number' && stat.value > 999999 ? (
+                        formatCompactCurrency(stat.value).short
+                      ) : (
+                        stat.value
+                      )}
+                   </h3>
+                   {typeof stat.value === 'number' && stat.value > 999999 && (
+                      <span className="text-xs text-muted-foreground/70 font-mono mt-0.5">
+                        {formatCompactCurrency(stat.value).full}
+                      </span>
+                   )}
+                </div>
+                <p className="text-xs sm:text-sm text-muted-foreground mt-2">{stat.subtitle}</p>
+              </div>
+            </button>
           );
         })}
       </div>

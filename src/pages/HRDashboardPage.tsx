@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { Modal } from '../components/Modal';
 import { StatusBadge } from '../components/StatusBadge';
+import { formatCompactCurrency } from '../utils/format';
 import { useAuth } from '../contexts/AuthContext';
 import { dashboardAPI, staffAPI, staffPortalAPI, departmentAPI } from '../lib/api-client';
 import { PageSkeleton } from '../components/PageLoader';
@@ -174,7 +175,20 @@ export function HRDashboardPage() {
                   <Icon className="w-4 h-4 sm:w-5 sm:h-5" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-xl sm:text-2xl font-semibold text-foreground mb-0.5">{stat.value}</div>
+                  <div className="flex flex-col">
+                    <div className="text-xl sm:text-2xl font-bold text-foreground mb-0.5">
+                      {typeof stat.value === 'number' && stat.value > 999999 ? (
+                        formatCompactCurrency(stat.value).short
+                      ) : (
+                        stat.value
+                      )}
+                    </div>
+                    {typeof stat.value === 'number' && stat.value > 999999 && (
+                      <span className="text-xs text-muted-foreground/70 font-mono">
+                        {formatCompactCurrency(stat.value).full}
+                      </span>
+                    )}
+                  </div>
                   <div className="text-xs sm:text-sm text-muted-foreground">{stat.title}</div>
                 </div>
               </div>

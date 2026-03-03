@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { 
+import {
   BarChart3, 
   PieChart, 
   TrendingUp, 
@@ -9,8 +9,11 @@ import {
   Download, 
   Filter,
   RefreshCw,
-  Building2
+  Building2,
+  Wallet,
+  CreditCard
 } from 'lucide-react';
+import { formatCompactCurrency } from '../utils/format';
 import { PageSkeleton } from '../components/PageLoader';
 import { cooperativeAPI, disbursementAPI } from '../lib/loanAPI';
 import type { Cooperative, CooperativeMember, CooperativeContribution, LoanDisbursement } from '../types/entities';
@@ -220,7 +223,7 @@ function OverviewReport({ cooperatives, selectedCooperativeId }: { cooperatives:
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Total Members</p>
-              <p className="text-2xl text-card-foreground">{totalStats.total_members}</p>
+              <p className="text-2xl font-bold text-card-foreground">{totalStats.total_members.toLocaleString()}</p>
             </div>
           </div>
           <p className="text-xs text-muted-foreground">{totalStats.active_members} active members</p>
@@ -229,11 +232,14 @@ function OverviewReport({ cooperatives, selectedCooperativeId }: { cooperatives:
         <div className="p-6 rounded-lg border border-border bg-card">
           <div className="flex items-center gap-3 mb-2">
             <div className="p-2 rounded-lg bg-green-100 dark:bg-green-900/30">
-              <DollarSign className="w-5 h-5 text-green-600 dark:text-green-400" />
+              <Wallet className="w-5 h-5 text-green-600 dark:text-green-400" />
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Total Contributions</p>
-              <p className="text-2xl text-card-foreground">₦{totalStats.total_contributions.toLocaleString()}</p>
+              <div className="flex flex-col">
+                <span className="text-2xl font-bold text-card-foreground">{formatCompactCurrency(totalStats.total_contributions).short}</span>
+                <span className="text-xs text-muted-foreground font-mono">{formatCompactCurrency(totalStats.total_contributions).full}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -245,7 +251,10 @@ function OverviewReport({ cooperatives, selectedCooperativeId }: { cooperatives:
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Total Share Capital</p>
-              <p className="text-2xl text-card-foreground">₦{totalStats.total_share_capital.toLocaleString()}</p>
+              <div className="flex flex-col">
+                <span className="text-2xl font-bold text-card-foreground">{formatCompactCurrency(totalStats.total_share_capital).short}</span>
+                <span className="text-xs text-muted-foreground font-mono">{formatCompactCurrency(totalStats.total_share_capital).full}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -253,11 +262,14 @@ function OverviewReport({ cooperatives, selectedCooperativeId }: { cooperatives:
         <div className="p-6 rounded-lg border border-border bg-card">
           <div className="flex items-center gap-3 mb-2">
             <div className="p-2 rounded-lg bg-indigo-100 dark:bg-indigo-900/30">
-              <FileText className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+              <CreditCard className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Loans Disbursed</p>
-              <p className="text-2xl text-card-foreground">₦{totalStats.total_loans_disbursed.toLocaleString()}</p>
+              <div className="flex flex-col">
+                <span className="text-2xl font-bold text-card-foreground">{formatCompactCurrency(totalStats.total_loans_disbursed).short}</span>
+                <span className="text-xs text-muted-foreground font-mono">{formatCompactCurrency(totalStats.total_loans_disbursed).full}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -269,7 +281,10 @@ function OverviewReport({ cooperatives, selectedCooperativeId }: { cooperatives:
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Outstanding Balance</p>
-              <p className="text-2xl text-card-foreground">₦{totalStats.total_outstanding.toLocaleString()}</p>
+              <div className="flex flex-col">
+                <span className="text-2xl font-bold text-card-foreground">{formatCompactCurrency(totalStats.total_outstanding).short}</span>
+                <span className="text-xs text-muted-foreground font-mono">{formatCompactCurrency(totalStats.total_outstanding).full}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -281,7 +296,7 @@ function OverviewReport({ cooperatives, selectedCooperativeId }: { cooperatives:
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Active Cooperatives</p>
-              <p className="text-2xl text-card-foreground">{cooperatives.length}</p>
+              <p className="text-2xl font-bold text-card-foreground">{cooperatives.length}</p>
             </div>
           </div>
         </div>

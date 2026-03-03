@@ -12,7 +12,7 @@ import {
 import pdfMake from "pdfmake/build/pdfmake";
 import pdfFonts from "pdfmake/build/vfs_fonts";
 import { PageSkeleton } from '../components/PageLoader';
-import { formatCurrency } from '../utils/format';
+import { formatCurrency, formatCompactCurrency } from '../utils/format';
 
 // Initialize vfs for pdfmake
 if (pdfFonts && (pdfFonts as any).pdfMake) {
@@ -749,15 +749,24 @@ export function ReportsPage() {
                 </div>
                 <div className="bg-card rounded-lg border border-border p-6">
                   <div className="text-sm text-muted-foreground mb-1">Total Basic Salary</div>
-                  <div className="text-2xl font-semibold text-foreground">{formatCurrency(reportData.summary.total_basic)}</div>
+                  <div className="flex flex-col">
+                    <span className="text-2xl font-bold text-foreground">{formatCompactCurrency(reportData.summary.total_basic).short}</span>
+                    <span className="text-xs text-muted-foreground font-mono">{formatCompactCurrency(reportData.summary.total_basic).full}</span>
+                  </div>
                 </div>
                 <div className="bg-card rounded-lg border border-border p-6">
                   <div className="text-sm text-muted-foreground mb-1">Total Gross Pay</div>
-                  <div className="text-2xl font-semibold text-foreground">{formatCurrency(reportData.summary.total_gross)}</div>
+                  <div className="flex flex-col">
+                    <span className="text-2xl font-bold text-foreground">{formatCompactCurrency(reportData.summary.total_gross).short}</span>
+                    <span className="text-xs text-muted-foreground font-mono">{formatCompactCurrency(reportData.summary.total_gross).full}</span>
+                  </div>
                 </div>
                 <div className="bg-card rounded-lg border border-border p-6">
                   <div className="text-sm text-muted-foreground mb-1">Total Net Pay</div>
-                  <div className="text-2xl font-semibold text-green-700 dark:text-green-500">{formatCurrency(reportData.summary.total_net)}</div>
+                  <div className="flex flex-col">
+                    <span className="text-2xl font-bold text-green-700 dark:text-green-500">{formatCompactCurrency(reportData.summary.total_net).short}</span>
+                    <span className="text-xs text-green-600/70 dark:text-green-400/70 font-mono">{formatCompactCurrency(reportData.summary.total_net).full}</span>
+                  </div>
                 </div>
               </div>
 
@@ -826,20 +835,31 @@ export function ReportsPage() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="bg-card rounded-lg border border-border p-6">
                   <div className="text-sm text-muted-foreground mb-2">{reportData.month1?.month || 'Month 1'}</div>
-                  <div className="text-xl font-semibold text-foreground">{formatCurrency(reportData.month1?.total_net)}</div>
+                  <div className="flex flex-col">
+                    <span className="text-xl font-bold text-foreground">{formatCompactCurrency(reportData.month1?.total_net).short}</span>
+                    <span className="text-xs text-muted-foreground font-mono">{formatCompactCurrency(reportData.month1?.total_net).full}</span>
+                  </div>
                   <div className="text-sm text-muted-foreground mt-1">{reportData.month1?.total_staff || 0} staff</div>
                 </div>
 
                 <div className="bg-card rounded-lg border border-border p-6">
                   <div className="text-sm text-muted-foreground mb-2">{reportData.month2?.month || 'Month 2'}</div>
-                  <div className="text-xl font-semibold text-foreground">{formatCurrency(reportData.month2?.total_net)}</div>
+                  <div className="flex flex-col">
+                    <span className="text-xl font-bold text-foreground">{formatCompactCurrency(reportData.month2?.total_net).short}</span>
+                    <span className="text-xs text-muted-foreground font-mono">{formatCompactCurrency(reportData.month2?.total_net).full}</span>
+                  </div>
                   <div className="text-sm text-muted-foreground mt-1">{reportData.month2?.total_staff || 0} staff</div>
                 </div>
 
                 <div className="bg-card rounded-lg border border-border p-6">
                   <div className="text-sm text-muted-foreground mb-2">Variance</div>
-                  <div className={`text-xl font-semibold ${(reportData.variance?.amount_change || 0) >= 0 ? 'text-green-700 dark:text-green-500' : 'text-red-700 dark:text-red-500'}`}>
-                    {(reportData.variance?.amount_change || 0) >= 0 ? '+' : ''}{formatCurrency(reportData.variance?.amount_change)}
+                  <div className="flex flex-col">
+                    <span className={`text-xl font-bold ${(reportData.variance?.amount_change || 0) >= 0 ? 'text-green-700 dark:text-green-500' : 'text-red-700 dark:text-red-500'}`}>
+                      {(reportData.variance?.amount_change || 0) >= 0 ? '+' : ''}{formatCompactCurrency(reportData.variance?.amount_change).short}
+                    </span>
+                    <span className={`text-xs font-mono ${(reportData.variance?.amount_change || 0) >= 0 ? 'text-green-600/70' : 'text-red-600/70'}`}>
+                       {formatCompactCurrency(reportData.variance?.amount_change).full}
+                    </span>
                   </div>
                   <div className="text-sm text-muted-foreground mt-1">
                     {(reportData.variance?.percentage_change || 0) >= 0 ? '+' : ''}{(reportData.variance?.percentage_change || 0).toFixed(2)}%

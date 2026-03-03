@@ -22,3 +22,25 @@ export const formatNumber = (amount: number | string | undefined | null): string
     maximumFractionDigits: 2,
   }).format(val);
 };
+
+export const formatCompactCurrency = (amount: number | string | undefined | null) => {
+  const val = typeof amount === 'string' ? parseFloat(amount) : amount;
+  if (val === undefined || val === null || isNaN(val)) return { short: '₦0.00', full: '₦0.00' };
+
+  const absVal = Math.abs(val);
+  const full = formatCurrency(val);
+
+  if (absVal >= 1_000_000_000) {
+    return {
+      short: `₦${(val / 1_000_000_000).toFixed(2)}B`,
+      full: full
+    };
+  } else if (absVal >= 1_000_000) {
+    return {
+      short: `₦${(val / 1_000_000).toFixed(2)}M`,
+      full: full
+    };
+  }
+
+  return { short: full, full: full };
+};
