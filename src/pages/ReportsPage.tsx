@@ -9,15 +9,9 @@ import {
   BarChart3, TrendingUp, Users, FileText, 
   Download, Calendar, DollarSign, PieChart 
 } from 'lucide-react';
-import pdfMake from "pdfmake/build/pdfmake";
-import pdfFonts from "pdfmake/build/vfs_fonts";
 import { PageSkeleton } from '../components/PageLoader';
 import { formatCurrency, formatCompactCurrency } from '../utils/format';
-
-// Initialize vfs for pdfmake
-if (pdfFonts && (pdfFonts as any).pdfMake) {
-  (pdfMake as any).vfs = (pdfFonts as any).pdfMake.vfs;
-}
+import { loadPdfMake } from '../utils/loadPdfMake';
 
 export function ReportsPage() {
   const { user } = useAuth();
@@ -292,7 +286,7 @@ export function ReportsPage() {
     }
   };
 
-  const handleExportPDF = () => {
+  const handleExportPDF = async () => {
     if (!reportData) {
       showToast('error', 'No data to export');
       return;
@@ -541,6 +535,7 @@ export function ReportsPage() {
       }
 
       // Save PDF
+      const pdfMake = await loadPdfMake();
       pdfMake.createPdf(docDefinition).download(filename);
       showToast('success', 'PDF exported successfully');
     } catch (error) {

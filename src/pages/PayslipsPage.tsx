@@ -11,13 +11,7 @@ import { FileText, Download, Eye } from 'lucide-react';
 import { PayslipTemplate } from '../components/PayslipTemplate';
 import { formatCurrency } from '../utils/format';
 import { generatePayslipPDF } from '../utils/payslipGenerator';
-import pdfMake from "pdfmake/build/pdfmake";
-import pdfFonts from "pdfmake/build/vfs_fonts";
-
-// Initialize vfs for pdfmake
-if (pdfFonts && (pdfFonts as any).pdfMake) {
-  (pdfMake as any).vfs = (pdfFonts as any).pdfMake.vfs;
-}
+import { loadPdfMake } from '../utils/loadPdfMake';
 
 export function PayslipsPage() {
   const { user } = useAuth();
@@ -109,7 +103,7 @@ export function PayslipsPage() {
     window.print();
   };
 
-  const handleDownloadPayslip = (payslip: any) => {
+  const handleDownloadPayslip = async (payslip: any) => {
     try {
       const docDefinition = generatePayslipPDF(payslip, user, {
         organizationName,
@@ -123,6 +117,7 @@ export function PayslipsPage() {
       const filename = `Payslip_${month}_${staffName}_${staffNumber}.pdf`;
 
       // Save PDF
+      const pdfMake = await loadPdfMake();
       pdfMake.createPdf(docDefinition).download(filename);
       showToast('success', 'Payslip downloaded successfully');
     } catch (error) {

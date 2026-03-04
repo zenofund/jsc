@@ -35,13 +35,7 @@ import {
 import { formatCurrency } from '../utils/format';
 import { PayslipTemplate } from '../components/PayslipTemplate';
 import { generatePayslipPDF } from '../utils/payslipGenerator';
-import pdfMake from "pdfmake/build/pdfmake";
-import pdfFonts from "pdfmake/build/vfs_fonts";
-
-// Initialize vfs for pdfmake
-if (pdfFonts && (pdfFonts as any).pdfMake) {
-  (pdfMake as any).vfs = (pdfFonts as any).pdfMake.vfs;
-}
+import { loadPdfMake } from '../utils/loadPdfMake';
 
 export function StaffPortalPage() {
   const { user } = useAuth();
@@ -125,10 +119,30 @@ export function StaffPortalPage() {
     email: '',
     address: '',
   });
+  const staffGender = String(dashboardStats?.staff?.bio_data?.gender || '').toLowerCase();
+  const isFemale = staffGender === 'female';
+  const isMale = staffGender === 'male';
+  const leaveTypeOptions = [
+    { value: 'annual', label: 'Annual Leave' },
+    { value: 'sick', label: 'Sick Leave' },
+    ...(isFemale ? [{ value: 'maternity', label: 'Maternity Leave' }] : []),
+    ...(isMale ? [{ value: 'paternity', label: 'Paternity Leave' }] : []),
+    { value: 'study', label: 'Study Leave' },
+    { value: 'compassionate', label: 'Compassionate Leave' },
+    { value: 'unpaid', label: 'Unpaid Leave' },
+  ];
 
   useEffect(() => {
     loadData();
   }, [user]);
+
+  useEffect(() => {
+    if (!showLeaveModal) return;
+    const allowedValues = leaveTypeOptions.map((option) => option.value);
+    setLeaveForm((prev) =>
+      allowedValues.includes(prev.leave_type) ? prev : { ...prev, leave_type: allowedValues[0] },
+    );
+  }, [showLeaveModal, staffGender]);
 
   const loadData = async () => {
     if (!user?.staff_id) {
@@ -927,7 +941,7 @@ export function StaffPortalPage() {
     );
   };
 
-  const handleDownloadPayslip = (payslip: any) => {
+  const handleDownloadPayslip = async (payslip: any) => {
     try {
       const docDefinition = generatePayslipPDF(payslip, user);
       
@@ -937,6 +951,7 @@ export function StaffPortalPage() {
       const staffNumber = payslip.line?.staff_number || 'NoID';
       const filename = `Payslip_${month}_${staffName}_${staffNumber}.pdf`;
 
+      const pdfMake = await loadPdfMake();
       pdfMake.createPdf(docDefinition).download(filename);
       showToast('success', 'Payslip downloaded successfully');
     } catch (error) {
@@ -1074,14 +1089,18 @@ export function StaffPortalPage() {
               <p className="text-xs sm:text-sm text-green-900 dark:text-green-200 mb-1">Sick</p>
               <p className="text-xl sm:text-2xl font-semibold text-green-700 dark:text-green-300">{dashboardStats.leave_balance.sick} <span className="text-xs sm:text-sm font-normal">Days</span></p>
             </div>
-            <div className="bg-pink-50 dark:bg-pink-900/20 border border-pink-200 dark:border-pink-800 rounded-lg p-3 sm:p-4">
-              <p className="text-xs sm:text-sm text-pink-900 dark:text-pink-200 mb-1">Maternity</p>
-              <p className="text-xl sm:text-2xl font-semibold text-pink-700 dark:text-pink-300">{dashboardStats.leave_balance.maternity} <span className="text-xs sm:text-sm font-normal">Days</span></p>
-            </div>
-            <div className="bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800 rounded-lg p-3 sm:p-4">
-              <p className="text-xs sm:text-sm text-sky-900 dark:text-sky-200 mb-1">Paternity</p>
-              <p className="text-xl sm:text-2xl font-semibold text-sky-700 dark:text-sky-300">{dashboardStats.leave_balance.paternity} <span className="text-xs sm:text-sm font-normal">Days</span></p>
-            </div>
+            {isFemale && (
+              <div className="bg-pink-50 dark:bg-pink-900/20 border border-pink-200 dark:border-pink-800 rounded-lg p-3 sm:p-4">
+                <p className="text-xs sm:text-sm text-pink-900 dark:text-pink-200 mb-1">Maternity</p>
+                <p className="text-xl sm:text-2xl font-semibold text-pink-700 dark:text-pink-300">{dashboardStats.leave_balance.maternity} <span className="text-xs sm:text-sm font-normal">Days</span></p>
+              </div>
+            )}
+            {isMale && (
+              <div className="bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800 rounded-lg p-3 sm:p-4">
+                <p className="text-xs sm:text-sm text-sky-900 dark:text-sky-200 mb-1">Paternity</p>
+                <p className="text-xl sm:text-2xl font-semibold text-sky-700 dark:text-sky-300">{dashboardStats.leave_balance.paternity} <span className="text-xs sm:text-sm font-normal">Days</span></p>
+              </div>
+            )}
             <div className="col-span-2 md:col-span-1 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg p-3 sm:p-4">
               <p className="text-xs sm:text-sm text-purple-900 dark:text-purple-200 mb-1">Total</p>
               <p className="text-xl sm:text-2xl font-semibold text-purple-700 dark:text-purple-300">{dashboardStats.leave_balance.total} <span className="text-xs sm:text-sm font-normal">Days</span></p>
@@ -2152,13 +2171,11 @@ export function StaffPortalPage() {
                 onChange={(e) => setLeaveForm({ ...leaveForm, leave_type: e.target.value as any })}
                 className="w-full px-3 py-2 border border-border rounded-md bg-card text-card-foreground"
               >
-                <option value="annual">Annual Leave</option>
-                <option value="sick">Sick Leave</option>
-                <option value="maternity">Maternity Leave</option>
-                <option value="paternity">Paternity Leave</option>
-                <option value="study">Study Leave</option>
-                <option value="compassionate">Compassionate Leave</option>
-                <option value="unpaid">Unpaid Leave</option>
+                {leaveTypeOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
             </div>
 

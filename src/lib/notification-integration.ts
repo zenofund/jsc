@@ -1,5 +1,5 @@
 // Notification Integration - Automated notification generation for workflow events
-import { notificationAPI, NotificationTemplates } from './api-client'; // ✅ Use API client instead
+import { notificationAPI, NotificationTemplates, userAPI } from './api-client'; // ✅ Use API client instead
 import type { User } from '../types/entities';
 
 /**
@@ -410,7 +410,6 @@ export class NotificationIntegration {
   static async getUsersByRole(role: string): Promise<string[]> {
     try {
       // Use API client to fetch users by role
-      const { userAPI } = await import('./api-client');
       const allUsers = await userAPI.getAllUsers();
       
       return allUsers

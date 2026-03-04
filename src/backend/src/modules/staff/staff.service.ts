@@ -768,6 +768,7 @@ export class StaffService {
       maternity: 0,
       paternity: 0,
     };
+    const staffGender = String(staff.gender || '').toLowerCase();
 
     for (const row of leaveRows || []) {
       const name = String(row.leave_type_name || '').toLowerCase();
@@ -775,6 +776,13 @@ export class StaffService {
       const remaining = row.remaining_days !== null && row.remaining_days !== undefined
         ? parseInt(String(row.remaining_days), 10)
         : fallbackEntitled;
+
+      if (name.includes('maternity') && staffGender !== 'female') {
+        continue;
+      }
+      if (name.includes('paternity') && staffGender !== 'male') {
+        continue;
+      }
 
       if (name.includes('annual')) leaveTotals.annual = remaining;
       else if (name.includes('sick')) leaveTotals.sick = remaining;

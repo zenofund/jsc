@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../components/Toast';
-import { staffAPI, departmentAPI, bankAPI } from '../lib/api-client';
+import { staffAPI, departmentAPI, bankAPI, settingsAPI } from '../lib/api-client';
 import { Staff, Department } from '../types/entities';
 import { getAllStateNames, getLGAsByState } from '../lib/nigerian-locations';
 import { Plus, Edit, UserX, UserCheck, Trash2, Eye, Upload } from 'lucide-react';
@@ -12,14 +12,8 @@ import { StatusBadge } from '../components/StatusBadge';
 import { Stepper } from '../components/Stepper';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
 import { format } from 'date-fns';
-import pdfMake from "pdfmake/build/pdfmake";
-import pdfFonts from "pdfmake/build/vfs_fonts";
 import { PageSkeleton } from '../components/PageLoader';
-
-// Initialize vfs for pdfmake
-if (pdfFonts && (pdfFonts as any).pdfMake) {
-  (pdfMake as any).vfs = (pdfFonts as any).pdfMake.vfs;
-}
+import { loadPdfMake } from '../utils/loadPdfMake';
 import { Skeleton } from '../components/ui/skeleton';
 import { Button } from '../components/ui/button';
 import Papa from 'papaparse';
@@ -159,7 +153,7 @@ export function StaffListPage() {
     // Load allowed grades from settings
     (async () => {
       try {
-        const settings = await (await import('../lib/api-client')).settingsAPI.getSettings();
+        const settings = await settingsAPI.getSettings();
         if (Array.isArray(settings?.allowed_grades)) {
           setAllowedGrades(settings.allowed_grades.map((n: any) => Number(n)).filter((n: number) => !isNaN(n)));
         }
@@ -455,7 +449,7 @@ export function StaffListPage() {
     return format(d, 'dd-MM-yyyy');
   };
 
-  const handlePrintStaff = () => {
+  const handlePrintStaff = async () => {
     if (!viewingStaff) return;
 
     const tableLayout = {
@@ -591,6 +585,7 @@ export function StaffListPage() {
     };
 
     const filename = `${(viewingStaff.bio_data.last_name || 'staff')}_${viewingStaff.staff_number || ''}`.replace(/[^a-z0-9_\\-]/gi, '_');
+    const pdfMake = await loadPdfMake();
     pdfMake.createPdf(docDefinition).download(`${filename}.pdf`);
   };
 

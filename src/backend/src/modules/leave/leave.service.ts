@@ -124,6 +124,11 @@ export class LeaveService {
    * Get staff leave balances
    */
   async getStaffLeaveBalances(staffId: string, year?: number) {
+    const staff = await this.databaseService.queryOne(
+      'SELECT gender FROM staff WHERE id = $1',
+      [staffId],
+    );
+    const staffGender = String(staff?.gender || '').toLowerCase();
     let query = `
       SELECT 
         lb.*,
@@ -142,7 +147,15 @@ export class LeaveService {
 
     query += ' ORDER BY lt.name';
 
-    return this.databaseService.query(query, params);
+    const balances = await this.databaseService.query(query, params);
+    if (!staffGender) return balances;
+
+    return (balances || []).filter((row: any) => {
+      const name = String(row.leave_type_name || '').toLowerCase();
+      if (name.includes('maternity') && staffGender !== 'female') return false;
+      if (name.includes('paternity') && staffGender !== 'male') return false;
+      return true;
+    });
   }
 
   // ==================== LEAVE REQUESTS ====================

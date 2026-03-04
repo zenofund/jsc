@@ -44,14 +44,8 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
-import pdfMake from "pdfmake/build/pdfmake";
-import pdfFonts from "pdfmake/build/vfs_fonts";
 import { PageSkeleton } from '../components/PageLoader';
-
-// Initialize vfs for pdfmake
-if (pdfFonts && (pdfFonts as any).pdfMake) {
-  (pdfMake as any).vfs = (pdfFonts as any).pdfMake.vfs;
-}
+import { loadPdfMake } from '../utils/loadPdfMake';
 
 const ReportsListPage: React.FC = () => {
   // Navigation helper
@@ -212,7 +206,7 @@ const ReportsListPage: React.FC = () => {
   };
 
   // Export data
-  const exportData = (fileFormat: 'csv' | 'excel' | 'pdf') => {
+  const exportData = async (fileFormat: 'csv' | 'excel' | 'pdf') => {
     if (!resultsDialog.result) return;
 
     // Convert data to CSV
@@ -362,6 +356,7 @@ const ReportsListPage: React.FC = () => {
       };
 
       const filename = `${resultsDialog.result.template.name.replace(/[^a-z0-9]/gi, '_')}_${format(new Date(), 'yyyy-MM-dd')}.pdf`;
+      const pdfMake = await loadPdfMake();
       pdfMake.createPdf(docDefinition).download(filename);
 
       toast.success(`Exported as PDF`);
