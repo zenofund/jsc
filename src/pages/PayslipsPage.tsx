@@ -5,9 +5,9 @@ import { StatusBadge } from '../components/StatusBadge';
 import { Modal } from '../components/Modal';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../components/Toast';
-import { payslipAPI, staffAPI, payrollAPI } from '../lib/api-client';
+import { payslipAPI, payrollAPI, settingsAPI } from '../lib/api-client';
 import { PageSkeleton } from '../components/PageLoader';
-import { FileText, Download, Eye, Printer, Building } from 'lucide-react';
+import { FileText, Download, Eye } from 'lucide-react';
 import { PayslipTemplate } from '../components/PayslipTemplate';
 import { formatCurrency } from '../utils/format';
 import { generatePayslipPDF } from '../utils/payslipGenerator';
@@ -28,10 +28,32 @@ export function PayslipsPage() {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isStaffView, setIsStaffView] = useState(false);
+  const [organizationName, setOrganizationName] = useState('Judicial Service Committee');
+  const [organizationLogo, setOrganizationLogo] = useState('');
 
   useEffect(() => {
     loadPayslips();
   }, [user, selectedMonth]);
+
+  useEffect(() => {
+    loadBranding();
+  }, [user]);
+
+  const loadBranding = async () => {
+    try {
+      const settings = await settingsAPI.getSettings();
+      if (settings?.organization_name) {
+        setOrganizationName(settings.organization_name);
+      }
+      if (settings?.organization_logo) {
+        setOrganizationLogo(settings.organization_logo);
+      } else {
+        setOrganizationLogo('');
+      }
+    } catch {
+      setOrganizationLogo('');
+    }
+  };
 
   const loadPayslips = async () => {
     try {
@@ -89,7 +111,10 @@ export function PayslipsPage() {
 
   const handleDownloadPayslip = (payslip: any) => {
     try {
-      const docDefinition = generatePayslipPDF(payslip, user);
+      const docDefinition = generatePayslipPDF(payslip, user, {
+        organizationName,
+        organizationLogo,
+      });
       
       // Construct personalized filename
       const month = payslip.batch?.month || payslip.line?.payroll_month || 'Unknown';
@@ -235,7 +260,12 @@ export function PayslipsPage() {
                 Download Payslip
               </button>
           </div>
-          <PayslipTemplate payslip={selectedPayslip} user={user} />
+          <PayslipTemplate
+            payslip={selectedPayslip}
+            user={user}
+            organizationName={organizationName}
+            organizationLogo={organizationLogo}
+          />
         </div>
       </Modal>
     </div>

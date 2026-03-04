@@ -414,6 +414,7 @@ export interface AuditTrail {
 export interface SystemSettings {
   id: string;
   organization_name?: string;
+  organization_logo?: string;
   organization_email?: string;
   organization_phone?: string;
   organization_address?: string;

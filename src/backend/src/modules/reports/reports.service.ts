@@ -164,7 +164,7 @@ export class ReportsService {
       FROM staff s
       LEFT JOIN departments d ON s.department_id = d.id
       WHERE 1=1 ${whereClause}
-      ORDER BY s.staff_number
+      ORDER BY s.grade_level DESC NULLS LAST, s.step DESC NULLS LAST, s.staff_number ASC
     `;
 
     const staff = await this.databaseService.query(query, params);

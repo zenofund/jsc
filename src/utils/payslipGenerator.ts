@@ -1,7 +1,11 @@
 
 import { formatCurrency } from './format';
 
-export const generatePayslipPDF = (payslip: any, user: any = null) => {
+export const generatePayslipPDF = (
+  payslip: any,
+  user: any = null,
+  branding?: { organizationName?: string; organizationLogo?: string }
+) => {
   const line = payslip.line || {};
   const batch = payslip.batch || {};
 
@@ -56,6 +60,9 @@ export const generatePayslipPDF = (payslip: any, user: any = null) => {
     paddingBottom: function (i: number, node: any) { return 8; },
   };
 
+  const organizationName = branding?.organizationName || 'Judicial Service Committee';
+  const organizationLogo = branding?.organizationLogo || '';
+
   const docDefinition: any = {
     pageSize: 'A4',
     pageMargins: [40, 40, 40, 40],
@@ -64,10 +71,16 @@ export const generatePayslipPDF = (payslip: any, user: any = null) => {
       // Header
       {
         columns: [
+          ...(organizationLogo ? [{
+            width: 80,
+            image: organizationLogo,
+            fit: [75, 75],
+            margin: [0, 0, 10, 0]
+          }] : []),
           {
             width: '*',
             stack: [
-              { text: 'Judicial Service Committee', style: 'brandTitle' },
+              { text: organizationName, style: 'brandTitle' },
               { text: 'Payroll Payslip', style: 'brandSubtitle' }
             ]
           },

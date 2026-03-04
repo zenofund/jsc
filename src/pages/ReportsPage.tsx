@@ -34,8 +34,36 @@ export function ReportsPage() {
   const [staffDepartment, setStaffDepartment] = useState('');
   const [staffStatus, setStaffStatus] = useState('');
   const [organizationName, setOrganizationName] = useState('Nigerian Judicial Service Committee');
+  const [organizationLogo, setOrganizationLogo] = useState('');
 
   const isCashier = user?.role === 'cashier';
+
+  const toNumber = (value: any) => {
+    const num = typeof value === 'number' ? value : parseInt(String(value ?? ''), 10);
+    return Number.isFinite(num) ? num : 0;
+  };
+
+  const sortStaffByGradeDesc = (staffRows: any[]) => {
+    return [...(staffRows || [])].sort((a: any, b: any) => {
+      const glA = toNumber(a?.salary_info?.grade_level);
+      const glB = toNumber(b?.salary_info?.grade_level);
+      if (glA !== glB) return glB - glA;
+      const stepA = toNumber(a?.salary_info?.step);
+      const stepB = toNumber(b?.salary_info?.step);
+      if (stepA !== stepB) return stepB - stepA;
+      const staffA = String(a?.staff_number || '');
+      const staffB = String(b?.staff_number || '');
+      return staffA.localeCompare(staffB);
+    });
+  };
+
+  const sortGradeEntriesDesc = (gradeMap: Record<string, number>) => {
+    return Object.entries(gradeMap || {}).sort(([gradeA], [gradeB]) => {
+      const valA = toNumber(String(gradeA).replace(/[^\d]/g, ''));
+      const valB = toNumber(String(gradeB).replace(/[^\d]/g, ''));
+      return valB - valA;
+    });
+  };
 
   useEffect(() => {
     if (isCashier && (activeTab === 'staff' || activeTab === 'payroll')) {
@@ -51,6 +79,11 @@ export function ReportsPage() {
       const settings = await settingsAPI.getSettings();
       if (settings?.organization_name) {
         setOrganizationName(settings.organization_name);
+      }
+      if (settings?.organization_logo) {
+        setOrganizationLogo(settings.organization_logo);
+      } else {
+        setOrganizationLogo('');
       }
     } catch (error) {
       console.error('Failed to fetch settings:', error);
@@ -143,7 +176,8 @@ export function ReportsPage() {
         const headers = ['STAFF NUMBER', 'FIRST NAME', 'LAST NAME', 'DEPARTMENT', 'GRADE LEVEL', 'STEP', 'BASIC SALARY', 'STATUS'];
         csv = commonHeader + reportTitle + summary + headers.join(',') + '\n';
         
-        (reportData.staff || []).forEach((staff: any) => {
+        const sortedStaff = sortStaffByGradeDesc(reportData.staff || []);
+        sortedStaff.forEach((staff: any) => {
           const row = [
             staff.staff_number,
             staff.bio_data.first_name,
@@ -301,9 +335,17 @@ export function ReportsPage() {
       let filename = '';
 
       // Common Header
-      docDefinition.content.push(
-        { text: organizationName, style: 'header' }
-      );
+      if (organizationLogo) {
+        docDefinition.content.push({
+          columns: [
+            { width: 80, image: organizationLogo, fit: [75, 75] },
+            { width: '*', text: organizationName, style: 'header', margin: [0, 20, 0, 0] },
+            { width: 80, text: '' }
+          ]
+        });
+      } else {
+        docDefinition.content.push({ text: organizationName, style: 'header' });
+      }
 
       if (activeTab === 'staff') {
         // Staff Report PDF
@@ -324,7 +366,8 @@ export function ReportsPage() {
           ]
         ];
 
-        (reportData.staff || []).forEach((staff: any) => {
+        const sortedStaff = sortStaffByGradeDesc(reportData.staff || []);
+        sortedStaff.forEach((staff: any) => {
           tableBody.push([
             { text: staff.staff_number || 'N/A', style: 'tableCell' },
             { text: `${staff.bio_data?.first_name || ''} ${staff.bio_data?.last_name || ''}`.trim() || 'N/A', style: 'tableCell' },
@@ -669,7 +712,7 @@ export function ReportsPage() {
             <div className="bg-card border border-border rounded-lg p-6">
               <h3 className="font-semibold text-card-foreground mb-4">Staff by Grade Level</h3>
               <div className="space-y-3">
-                {Object.entries(reportData.by_grade || {}).slice(0, 8).map(([grade, count]) => (
+                {sortGradeEntriesDesc(reportData.by_grade || {}).slice(0, 8).map(([grade, count]) => (
                   <div key={grade}>
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-sm text-muted-foreground">{grade}</span>
@@ -691,14 +734,7 @@ export function ReportsPage() {
           <div className="bg-card border border-border rounded-lg p-6">
             <h3 className="font-semibold text-card-foreground mb-4">Staff Details</h3>
             {(() => {
-              const sortedStaff = [...(reportData.staff || [])].sort((a: any, b: any) => {
-                const glA = a?.salary_info?.grade_level ?? 0;
-                const glB = b?.salary_info?.grade_level ?? 0;
-                if (glA !== glB) return glB - glA;
-                const stepA = a?.salary_info?.step ?? 0;
-                const stepB = b?.salary_info?.step ?? 0;
-                return stepB - stepA;
-              });
+              const sortedStaff = sortStaffByGradeDesc(reportData.staff || []);
               return (
             <DataTable
               data={sortedStaff}

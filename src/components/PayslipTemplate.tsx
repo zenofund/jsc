@@ -5,9 +5,11 @@ import { Shield, Printer } from 'lucide-react';
 interface PayslipTemplateProps {
   payslip: any;
   user?: any;
+  organizationName?: string;
+  organizationLogo?: string;
 }
 
-export const PayslipTemplate: React.FC<PayslipTemplateProps> = ({ payslip, user }) => {
+export const PayslipTemplate: React.FC<PayslipTemplateProps> = ({ payslip, user, organizationName, organizationLogo }) => {
   if (!payslip) return null;
 
   const line = payslip.line || {};
@@ -52,11 +54,15 @@ export const PayslipTemplate: React.FC<PayslipTemplateProps> = ({ payslip, user 
       {/* Toolbar */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-[14px] bg-gradient-to-br from-purple-600 to-green-500 shadow-lg border border-white/20 flex items-center justify-center text-white">
-            <Shield className="w-6 h-6" />
+          <div className="w-[75px] h-[75px] rounded-[14px] bg-gradient-to-br from-purple-600 to-green-500 shadow-lg border border-white/20 flex items-center justify-center text-white overflow-hidden">
+            {organizationLogo ? (
+              <img src={organizationLogo} alt="Organization logo" className="w-[75px] h-[75px] object-cover rounded-[14px]" />
+            ) : (
+              <Shield className="w-6 h-6" />
+            )}
           </div>
           <div>
-            <h1 className="text-base font-extrabold tracking-wide leading-tight">Judicial Service Committee</h1>
+            <h1 className="text-base font-extrabold tracking-wide leading-tight">{organizationName || 'Judicial Service Committee'}</h1>
             <p className="text-xs text-muted-foreground mt-0.5">Payroll Payslip</p>
           </div>
         </div>

@@ -28,6 +28,7 @@ export class SettingsService {
 
     return {
       organization_name: 'Judicial Service Committee',
+      organization_logo: '',
       payroll_prefix: 'JSC',
       payday_day: 25,
       auto_generate_payslips: true,
@@ -47,6 +48,7 @@ export class SettingsService {
     // Extract only the fields we want to save to avoid pollution
     const {
       organization_name,
+      organization_logo,
       payroll_prefix,
       payday_day,
       auto_generate_payslips,
@@ -58,6 +60,7 @@ export class SettingsService {
 
     const value = {
       organization_name,
+      organization_logo,
       payroll_prefix,
       payday_day,
       auto_generate_payslips,

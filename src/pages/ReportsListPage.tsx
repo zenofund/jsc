@@ -76,6 +76,7 @@ const ReportsListPage: React.FC = () => {
   });
 
   const [organizationName, setOrganizationName] = useState('Nigerian Judicial Service Committee');
+  const [organizationLogo, setOrganizationLogo] = useState('');
 
   // Execution results dialog
   const [resultsDialog, setResultsDialog] = useState<{
@@ -98,6 +99,11 @@ const ReportsListPage: React.FC = () => {
       const settings = await settingsAPI.getSettings();
       if (settings?.organization_name) {
         setOrganizationName(settings.organization_name);
+      }
+      if (settings?.organization_logo) {
+        setOrganizationLogo(settings.organization_logo);
+      } else {
+        setOrganizationLogo('');
       }
     } catch (error) {
       console.error('Failed to fetch settings:', error);
@@ -335,7 +341,13 @@ const ReportsListPage: React.FC = () => {
         },
         defaultStyle: { fontSize: 10, font: 'Roboto' },
         content: [
-          { text: organizationName, style: 'header' },
+          ...(organizationLogo ? [{
+            columns: [
+              { width: 80, image: organizationLogo, fit: [75, 75] },
+              { width: '*', text: organizationName, style: 'header', margin: [0, 20, 0, 0] },
+              { width: 80, text: '' }
+            ]
+          }] : [{ text: organizationName, style: 'header' }]),
           { text: resultsDialog.result.template.name, style: 'subheader' },
           { text: `Generated: ${new Date().toLocaleDateString()}`, style: 'generated' },
           {

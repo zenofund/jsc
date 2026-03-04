@@ -3,7 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { userAPI, settingsAPI, auditAPI } from '../lib/api-client';
 import { User, SystemSettings } from '../types/entities';
-import { Users, Shield, Settings as SettingsIcon, Activity, Plus, Edit, Trash2, Loader2, Save, X, Eye, EyeOff, Lock } from 'lucide-react';
+import { Users, Shield, Settings as SettingsIcon, Activity, Plus, Edit, Trash2, Loader2, Save, X, Eye, EyeOff, Lock, Image as ImageIcon } from 'lucide-react';
 import { Building } from 'lucide-react';
 import { showToast } from '../utils/toast';
 import { Modal } from '../components/Modal';
@@ -31,6 +31,7 @@ export function AdminPage() {
   const [idempotencyKey, setIdempotencyKey] = useState('');
   const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
   const [showUserPassword, setShowUserPassword] = useState(false);
+  const [logoProcessing, setLogoProcessing] = useState(false);
 
   // User form state
   const [userForm, setUserForm] = useState({
@@ -219,6 +220,61 @@ export function AdminPage() {
       showToast.error('Failed to update settings');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const processLogoToSquare = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          const sourceSize = Math.min(img.width, img.height);
+          const sourceX = (img.width - sourceSize) / 2;
+          const sourceY = (img.height - sourceSize) / 2;
+          const canvas = document.createElement('canvas');
+          canvas.width = 75;
+          canvas.height = 75;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            reject(new Error('Unable to process logo'));
+            return;
+          }
+          ctx.drawImage(img, sourceX, sourceY, sourceSize, sourceSize, 0, 0, 75, 75);
+          resolve(canvas.toDataURL('image/png'));
+        };
+        img.onerror = () => reject(new Error('Invalid image file'));
+        img.src = String(reader.result || '');
+      };
+      reader.onerror = () => reject(new Error('Unable to read file'));
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleLogoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !settings) return;
+    const validTypes = ['image/png', 'image/jpeg', 'image/webp'];
+    if (!validTypes.includes(file.type)) {
+      showToast.error('Please upload PNG, JPG, or WEBP image');
+      e.target.value = '';
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      showToast.error('Logo file size must be 5MB or less');
+      e.target.value = '';
+      return;
+    }
+    try {
+      setLogoProcessing(true);
+      const logoDataUrl = await processLogoToSquare(file);
+      setSettings({ ...settings, organization_logo: logoDataUrl });
+      showToast.success('Logo processed to 75x75 square');
+    } catch (error: any) {
+      showToast.error(error.message || 'Failed to process logo');
+    } finally {
+      setLogoProcessing(false);
+      e.target.value = '';
     }
   };
 
@@ -416,6 +472,39 @@ export function AdminPage() {
                   onChange={(e) => setSettings({ ...settings, organization_name: e.target.value })}
                   className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">
+                  Organization Logo
+                </label>
+                <div className="flex items-start gap-3">
+                  <div className="w-[75px] h-[75px] rounded-lg border border-border bg-muted/30 flex items-center justify-center overflow-hidden shrink-0">
+                    {settings.organization_logo ? (
+                      <img src={settings.organization_logo} alt="Organization logo" className="w-[75px] h-[75px] object-cover" />
+                    ) : (
+                      <ImageIcon className="w-6 h-6 text-muted-foreground" />
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      onChange={handleLogoChange}
+                      disabled={logoProcessing}
+                      className="block text-sm text-foreground file:mr-3 file:px-3 file:py-2 file:rounded-md file:border-0 file:bg-primary file:text-primary-foreground hover:file:bg-primary/90"
+                    />
+                    <div className="text-xs text-muted-foreground">Image is center-cropped to 1:1 and resized to 75x75px.</div>
+                    {settings.organization_logo && (
+                      <button
+                        type="button"
+                        onClick={() => setSettings({ ...settings, organization_logo: '' })}
+                        className="text-xs text-red-600 hover:text-red-700"
+                      >
+                        Remove logo
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-foreground mb-1">
