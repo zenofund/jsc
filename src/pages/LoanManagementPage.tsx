@@ -7,10 +7,10 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { loanApplicationAPI, loanTypeAPI, disbursementAPI, loanStatsAPI, cooperativeAPI } from '../lib/loanAPI';
-import type { LoanType, LoanApplication, LoanDisbursement } from '../types/entities';
+import type { LoanType, LoanApplication, LoanDisbursement, Cooperative } from '../types/entities';
 import { PageSkeleton } from '../components/PageLoader';
 import { showToast } from '../utils/toast';
-import { formatCompactCurrency } from '../utils/format';
+import { formatCompactCurrency, formatCurrency } from '../utils/format';
 
 type TabType = 'overview' | 'applications' | 'loan-types' | 'disbursements' | 'reports';
 
@@ -1043,31 +1043,613 @@ function DisbursementsTab({ disbursements }: { disbursements: LoanDisbursement[]
 
 // Reports Tab
 function ReportsTab() {
-  const reports = [
-    { name: 'Loan Applications Report', description: 'All loan applications with status' },
-    { name: 'Disbursement Report', description: 'All loan disbursements by period' },
-    { name: 'Repayment Schedule', description: 'Upcoming and overdue repayments' },
-    { name: 'Cooperative Statement', description: 'Member contributions and dividends' },
-    { name: 'Loan Aging Report', description: 'Outstanding loans by age' },
-    { name: 'Defaulters Report', description: 'Staff with overdue repayments' },
+  type LoanReportKey =
+    | 'applications'
+    | 'disbursements'
+    | 'repayment-schedule'
+    | 'cooperative-statement'
+    | 'loan-aging'
+    | 'defaulters';
+
+  type ReportColumn = {
+    key: string;
+    label: string;
+    align?: 'left' | 'right';
+  };
+
+  const [selectedReport, setSelectedReport] = useState<LoanReportKey | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [applications, setApplications] = useState<LoanApplication[]>([]);
+  const [disbursements, setDisbursements] = useState<LoanDisbursement[]>([]);
+  const [cooperatives, setCooperatives] = useState<Cooperative[]>([]);
+  const [reportRows, setReportRows] = useState<any[]>([]);
+  const [reportColumns, setReportColumns] = useState<ReportColumn[]>([]);
+  const [reportSummary, setReportSummary] = useState<Array<{ label: string; value: string }>>([]);
+  const [reportBreakdown, setReportBreakdown] = useState<Array<{ title: string; items: Array<{ label: string; value: string }> }>>([]);
+  const [dateFrom, setDateFrom] = useState(() => new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10));
+  const [dateTo, setDateTo] = useState(() => new Date().toISOString().slice(0, 10));
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [cooperativeFilter, setCooperativeFilter] = useState('all');
+
+  const reports: Array<{ key: LoanReportKey; name: string; description: string }> = [
+    { key: 'applications', name: 'Loan Applications Report', description: 'All loan applications with status' },
+    { key: 'disbursements', name: 'Disbursement Report', description: 'All loan disbursements by period' },
+    { key: 'repayment-schedule', name: 'Repayment Schedule', description: 'Upcoming and overdue repayments' },
+    { key: 'cooperative-statement', name: 'Cooperative Statement', description: 'Loans summary by cooperative' },
+    { key: 'loan-aging', name: 'Loan Aging Report', description: 'Outstanding loans by age' },
+    { key: 'defaulters', name: 'Defaulters Report', description: 'Staff with overdue repayments' },
   ];
 
+  const applicationStatuses = Array.from(new Set(applications.map((a) => a.status)));
+  const disbursementStatuses = Array.from(new Set(disbursements.map((d) => d.status)));
+
+  const getDateRange = () => {
+    const start = new Date(dateFrom);
+    const end = new Date(dateTo);
+    end.setHours(23, 59, 59, 999);
+    return { start, end };
+  };
+
+  const inRange = (value?: string) => {
+    if (!value) return false;
+    const { start, end } = getDateRange();
+    const date = new Date(value);
+    return date >= start && date <= end;
+  };
+
+  const monthDiff = (from: string, to: string) => {
+    const [fromYear, fromMonth] = from.split('-').map(Number);
+    const [toYear, toMonth] = to.split('-').map(Number);
+    return (toYear - fromYear) * 12 + (toMonth - fromMonth);
+  };
+
+  const exportCSV = () => {
+    if (!selectedReport || reportRows.length === 0 || reportColumns.length === 0) {
+      showToast.warning('No data to export');
+      return;
+    }
+    const headers = reportColumns.map((c) => c.label);
+    const lines = [headers.join(',')];
+    reportRows.forEach((row) => {
+      const line = reportColumns
+        .map((col) => {
+          const value = row[col.key];
+          const text = value === undefined || value === null ? '' : String(value);
+          return `"${text.replace(/"/g, '""')}"`;
+        })
+        .join(',');
+      lines.push(line);
+    });
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    const filename = `${selectedReport.replace(/[^a-z0-9]+/gi, '_').toLowerCase()}_report_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast.success('Report exported', filename);
+  };
+
+  const buildReportView = (
+    key: LoanReportKey,
+    apps: LoanApplication[],
+    disb: LoanDisbursement[],
+    coops: Cooperative[]
+  ) => {
+    const currentMonth = new Date().toISOString().slice(0, 7);
+
+    if (key === 'applications') {
+      const filtered = apps.filter((app) => {
+        const statusMatch = statusFilter === 'all' || app.status === statusFilter;
+        const dateValue = app.submitted_at || app.created_at;
+        return statusMatch && inRange(dateValue);
+      });
+      const totalRequested = filtered.reduce((sum, app) => sum + (app.amount_requested || 0), 0);
+      const byStatus = filtered.reduce((acc: Record<string, number>, app) => {
+        acc[app.status] = (acc[app.status] || 0) + 1;
+        return acc;
+      }, {});
+      const columns: ReportColumn[] = [
+        { key: 'application_number', label: 'Application #' },
+        { key: 'staff_name', label: 'Staff Name' },
+        { key: 'staff_number', label: 'Staff Number' },
+        { key: 'loan_type_name', label: 'Loan Type' },
+        { key: 'amount_requested', label: 'Amount Requested', align: 'right' },
+        { key: 'tenure_months', label: 'Tenure (Months)', align: 'right' },
+        { key: 'status', label: 'Status' },
+        { key: 'created_at', label: 'Submitted' },
+      ];
+      const rows = filtered.map((app) => ({
+        application_number: app.application_number,
+        staff_name: app.staff_name,
+        staff_number: app.staff_number,
+        loan_type_name: app.loan_type_name,
+        amount_requested: formatCurrency(app.amount_requested),
+        tenure_months: app.tenure_months,
+        status: app.status.replace('_', ' '),
+        created_at: new Date(app.submitted_at || app.created_at).toLocaleDateString(),
+      }));
+      const summary = [
+        { label: 'Total Applications', value: filtered.length.toString() },
+        { label: 'Total Requested', value: formatCurrency(totalRequested) },
+        { label: 'Approved', value: String(byStatus.approved || 0) },
+        { label: 'Pending', value: String((byStatus.pending || 0) + (byStatus.guarantor_pending || 0) + (byStatus.under_review || 0)) },
+      ];
+      const breakdown = [
+        {
+          title: 'By Status',
+          items: Object.entries(byStatus).map(([label, value]) => ({
+            label: label.replace('_', ' '),
+            value: String(value),
+          })),
+        },
+      ];
+      return { rows, columns, summary, breakdown };
+    }
+
+    if (key === 'disbursements') {
+      const filtered = disb.filter((d) => {
+        const statusMatch = statusFilter === 'all' || d.status === statusFilter;
+        return statusMatch && inRange(d.disbursement_date);
+      });
+      const totalDisbursed = filtered.reduce((sum, d) => sum + (d.principal_amount || 0), 0);
+      const totalRepaid = filtered.reduce((sum, d) => sum + (d.total_repaid || 0), 0);
+      const totalOutstanding = filtered.reduce((sum, d) => sum + (d.balance_outstanding || 0), 0);
+      const columns: ReportColumn[] = [
+        { key: 'disbursement_number', label: 'Disbursement #' },
+        { key: 'staff_name', label: 'Staff Name' },
+        { key: 'staff_number', label: 'Staff Number' },
+        { key: 'loan_type_name', label: 'Loan Type' },
+        { key: 'principal_amount', label: 'Disbursed', align: 'right' },
+        { key: 'total_repaid', label: 'Repaid', align: 'right' },
+        { key: 'balance_outstanding', label: 'Outstanding', align: 'right' },
+        { key: 'status', label: 'Status' },
+        { key: 'disbursement_date', label: 'Date' },
+      ];
+      const rows = filtered.map((d) => ({
+        disbursement_number: d.disbursement_number,
+        staff_name: d.staff_name,
+        staff_number: d.staff_number,
+        loan_type_name: d.loan_type_name,
+        principal_amount: formatCurrency(d.principal_amount),
+        total_repaid: formatCurrency(d.total_repaid),
+        balance_outstanding: formatCurrency(d.balance_outstanding),
+        status: d.status.replace('_', ' '),
+        disbursement_date: new Date(d.disbursement_date).toLocaleDateString(),
+      }));
+      const summary = [
+        { label: 'Total Disbursements', value: filtered.length.toString() },
+        { label: 'Total Disbursed', value: formatCurrency(totalDisbursed) },
+        { label: 'Total Repaid', value: formatCurrency(totalRepaid) },
+        { label: 'Outstanding', value: formatCurrency(totalOutstanding) },
+      ];
+      return { rows, columns, summary, breakdown: [] };
+    }
+
+    if (key === 'repayment-schedule') {
+      const scheduleStatus = (d: LoanDisbursement) => {
+        if (d.status === 'completed') return 'completed';
+        if (currentMonth > d.end_deduction_month && d.balance_outstanding > 0) return 'overdue';
+        return 'active';
+      };
+      const filtered = disb.filter((d) => inRange(d.disbursement_date));
+      const scoped = filtered.filter((d) => statusFilter === 'all' || scheduleStatus(d) === statusFilter);
+      const activeCount = filtered.filter((d) => scheduleStatus(d) === 'active').length;
+      const overdueCount = filtered.filter((d) => scheduleStatus(d) === 'overdue').length;
+      const completedCount = filtered.filter((d) => scheduleStatus(d) === 'completed').length;
+      const totalMonthlyDue = filtered
+        .filter((d) => scheduleStatus(d) === 'active')
+        .reduce((sum, d) => sum + (d.monthly_deduction || 0), 0);
+      const overdueOutstanding = filtered
+        .filter((d) => scheduleStatus(d) === 'overdue')
+        .reduce((sum, d) => sum + (d.balance_outstanding || 0), 0);
+      const columns: ReportColumn[] = [
+        { key: 'staff_name', label: 'Staff Name' },
+        { key: 'staff_number', label: 'Staff Number' },
+        { key: 'loan_type_name', label: 'Loan Type' },
+        { key: 'monthly_deduction', label: 'Monthly Deduction', align: 'right' },
+        { key: 'start_deduction_month', label: 'Start Month' },
+        { key: 'end_deduction_month', label: 'End Month' },
+        { key: 'balance_outstanding', label: 'Outstanding', align: 'right' },
+        { key: 'schedule_status', label: 'Schedule Status' },
+      ];
+      const rows = scoped.map((d) => ({
+        staff_name: d.staff_name,
+        staff_number: d.staff_number,
+        loan_type_name: d.loan_type_name,
+        monthly_deduction: formatCurrency(d.monthly_deduction),
+        start_deduction_month: d.start_deduction_month,
+        end_deduction_month: d.end_deduction_month,
+        balance_outstanding: formatCurrency(d.balance_outstanding),
+        schedule_status: scheduleStatus(d),
+      }));
+      const summary = [
+        { label: 'Active Loans', value: activeCount.toString() },
+        { label: 'Overdue Loans', value: overdueCount.toString() },
+        { label: 'Completed Loans', value: completedCount.toString() },
+        { label: 'Monthly Due', value: formatCurrency(totalMonthlyDue) },
+        { label: 'Overdue Outstanding', value: formatCurrency(overdueOutstanding) },
+      ];
+      return { rows, columns, summary, breakdown: [] };
+    }
+
+    if (key === 'cooperative-statement') {
+      const coopNameById = coops.reduce((acc: Record<string, string>, coop) => {
+        acc[coop.id] = coop.name;
+        return acc;
+      }, {});
+      const filtered = disb.filter((d) => d.cooperative_id && inRange(d.disbursement_date));
+      const scoped = filtered.filter((d) => cooperativeFilter === 'all' || d.cooperative_id === cooperativeFilter);
+      const grouped = scoped.reduce((acc: Record<string, any>, d) => {
+        const keyValue = d.cooperative_id || 'unknown';
+        const label = d.cooperative_name || coopNameById[keyValue] || 'Unknown Cooperative';
+        if (!acc[keyValue]) {
+          acc[keyValue] = {
+            cooperative_name: label,
+            total_loans: 0,
+            total_disbursed: 0,
+            total_repaid: 0,
+            total_outstanding: 0,
+          };
+        }
+        acc[keyValue].total_loans += 1;
+        acc[keyValue].total_disbursed += d.principal_amount || 0;
+        acc[keyValue].total_repaid += d.total_repaid || 0;
+        acc[keyValue].total_outstanding += d.balance_outstanding || 0;
+        return acc;
+      }, {});
+      const rows = Object.values(grouped).map((g: any) => ({
+        cooperative_name: g.cooperative_name,
+        total_loans: g.total_loans,
+        total_disbursed: formatCurrency(g.total_disbursed),
+        total_repaid: formatCurrency(g.total_repaid),
+        total_outstanding: formatCurrency(g.total_outstanding),
+      }));
+      const columns: ReportColumn[] = [
+        { key: 'cooperative_name', label: 'Cooperative' },
+        { key: 'total_loans', label: 'Total Loans', align: 'right' },
+        { key: 'total_disbursed', label: 'Disbursed', align: 'right' },
+        { key: 'total_repaid', label: 'Repaid', align: 'right' },
+        { key: 'total_outstanding', label: 'Outstanding', align: 'right' },
+      ];
+      const totalLoans = rows.reduce((sum, r: any) => sum + Number(r.total_loans || 0), 0);
+      const totalOutstanding = scoped.reduce((sum, d) => sum + (d.balance_outstanding || 0), 0);
+      const summary = [
+        { label: 'Cooperatives', value: rows.length.toString() },
+        { label: 'Total Loans', value: totalLoans.toString() },
+        { label: 'Outstanding', value: formatCurrency(totalOutstanding) },
+      ];
+      return { rows, columns, summary, breakdown: [] };
+    }
+
+    if (key === 'loan-aging') {
+      const agingLoans = disb.filter((d) => d.balance_outstanding > 0 && inRange(d.disbursement_date));
+      const today = new Date();
+      const buckets = agingLoans.reduce((acc: Record<string, { count: number; outstanding: number }>, d) => {
+        const disbursementDate = new Date(d.disbursement_date);
+        const months = (today.getFullYear() - disbursementDate.getFullYear()) * 12 + (today.getMonth() - disbursementDate.getMonth());
+        let bucket = '25+ months';
+        if (months <= 3) bucket = '0-3 months';
+        else if (months <= 6) bucket = '4-6 months';
+        else if (months <= 12) bucket = '7-12 months';
+        else if (months <= 24) bucket = '13-24 months';
+        if (!acc[bucket]) acc[bucket] = { count: 0, outstanding: 0 };
+        acc[bucket].count += 1;
+        acc[bucket].outstanding += d.balance_outstanding || 0;
+        return acc;
+      }, {});
+      const columns: ReportColumn[] = [
+        { key: 'staff_name', label: 'Staff Name' },
+        { key: 'staff_number', label: 'Staff Number' },
+        { key: 'loan_type_name', label: 'Loan Type' },
+        { key: 'disbursement_date', label: 'Disbursed' },
+        { key: 'months_since', label: 'Months Since', align: 'right' },
+        { key: 'balance_outstanding', label: 'Outstanding', align: 'right' },
+        { key: 'aging_bucket', label: 'Aging Bucket' },
+      ];
+      const rows = agingLoans.map((d) => {
+        const disbursementDate = new Date(d.disbursement_date);
+        const months = (today.getFullYear() - disbursementDate.getFullYear()) * 12 + (today.getMonth() - disbursementDate.getMonth());
+        let bucket = '25+ months';
+        if (months <= 3) bucket = '0-3 months';
+        else if (months <= 6) bucket = '4-6 months';
+        else if (months <= 12) bucket = '7-12 months';
+        else if (months <= 24) bucket = '13-24 months';
+        return {
+          staff_name: d.staff_name,
+          staff_number: d.staff_number,
+          loan_type_name: d.loan_type_name,
+          disbursement_date: new Date(d.disbursement_date).toLocaleDateString(),
+          months_since: months,
+          balance_outstanding: formatCurrency(d.balance_outstanding),
+          aging_bucket: bucket,
+        };
+      });
+      const totalOutstanding = agingLoans.reduce((sum, d) => sum + (d.balance_outstanding || 0), 0);
+      const summary = [
+        { label: 'Outstanding Loans', value: agingLoans.length.toString() },
+        { label: 'Outstanding Balance', value: formatCurrency(totalOutstanding) },
+      ];
+      const breakdown = [
+        {
+          title: 'Aging Buckets',
+          items: Object.entries(buckets).map(([label, value]) => ({
+            label,
+            value: `${value.count} loans • ${formatCurrency(value.outstanding)}`,
+          })),
+        },
+      ];
+      return { rows, columns, summary, breakdown };
+    }
+
+    const overdue = disb.filter(
+      (d) => d.balance_outstanding > 0 && currentMonth > d.end_deduction_month && inRange(d.disbursement_date)
+    );
+    const columns: ReportColumn[] = [
+      { key: 'staff_name', label: 'Staff Name' },
+      { key: 'staff_number', label: 'Staff Number' },
+      { key: 'loan_type_name', label: 'Loan Type' },
+      { key: 'end_deduction_month', label: 'End Month' },
+      { key: 'months_overdue', label: 'Months Overdue', align: 'right' },
+      { key: 'balance_outstanding', label: 'Outstanding', align: 'right' },
+    ];
+    const rows = overdue.map((d) => ({
+      staff_name: d.staff_name,
+      staff_number: d.staff_number,
+      loan_type_name: d.loan_type_name,
+      end_deduction_month: d.end_deduction_month,
+      months_overdue: Math.max(0, monthDiff(d.end_deduction_month, currentMonth)),
+      balance_outstanding: formatCurrency(d.balance_outstanding),
+    }));
+    const totalOutstanding = overdue.reduce((sum, d) => sum + (d.balance_outstanding || 0), 0);
+    const summary = [
+      { label: 'Defaulters', value: overdue.length.toString() },
+      { label: 'Outstanding Balance', value: formatCurrency(totalOutstanding) },
+    ];
+    return { rows, columns, summary, breakdown: [] };
+  };
+
+  const updateReport = async (key: LoanReportKey, force = false) => {
+    try {
+      setLoading(true);
+      let apps = applications;
+      let disb = disbursements;
+      let coops = cooperatives;
+      if (force || applications.length === 0 || disbursements.length === 0 || cooperatives.length === 0) {
+        const [appsData, disbData, coopsData] = await Promise.all([
+          loanApplicationAPI.getAll(),
+          disbursementAPI.getAll(),
+          cooperativeAPI.getAll(),
+        ]);
+        apps = appsData;
+        disb = disbData;
+        coops = coopsData;
+        setApplications(appsData);
+        setDisbursements(disbData);
+        setCooperatives(coopsData);
+      }
+      const report = buildReportView(key, apps, disb, coops);
+      setReportRows(report.rows);
+      setReportColumns(report.columns);
+      setReportSummary(report.summary);
+      setReportBreakdown(report.breakdown);
+    } catch (error: any) {
+      showToast.error('Failed to generate report', error?.message || 'Please try again');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!selectedReport) return;
+    updateReport(selectedReport);
+  }, [selectedReport, dateFrom, dateTo, statusFilter, cooperativeFilter]);
+
+  useEffect(() => {
+    if (!selectedReport) return;
+    setStatusFilter('all');
+    setCooperativeFilter('all');
+  }, [selectedReport]);
+
+  const statusOptions = selectedReport === 'applications'
+    ? applicationStatuses
+    : selectedReport === 'disbursements'
+      ? disbursementStatuses
+      : selectedReport === 'repayment-schedule'
+        ? ['active', 'overdue', 'completed']
+        : [];
+
+  const showStatusFilter = selectedReport === 'applications' || selectedReport === 'disbursements' || selectedReport === 'repayment-schedule';
+  const showCooperativeFilter = selectedReport === 'cooperative-statement';
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-      {reports.map((report, index) => (
-        <div
-          key={index}
-          className="p-6 rounded-lg border border-border bg-card"
-        >
-          <FileText className="w-8 h-8 text-primary mb-4" />
-          <h3 className="mb-2">{report.name}</h3>
-          <p className="text-sm mb-4 text-muted-foreground">{report.description}</p>
-          <button className="flex items-center gap-2 text-primary hover:text-primary/80 transition-colors">
-            <Download className="w-4 h-4" />
-            Generate Report
-          </button>
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {reports.map((report) => (
+          <div key={report.key} className="p-6 rounded-lg border border-border bg-card">
+            <FileText className="w-8 h-8 text-primary mb-4" />
+            <h3 className="mb-2">{report.name}</h3>
+            <p className="text-sm mb-4 text-muted-foreground">{report.description}</p>
+            <button
+              onClick={() => setSelectedReport(report.key)}
+              className="flex items-center gap-2 text-primary hover:text-primary/80 transition-colors"
+            >
+              <Download className="w-4 h-4" />
+              Generate Report
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {selectedReport && (
+        <div className="rounded-lg border border-border bg-card overflow-hidden">
+          <div className="p-4 border-b border-border flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h3 className="text-lg text-card-foreground">
+                {reports.find((r) => r.key === selectedReport)?.name}
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                {reports.find((r) => r.key === selectedReport)?.description}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => updateReport(selectedReport, true)}
+                className="px-3 py-2 rounded border border-border hover:bg-accent text-sm"
+              >
+                Refresh
+              </button>
+              <button
+                onClick={exportCSV}
+                className="px-3 py-2 rounded bg-primary text-primary-foreground text-sm hover:bg-primary/90"
+              >
+                Export CSV
+              </button>
+            </div>
+          </div>
+
+          <div className="p-4 border-b border-border grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1">From</label>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="w-full px-3 py-2 rounded border border-border bg-input-background text-foreground"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1">To</label>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="w-full px-3 py-2 rounded border border-border bg-input-background text-foreground"
+              />
+            </div>
+            {showStatusFilter && (
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Status</label>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="w-full px-3 py-2 rounded border border-border bg-input-background text-foreground"
+                >
+                  <option value="all">All</option>
+                  {statusOptions.map((status) => (
+                    <option key={status} value={status}>
+                      {status.replace('_', ' ')}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {showCooperativeFilter && (
+              <div className="md:col-span-3">
+                <label className="block text-xs text-muted-foreground mb-1">Cooperative</label>
+                <select
+                  value={cooperativeFilter}
+                  onChange={(e) => setCooperativeFilter(e.target.value)}
+                  className="w-full px-3 py-2 rounded border border-border bg-input-background text-foreground"
+                >
+                  <option value="all">All Cooperatives</option>
+                  {cooperatives.map((coop) => (
+                    <option key={coop.id} value={coop.id}>
+                      {coop.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+
+          {loading ? (
+            <div className="p-6 text-center text-muted-foreground">Generating report...</div>
+          ) : (
+            <div className="p-4 space-y-6">
+              {reportSummary.length > 0 && (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {reportSummary.map((item) => (
+                    <div key={item.label} className="p-4 rounded-lg border border-border bg-muted/20">
+                      <p className="text-xs text-muted-foreground mb-1">{item.label}</p>
+                      <p className="text-lg text-card-foreground">{item.value}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {reportBreakdown.length > 0 && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {reportBreakdown.map((group) => (
+                    <div key={group.title} className="p-4 rounded-lg border border-border bg-card">
+                      <h4 className="text-sm text-card-foreground mb-3">{group.title}</h4>
+                      <div className="space-y-2 text-sm">
+                        {group.items.map((item) => (
+                          <div key={item.label} className="flex items-center justify-between text-muted-foreground">
+                            <span>{item.label}</span>
+                            <span className="text-card-foreground">{item.value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="overflow-x-auto border border-border rounded-lg">
+                <table className="w-full">
+                  <thead className="bg-muted">
+                    <tr>
+                      {reportColumns.map((column) => (
+                        <th
+                          key={column.key}
+                          className={`px-4 py-3 text-xs uppercase tracking-wider text-muted-foreground ${
+                            column.align === 'right' ? 'text-right' : 'text-left'
+                          }`}
+                        >
+                          {column.label}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {reportRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={reportColumns.length} className="px-4 py-6 text-center text-muted-foreground">
+                          No records found for this period
+                        </td>
+                      </tr>
+                    ) : (
+                      reportRows.slice(0, 100).map((row, index) => (
+                        <tr key={index} className="hover:bg-accent transition-colors">
+                          {reportColumns.map((column) => (
+                            <td
+                              key={column.key}
+                              className={`px-4 py-3 text-sm text-card-foreground ${
+                                column.align === 'right' ? 'text-right' : 'text-left'
+                              }`}
+                            >
+                              {row[column.key]}
+                            </td>
+                          ))}
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {reportRows.length > 100 && (
+                <div className="text-sm text-muted-foreground text-center">
+                  Showing 100 of {reportRows.length} records
+                </div>
+              )}
+            </div>
+          )}
         </div>
-      ))}
+      )}
     </div>
   );
 }

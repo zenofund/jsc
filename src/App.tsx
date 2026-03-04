@@ -40,6 +40,7 @@ import { ChangePasswordPage } from './pages/ChangePasswordPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import StaffAdjustmentApprovalPage from './pages/StaffAdjustmentApprovalPage';
 import StaffRequestsAdminPage from './pages/StaffRequestsAdminPage';
+import { settingsAPI } from './lib/api-client';
 
 function AppContent() {
   const { user, isLoading } = useAuth();
@@ -76,6 +77,35 @@ function AppContent() {
       setCurrentView(view as any);
     };
   }, []);
+
+  useEffect(() => {
+    const setFavicon = (href: string) => {
+      let link = document.querySelector("link[rel='icon']") as HTMLLinkElement | null;
+      if (!link) {
+        link = document.createElement('link');
+        link.rel = 'icon';
+        document.head.appendChild(link);
+      }
+      link.href = href;
+    };
+
+    const applyFavicon = async () => {
+      try {
+        const settings = await settingsAPI.getSettings({
+          headers: { 'X-Skip-Auth-Handler': 'true' }
+        });
+        if (settings?.organization_logo) {
+          setFavicon(settings.organization_logo);
+        } else {
+          setFavicon('/favicon.svg');
+        }
+      } catch {
+        setFavicon('/favicon.svg');
+      }
+    };
+
+    applyFavicon();
+  }, [user]);
 
   if (isLoading) {
     return (

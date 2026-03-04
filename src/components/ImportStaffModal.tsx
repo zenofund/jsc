@@ -82,7 +82,7 @@ export function ImportStaffModal({ isOpen, onClose, onSuccess }: ImportStaffModa
         const cleanHeader = header.replace(/[^a-z0-9_]/g, '');
         const key = headerMap[header] || headerMap[cleanHeader] || cleanHeader;
         
-        let value = values[index] ? values[index].trim().replace(/^"|"$/g, '') : '';
+        const value = values[index] ? values[index].trim().replace(/^"|"$/g, '') : '';
         obj[key] = value;
       });
       return obj;

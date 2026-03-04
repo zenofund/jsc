@@ -39,20 +39,25 @@ async function makeApiRequest(endpoint: string, options: RequestInit = {}): Prom
     if (!response.ok) {
       // Handle 401 Unauthorized - Session expired
       if (response.status === 401) {
-        // Clear all auth data
-        localStorage.removeItem('jsc_auth_token');
-        localStorage.removeItem('jsc_current_user');
-        localStorage.removeItem('jsc_user');
+        // Allow skipping global handler for specific requests (e.g. background checks)
+        const skipHandler = (options.headers as any)?.['X-Skip-Auth-Handler'];
         
-        // Redirect to login if not already on a public route
-        const publicRoutes = ['/login', '/forgot-password', '/reset-password'];
-        const isPublicRoute = publicRoutes.some(route => window.location.pathname.includes(route));
-        
-        if (!isPublicRoute) {
-          window.location.reload();
+        if (!skipHandler) {
+          // Clear all auth data
+          localStorage.removeItem('jsc_auth_token');
+          localStorage.removeItem('jsc_current_user');
+          localStorage.removeItem('jsc_user');
+          
+          // Redirect to login if not already on a public route
+          const publicRoutes = ['/login', '/forgot-password', '/reset-password'];
+          const isPublicRoute = publicRoutes.some(route => window.location.pathname.includes(route));
+          
+          if (!isPublicRoute) {
+            window.location.reload();
+          }
+          
+          throw new Error('Session expired. Please login again.');
         }
-        
-        throw new Error('Session expired. Please login again.');
       }
 
       const rawText = await response.text().catch(() => '');
@@ -909,9 +914,10 @@ export const payslipAPI = {
 // ============================================
 
 export const settingsAPI = {
-  async getSettings() {
+  async getSettings(options?: RequestInit) {
     return makeApiRequest('/settings', {
       method: 'GET',
+      ...options,
     });
   },
 

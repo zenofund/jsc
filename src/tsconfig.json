@@ -20,6 +20,10 @@
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
 
+    /* Types */
+    "typeRoots": ["./node_modules/@types"],
+    "types": ["react", "react-dom"],
+
     /* Path Aliases */
     "baseUrl": ".",
     "paths": {
@@ -27,5 +31,5 @@
     }
   },
   "include": ["**/*.ts", "**/*.tsx"],
-  "exclude": ["node_modules", "backend", "dist", "**/*.spec.ts"]
+  "exclude": ["node_modules", "backend", "dist", "**/*.spec.ts", "**/*.test.ts", "**/__tests__/**"]
 }

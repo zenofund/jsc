@@ -114,7 +114,6 @@ export function NotificationDropdown({ onNavigate }: NotificationDropdownProps) 
       clearInterval(interval);
       if (socket) socket.disconnect();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   const enablePushNotifications = async () => {
@@ -490,7 +489,7 @@ export function NotificationDropdown({ onNavigate }: NotificationDropdownProps) 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
   const base64 = (base64String + padding)
-    .replace(/\-/g, '+')
+    .replace(/-/g, '+')
     .replace(/_/g, '/');
 
   const rawData = window.atob(base64);
