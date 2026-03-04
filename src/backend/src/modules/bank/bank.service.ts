@@ -79,6 +79,7 @@ export class BankService {
   
   async onModuleInit() {
     await this.ensurePaymentTransactionsSchema();
+    await this.ensurePerformanceIndexes();
   }
   
   private async ensurePaymentTransactionsSchema() {
@@ -97,6 +98,37 @@ export class BankService {
       `);
     } catch (error: any) {
       this.logger.warn(`ensurePaymentTransactionsSchema failed: ${error?.message}`);
+    }
+  }
+
+  private async ensurePerformanceIndexes() {
+    try {
+      await this.databaseService.query(`
+        CREATE INDEX IF NOT EXISTS idx_payment_transactions_batch_status
+        ON payment_transactions (payment_batch_id, status)
+      `);
+      await this.databaseService.query(`
+        CREATE INDEX IF NOT EXISTS idx_payment_transactions_batch_staff
+        ON payment_transactions (payment_batch_id, staff_number)
+      `);
+      await this.databaseService.query(`
+        CREATE INDEX IF NOT EXISTS idx_payment_batches_status_created
+        ON payment_batches (status, created_at DESC)
+      `);
+      await this.databaseService.query(`
+        CREATE INDEX IF NOT EXISTS idx_payment_batches_payroll_batch
+        ON payment_batches (payroll_batch_id)
+      `);
+      await this.databaseService.query(`
+        CREATE INDEX IF NOT EXISTS idx_payment_reconciliations_status
+        ON payment_reconciliations (status)
+      `);
+      await this.databaseService.query(`
+        CREATE INDEX IF NOT EXISTS idx_bank_statement_lines_statement_matched
+        ON bank_statement_lines (bank_statement_id, matched, credit)
+      `);
+    } catch (error: any) {
+      this.logger.warn(`ensurePerformanceIndexes failed: ${error?.message}`);
     }
   }
 
@@ -287,40 +319,42 @@ export class BankService {
       ],
     );
 
-    for (const line of lines) {
-      const staff = await this.databaseService.queryOne(
-        'SELECT * FROM staff WHERE id = $1',
-        [line.staff_id],
-      );
-
-      if (!staff) continue;
-
-      // Use account name if available, otherwise construct from name fields
-      const beneficiaryName = staff.account_name || `${staff.first_name} ${staff.last_name}`;
-      
-      // Check for valid bank details
-      const hasBankDetails = staff.bank_name && staff.account_number && staff.account_number !== 'N/A';
-      const status = hasBankDetails ? 'pending' : 'failed';
-      const failureReason = hasBankDetails ? null : 'Missing bank details';
-
-      await this.databaseService.query(
-        `INSERT INTO payment_transactions (
-          payment_batch_id, staff_id, staff_number, staff_name,
-          bank_name, account_number, amount, status, bank_response_message
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [
-          paymentBatch.id,
-          line.staff_id,
-          staff.staff_number,
-          beneficiaryName,
-          staff.bank_name || 'N/A',
-          staff.account_number || 'N/A',
-          (typeof line.net_pay === 'number' ? line.net_pay : parseFloat(line.net_pay || '0')) || 0,
-          status,
-          failureReason,
-        ],
-      );
-    }
+    await this.databaseService.query(
+      `INSERT INTO payment_transactions (
+        payment_batch_id, staff_id, staff_number, staff_name,
+        bank_name, account_number, amount, status, bank_response_message
+      )
+      SELECT
+        $1,
+        pl.staff_id,
+        s.staff_number,
+        COALESCE(NULLIF(TRIM(s.account_name), ''), TRIM(CONCAT(COALESCE(s.first_name, ''), ' ', COALESCE(s.last_name, '')))),
+        COALESCE(NULLIF(TRIM(s.bank_name), ''), 'N/A'),
+        COALESCE(NULLIF(TRIM(s.account_number), ''), 'N/A'),
+        COALESCE(pl.net_pay::numeric, 0),
+        CASE
+          WHEN s.bank_name IS NOT NULL
+           AND TRIM(s.bank_name) <> ''
+           AND s.account_number IS NOT NULL
+           AND TRIM(s.account_number) <> ''
+           AND s.account_number <> 'N/A'
+          THEN 'pending'
+          ELSE 'failed'
+        END,
+        CASE
+          WHEN s.bank_name IS NOT NULL
+           AND TRIM(s.bank_name) <> ''
+           AND s.account_number IS NOT NULL
+           AND TRIM(s.account_number) <> ''
+           AND s.account_number <> 'N/A'
+          THEN NULL
+          ELSE 'Missing bank details'
+        END
+      FROM payroll_lines pl
+      INNER JOIN staff s ON s.id = pl.staff_id
+      WHERE pl.payroll_batch_id = $2`,
+      [paymentBatch.id, dto.payrollBatchId],
+    );
 
     await this.databaseService.query(
       `UPDATE payroll_batches 
@@ -485,59 +519,45 @@ export class BankService {
     if (!['approved', 'processing'].includes(batch.status)) {
       throw new BadRequestException('Batch must be approved or processing before execution');
     }
-    
-    // Auto-approve legacy batches or if approval info is missing but status is approved
-    if (batch.status === 'approved' && (!batch.approved_by || !batch.approved_at)) {
-        await this.databaseService.query(
-            `UPDATE payment_batches 
-             SET approved_by = $1, approved_by_name = 'System Auto-Approve', approved_at = NOW()
-             WHERE id = $2`,
-            [userId, id]
+    await this.databaseService.transaction(async (client) => {
+      if (batch.status === 'approved' && (!batch.approved_by || !batch.approved_at)) {
+        await client.query(
+          `UPDATE payment_batches 
+           SET approved_by = $1, approved_by_name = 'System Auto-Approve', approved_at = NOW()
+           WHERE id = $2`,
+          [userId, id],
         );
-        // Refresh batch data
-        // batch.approved_by = userId;
-        // batch.approved_at = new Date();
-    } else if (!batch.approved_by || !batch.approved_at) {
-       // Only throw if it's NOT approved (e.g. processing without approval? unlikely given status check)
-       // But to be safe and strictly follow "Approval details are required" rule if we want to enforce it for non-auto-approved
-       // For now, let's allow execution if it's already in a valid status, assuming the status itself is the gatekeeper.
-       // The previous "if" block handles the fix for missing data.
-    }
+      }
 
-    // Simulate payment execution
-    const transactions = await this.getPaymentBatchTransactions(id);
-
-    for (const txn of transactions) {
-      // In production, this would integrate with bank API
-      await this.databaseService.query(
+      await client.query(
         `UPDATE payment_transactions 
          SET status = 'completed', payment_date = NOW(), updated_at = NOW()
+         WHERE payment_batch_id = $1
+           AND status IN ('pending', 'processing')`,
+        [id],
+      );
+
+      await client.query(
+        `UPDATE payment_batches 
+         SET status = 'completed', completed_at = NOW(), updated_at = NOW()
          WHERE id = $1`,
-        [txn.id],
+        [id],
       );
-    }
 
-    await this.databaseService.query(
-      `UPDATE payment_batches 
-       SET status = 'completed', completed_at = NOW(), updated_at = NOW()
-       WHERE id = $1`,
-      [id],
-    );
-
-    // Update associated payroll batch
-    if (batch.payroll_batch_id) {
-      await this.databaseService.query(
-        `UPDATE payroll_batches 
-         SET status = 'paid',
-             payment_status = 'completed',
-             payment_reference = $1,
-             payment_executed_by = $2,
-             payment_executed_at = NOW(),
-             updated_at = NOW()
-         WHERE id = $3`,
-        [reference, userId, batch.payroll_batch_id],
-      );
-    }
+      if (batch.payroll_batch_id) {
+        await client.query(
+          `UPDATE payroll_batches 
+           SET status = 'paid',
+               payment_status = 'completed',
+               payment_reference = $1,
+               payment_executed_by = $2,
+               payment_executed_at = NOW(),
+               updated_at = NOW()
+           WHERE id = $3`,
+          [reference, userId, batch.payroll_batch_id],
+        );
+      }
+    });
 
     this.logger.log(`Payment batch ${batch.batch_number} executed`);
     return { message: 'Payment batch executed successfully' };
@@ -738,36 +758,66 @@ export class BankService {
 
   async autoMatchTransactions(id: string, userId: string) {
     const reconciliation = await this.findOneReconciliation(id);
+    const result = await this.databaseService.queryOne<{ match_count: string }>(
+      `WITH eligible_transactions AS (
+         SELECT 
+           pt.id,
+           ROUND(pt.amount::numeric, 2) AS rounded_amount,
+           ROW_NUMBER() OVER (
+             PARTITION BY ROUND(pt.amount::numeric, 2) 
+             ORDER BY pt.created_at, pt.id
+           ) AS rn
+         FROM payment_transactions pt
+         WHERE pt.payment_batch_id = $1
+           AND COALESCE(pt.reconciled, false) = false
+       ),
+       eligible_lines AS (
+         SELECT 
+           bsl.id,
+           ROUND(bsl.credit::numeric, 2) AS rounded_amount,
+           ROW_NUMBER() OVER (
+             PARTITION BY ROUND(bsl.credit::numeric, 2) 
+             ORDER BY bsl.transaction_date, bsl.id
+           ) AS rn
+         FROM bank_statement_lines bsl
+         WHERE bsl.bank_statement_id = $2
+           AND COALESCE(bsl.matched, false) = false
+           AND COALESCE(bsl.credit, 0) > 0
+       ),
+       matches AS (
+         SELECT 
+           et.id AS transaction_id,
+           el.id AS statement_line_id
+         FROM eligible_transactions et
+         INNER JOIN eligible_lines el
+           ON et.rounded_amount = el.rounded_amount
+          AND et.rn = el.rn
+       ),
+       updated_lines AS (
+         UPDATE bank_statement_lines bsl
+         SET 
+           matched = true,
+           matched_transaction_id = m.transaction_id,
+           match_type = 'automatic',
+           matched_at = NOW()
+         FROM matches m
+         WHERE bsl.id = m.statement_line_id
+         RETURNING bsl.id
+       ),
+       updated_transactions AS (
+         UPDATE payment_transactions pt
+         SET 
+           reconciled = true,
+           reconciliation_date = NOW()
+         FROM matches m
+         WHERE pt.id = m.transaction_id
+         RETURNING pt.id
+       )
+       SELECT COUNT(*)::text AS match_count FROM matches`,
+      [reconciliation.payment_batch_id, reconciliation.bank_statement_id],
+    );
 
-    const transactions = await this.getPaymentBatchTransactions(reconciliation.payment_batch_id);
-    const statementLines = await this.getStatementLines(reconciliation.bank_statement_id);
-
-    let matchCount = 0;
-
-    for (const txn of transactions) {
-      for (const line of statementLines) {
-        if (!line.matched && Math.abs(line.credit - txn.amount) < 0.01) {
-          // Match found
-          await this.databaseService.query(
-            `UPDATE bank_statement_lines 
-             SET matched = true, matched_transaction_id = $1, 
-                 match_type = 'automatic', matched_at = NOW()
-             WHERE id = $2`,
-            [txn.id, line.id],
-          );
-
-          await this.databaseService.query(
-            `UPDATE payment_transactions 
-             SET reconciled = true, reconciliation_date = NOW()
-             WHERE id = $1`,
-            [txn.id],
-          );
-
-          matchCount++;
-          break;
-        }
-      }
-    }
+    const matchCount = parseInt(result?.match_count || '0', 10);
 
     await this.databaseService.query(
       `UPDATE payment_reconciliations 
@@ -908,8 +958,10 @@ export class BankService {
         COUNT(CASE WHEN status = 'processing' THEN 1 END) as processing_batches,
         COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_batches,
         COALESCE(SUM(CASE WHEN status IN ('completed', 'processing') THEN total_amount ELSE 0 END), 0) as total_amount_processed,
-        COUNT(CASE WHEN date_trunc('month', created_at) = date_trunc('month', CURRENT_DATE) THEN 1 END) as this_month_batches,
-        COALESCE(SUM(CASE WHEN date_trunc('month', created_at) = date_trunc('month', CURRENT_DATE) THEN total_amount ELSE 0 END), 0) as this_month_amount
+        COUNT(CASE WHEN created_at >= date_trunc('month', CURRENT_DATE) 
+                     AND created_at < (date_trunc('month', CURRENT_DATE) + interval '1 month') THEN 1 END) as this_month_batches,
+        COALESCE(SUM(CASE WHEN created_at >= date_trunc('month', CURRENT_DATE) 
+                           AND created_at < (date_trunc('month', CURRENT_DATE) + interval '1 month') THEN total_amount ELSE 0 END), 0) as this_month_amount
       FROM payment_batches
     `);
 
