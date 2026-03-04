@@ -57,7 +57,7 @@ export class BankController {
   }
 
   @Put('accounts/:id')
-  @Roles('admin', 'super_admin')
+  @Roles('admin', 'super_admin', 'payroll_manager')
   @ApiOperation({ summary: 'Update bank account' })
   updateBankAccount(
     @Param('id') id: string,
@@ -68,7 +68,7 @@ export class BankController {
   }
 
   @Delete('accounts/:id')
-  @Roles('admin', 'super_admin')
+  @Roles('admin', 'super_admin', 'payroll_manager')
   @ApiOperation({ summary: 'Delete bank account' })
   deleteBankAccount(@Param('id') id: string, @Request() req) {
     return this.bankService.deleteBankAccount(id, req.user.userId);

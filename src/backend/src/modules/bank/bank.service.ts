@@ -237,6 +237,25 @@ export class BankService {
   async deleteBankAccount(id: string, userId: string) {
     await this.findOneBankAccount(id);
 
+    const linkedBatchCount = await this.databaseService.queryOne(
+      'SELECT COUNT(*)::int AS count FROM payment_batches WHERE bank_account_id = $1',
+      [id],
+    );
+    const linkedStatementCount = await this.databaseService.queryOne(
+      'SELECT COUNT(*)::int AS count FROM bank_statements WHERE bank_account_id = $1',
+      [id],
+    );
+    const hasLinks = (linkedBatchCount?.count || 0) > 0 || (linkedStatementCount?.count || 0) > 0;
+
+    if (hasLinks) {
+      await this.databaseService.query(
+        `UPDATE bank_accounts SET is_active = FALSE, updated_at = NOW() WHERE id = $1`,
+        [id],
+      );
+      this.logger.log(`Bank account ${id} deactivated due to linked records`);
+      return { message: 'Bank account has linked records and was deactivated instead' };
+    }
+
     await this.databaseService.query('DELETE FROM bank_accounts WHERE id = $1', [id]);
     this.logger.log(`Bank account ${id} deleted`);
     return { message: 'Bank account deleted successfully' };
@@ -379,7 +398,7 @@ export class BankService {
 
   async findOnePaymentBatch(id: string) {
     const batch = await this.databaseService.queryOne(
-      `SELECT pb.*, pl.payroll_month AS payroll_month
+      `SELECT pb.*, pl.payroll_month AS payroll_month, pl.period_start AS period_start, pl.period_end AS period_end
        FROM payment_batches pb
        LEFT JOIN payroll_batches pl ON pb.payroll_batch_id = pl.id
        WHERE pb.id = $1`,
@@ -438,6 +457,28 @@ export class BankService {
     let content = '';
     let filename = '';
 
+    let paymentDate = '';
+    if (batch.period_end) {
+      paymentDate = new Date(batch.period_end).toISOString().slice(0, 10);
+    } else if (batch.payroll_month) {
+      const [year, month] = String(batch.payroll_month).split('-').map(Number);
+      if (!Number.isNaN(year) && !Number.isNaN(month)) {
+        paymentDate = new Date(year, month, 0).toISOString().slice(0, 10);
+      }
+    }
+    if (!paymentDate) {
+      paymentDate = new Date().toISOString().slice(0, 10);
+    }
+
+    let debitAccountNumber = '';
+    if (batch.bank_account_id) {
+      const bankAccount = await this.databaseService.queryOne(
+        'SELECT account_number FROM bank_accounts WHERE id = $1',
+        [batch.bank_account_id],
+      );
+      debitAccountNumber = bankAccount?.account_number || '';
+    }
+
     if (batch.file_format === 'nibss') {
       // NIBSS Format: SerialNumber,AccountNumber,BankCode,Amount,BeneficiaryName,Narration
       content = 'SerialNumber,AccountNumber,BankCode,Amount,BeneficiaryName,Narration\n';
@@ -455,7 +496,15 @@ export class BankService {
         content += `"${txn.staff_name}",${txn.account_number},${bankCode},${txn.amount},"Salary Payment ${batch.batch_number}"\n`;
       }
       filename = `REMITA_${batch.batch_number.replace(/\//g, '-')}.csv`;
-    } else if (batch.file_format === 'csv' || batch.file_format === 'custom_csv') {
+    } else if (batch.file_format === 'custom_csv') {
+      content = 'Transaction Reference Number,Beneficiary Name,Payment Amount,Payment Date,Beneficiary Code,Beneficiary Account Number,Bank Sort Code,Account Number to Debit\n';
+      for (const txn of transactions) {
+        const bankName = String(txn.bank_name || '').toLowerCase();
+        const bankCode = bankName.includes('zenith') ? '' : (this.BANK_SORT_CODES[bankName] || '');
+        content += `"${batch.batch_number}","${txn.staff_name}",${txn.amount},${paymentDate},${txn.staff_number || ''},${txn.account_number || ''},${bankCode},${debitAccountNumber}\n`;
+      }
+      filename = `CUSTOM_${batch.batch_number.replace(/\//g, '-')}.csv`;
+    } else if (batch.file_format === 'csv') {
       content = 'Account Number,Account Name,Bank Name,Amount,Narration\n';
       for (const txn of transactions) {
         content += `${txn.account_number},"${txn.staff_name}","${txn.bank_name}",${txn.amount},"Salary Payment ${batch.batch_number}"\n`;

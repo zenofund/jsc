@@ -77,6 +77,12 @@ export const bankAccountAPI = {
       body: JSON.stringify(data),
     });
   },
+
+  async delete(id: string): Promise<{ message?: string }> {
+    return makeApiRequest(`/bank/accounts/${id}`, {
+      method: 'DELETE',
+    });
+  },
 };
 
 // ==================== PAYMENT BATCH MANAGEMENT ====================

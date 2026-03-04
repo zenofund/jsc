@@ -89,6 +89,13 @@ export function BankPaymentsPage() {
     is_active: true,
     api_enabled: false,
   });
+  const [showEditBankAccountModal, setShowEditBankAccountModal] = useState(false);
+  const [editingBankAccount, setEditingBankAccount] = useState<BankAccount | null>(null);
+  const [editBankAccountForm, setEditBankAccountForm] = useState({
+    account_name: '',
+    is_active: true,
+  });
+  const canManageBankAccounts = ['admin', 'super_admin', 'payroll_manager'].includes(user?.role || '');
 
   useEffect(() => {
     loadData();
@@ -275,6 +282,54 @@ export function BankPaymentsPage() {
     }
   };
 
+  const openEditBankAccount = (account: BankAccount) => {
+    setEditingBankAccount(account);
+    setEditBankAccountForm({
+      account_name: account.account_name || '',
+      is_active: Boolean(account.is_active),
+    });
+    setShowEditBankAccountModal(true);
+  };
+
+  const handleUpdateBankAccount = async () => {
+    if (!editingBankAccount) return;
+    try {
+      setIsSubmitting(true);
+      await bankAccountAPI.update(editingBankAccount.id, {
+        accountName: editBankAccountForm.account_name,
+        isActive: editBankAccountForm.is_active,
+      } as any);
+      showToast('success', 'Bank account updated successfully');
+      setShowEditBankAccountModal(false);
+      setEditingBankAccount(null);
+      const accounts = await bankAccountAPI.getAll();
+      setBankAccounts(accounts);
+    } catch (error: any) {
+      showToast('error', error.message || 'Failed to update bank account');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteBankAccount = async (account: BankAccount) => {
+    const ok = await confirm({
+      title: 'Delete bank account?',
+      message: `Delete ${account.bank_name} - ${account.account_number}? This cannot be undone.`,
+    });
+    if (!ok) return;
+    try {
+      setIsSubmitting(true);
+      const result = await bankAccountAPI.delete(account.id);
+      showToast('success', result?.message || 'Bank account deleted successfully');
+      const accounts = await bankAccountAPI.getAll();
+      setBankAccounts(accounts);
+    } catch (error: any) {
+      showToast('error', error.message || 'Failed to delete bank account');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   useEffect(() => {
     if (activeTab === 'bank-accounts') {
       // Force refresh bank accounts when tab is active
@@ -406,6 +461,21 @@ export function BankPaymentsPage() {
         </span>
       ),
     },
+    ...(canManageBankAccounts
+      ? [{
+          header: 'Actions',
+          accessor: (row: BankAccount) => (
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={() => openEditBankAccount(row)}>
+                Edit
+              </Button>
+              <Button variant="destructive" onClick={() => handleDeleteBankAccount(row)}>
+                Delete
+              </Button>
+            </div>
+          ),
+        }]
+      : []),
   ];
 
   const tabs = [
@@ -868,6 +938,71 @@ export function BankPaymentsPage() {
             </select>
           </div>
         </div>
+      </Modal>
+
+      {/* Edit Bank Account Modal */}
+      <Modal
+        isOpen={showEditBankAccountModal}
+        onClose={() => {
+          setShowEditBankAccountModal(false);
+          setEditingBankAccount(null);
+        }}
+        title="Edit Bank Account"
+        footer={
+          <div className="flex items-center justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowEditBankAccountModal(false);
+                setEditingBankAccount(null);
+              }}
+              disabled={isSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleUpdateBankAccount} isLoading={isSubmitting}>
+              Save Changes
+            </Button>
+          </div>
+        }
+      >
+        {editingBankAccount && (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1">Bank Name</label>
+              <input
+                value={editingBankAccount.bank_name}
+                readOnly
+                className="w-full px-3 py-2 border border-border bg-muted text-foreground rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1">Account Number</label>
+              <input
+                value={editingBankAccount.account_number}
+                readOnly
+                className="w-full px-3 py-2 border border-border bg-muted text-foreground rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1">Account Name</label>
+              <input
+                value={editBankAccountForm.account_name}
+                onChange={(e) => setEditBankAccountForm({ ...editBankAccountForm, account_name: e.target.value })}
+                className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={editBankAccountForm.is_active}
+                onChange={(e) => setEditBankAccountForm({ ...editBankAccountForm, is_active: e.target.checked })}
+                className="h-4 w-4"
+              />
+              <span className="text-sm text-foreground">Active</span>
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* Payment Execution Modal */}
