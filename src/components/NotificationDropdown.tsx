@@ -179,6 +179,38 @@ export function NotificationDropdown({ onNavigate }: NotificationDropdownProps) 
     }
   };
 
+  useEffect(() => {
+    if (!user || !pushSupported) return;
+    const promptKey = `push_prompted_${user.id}`;
+    if (sessionStorage.getItem(promptKey)) return;
+    const runPrompt = async () => {
+      const permission = Notification.permission;
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+      const enabled = !!subscription;
+      setPushEnabled(enabled);
+      if (!enabled) {
+        if (permission === 'denied') {
+          toast('Notifications are blocked in your browser', {
+            description: 'Enable notifications in browser settings to receive approvals.',
+            duration: 6000,
+          });
+        } else {
+          toast('Turn on notifications for approvals', {
+            description: 'Get instant alerts for approval requests and key updates.',
+            duration: 6000,
+            action: {
+              label: 'Enable',
+              onClick: enablePushNotifications,
+            },
+          });
+        }
+        sessionStorage.setItem(promptKey, 'true');
+      }
+    };
+    runPrompt();
+  }, [user, pushSupported, enablePushNotifications]);
+
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {

@@ -12,7 +12,8 @@ import {
   paymentBatchAPI,
   leaveAPI,
   staffAPI,
-  payslipAPI
+  payslipAPI,
+  notificationAPI
 } from '../lib/api-client';
 import { NotificationIntegration } from '../lib/notification-integration';
 import { loanApplicationAPI as loanAPI, loanTypeAPI, disbursementAPI, guarantorAPI, cooperativeAPI } from '../lib/loanAPI';
@@ -52,6 +53,8 @@ export function StaffPortalPage() {
   const [showCurrentPwd, setShowCurrentPwd] = useState(false);
   const [showNewPwd, setShowNewPwd] = useState(false);
   const [showConfirmPwd, setShowConfirmPwd] = useState(false);
+  const [pushSupported, setPushSupported] = useState(false);
+  const [pushEnabled, setPushEnabled] = useState(false);
   
   // Dashboard data
   const [dashboardStats, setDashboardStats] = useState<any>(null);
@@ -78,6 +81,15 @@ export function StaffPortalPage() {
   
   // Payslips
   const [payslips, setPayslips] = useState<any[]>([]);
+
+  useEffect(() => {
+    if ('serviceWorker' in navigator && 'PushManager' in window) {
+      setPushSupported(true);
+      navigator.serviceWorker.ready
+        .then((registration) => registration.pushManager.getSubscription())
+        .then((subscription) => setPushEnabled(!!subscription));
+    }
+  }, []);
   const [selectedPayslip, setSelectedPayslip] = useState<any>(null);
   const [showPayslipModal, setShowPayslipModal] = useState(false);
   
@@ -1557,6 +1569,62 @@ export function StaffPortalPage() {
   };
 
   const renderSettings = () => {
+    const enablePushNotifications = async () => {
+      if (!pushSupported) {
+        showToast('error', 'Push notifications are not supported on this device');
+        return;
+      }
+      try {
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
+          showToast('error', 'Permission denied for push notifications');
+          setPushEnabled(false);
+          return;
+        }
+        const registration = await navigator.serviceWorker.ready;
+        const vapidKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
+        if (!vapidKey) {
+          showToast('error', 'Push notification configuration missing');
+          return;
+        }
+        let subscription = await registration.pushManager.getSubscription();
+        if (!subscription) {
+          subscription = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(vapidKey),
+          });
+        }
+        const subJson = subscription.toJSON();
+        await notificationAPI.subscribe({
+          endpoint: subJson.endpoint,
+          p256dh: subJson.keys?.p256dh,
+          auth: subJson.keys?.auth,
+        });
+        setPushEnabled(true);
+        showToast('success', 'Push notifications enabled');
+      } catch (error) {
+        setPushEnabled(false);
+        showToast('error', 'Failed to enable push notifications');
+      }
+    };
+
+    const disablePushNotifications = async () => {
+      try {
+        const registration = await navigator.serviceWorker.ready;
+        const subscription = await registration.pushManager.getSubscription();
+        if (subscription) {
+          await notificationAPI.unsubscribe({ endpoint: subscription.endpoint });
+          await subscription.unsubscribe();
+        } else {
+          await notificationAPI.unsubscribe({});
+        }
+        setPushEnabled(false);
+        showToast('success', 'Push notifications disabled');
+      } catch (error) {
+        showToast('error', 'Failed to disable push notifications');
+      }
+    };
+
     return (
       <div className="space-y-4">
         <h3 className="text-lg text-card-foreground">Settings</h3>
@@ -1633,6 +1701,27 @@ export function StaffPortalPage() {
               <input type="checkbox" defaultChecked className="rounded" />
               <span className="text-card-foreground">Email notifications for promotion updates</span>
             </label>
+            <label className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                checked={pushEnabled}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    enablePushNotifications();
+                  } else {
+                    disablePushNotifications();
+                  }
+                }}
+                disabled={!pushSupported}
+                className="rounded"
+              />
+              <span className="text-card-foreground">Push notifications for approvals and important updates</span>
+            </label>
+            {!pushSupported && (
+              <p className="text-xs text-muted-foreground">
+                Push notifications are not supported in this browser.
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -2317,4 +2406,17 @@ export function StaffPortalPage() {
       )}
     </div>
   );
+}
+
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding)
+    .replace(/-/g, '+')
+    .replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
 }
