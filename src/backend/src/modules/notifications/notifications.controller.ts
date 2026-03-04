@@ -18,6 +18,7 @@ import {
   RoleNotificationDto,
   NotificationFiltersDto,
   CreatePushSubscriptionDto,
+  RemovePushSubscriptionDto,
   NotificationType,
   NotificationCategory,
   NotificationPriority
@@ -67,6 +68,12 @@ export class NotificationsController {
   @ApiOperation({ summary: 'Register push subscription for current user' })
   subscribe(@Request() req, @Body() dto: CreatePushSubscriptionDto) {
     return this.notificationsService.createPushSubscription(req.user.userId, dto);
+  }
+
+  @Delete('subscribe')
+  @ApiOperation({ summary: 'Remove push subscription for current user' })
+  unsubscribe(@Request() req, @Body() dto: RemovePushSubscriptionDto) {
+    return this.notificationsService.removePushSubscription(req.user.userId, dto?.endpoint);
   }
 
   /**

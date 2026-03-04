@@ -8,7 +8,9 @@ import {
   BulkCreateNotificationDto, 
   RoleNotificationDto,
   NotificationFiltersDto,
-  CreatePushSubscriptionDto 
+  CreatePushSubscriptionDto,
+  NotificationCategory,
+  NotificationPriority,
 } from './dto/notification.dto';
 
 @Injectable()
@@ -31,6 +33,16 @@ export class NotificationsService {
     }
   }
 
+  private shouldSendPush(dto: CreateNotificationDto): boolean {
+    const priority = dto.priority || NotificationPriority.MEDIUM;
+    const category = dto.category || NotificationCategory.INFO;
+    return (
+      category === NotificationCategory.ACTION_REQUIRED ||
+      priority === NotificationPriority.HIGH ||
+      priority === NotificationPriority.URGENT
+    );
+  }
+
   /**
    * Register a push subscription
    */
@@ -44,10 +56,24 @@ export class NotificationsService {
     );
   }
 
+  async removePushSubscription(userId: string, endpoint?: string) {
+    if (endpoint) {
+      await this.databaseService.query(
+        'DELETE FROM push_subscriptions WHERE user_id = $1 AND endpoint = $2',
+        [userId, endpoint],
+      );
+      return;
+    }
+    await this.databaseService.query('DELETE FROM push_subscriptions WHERE user_id = $1', [userId]);
+  }
+
   /**
    * Send push notification to a user
    */
-  private async sendPushNotification(userId: string, notification: any) {
+  private async sendPushNotification(
+    userId: string,
+    payload: { title: string; body: string; url?: string; data?: any; actions?: Array<{ action: string; title: string }> },
+  ) {
     try {
       const subscriptions = await this.databaseService.query(
         'SELECT * FROM push_subscriptions WHERE user_id = $1',
@@ -56,11 +82,12 @@ export class NotificationsService {
 
       if (subscriptions.length === 0) return;
 
-      const payload = JSON.stringify({
-        title: notification.title,
-        body: notification.message,
-        url: notification.link || '/',
-        data: notification
+      const jsonPayload = JSON.stringify({
+        title: payload.title,
+        body: payload.body,
+        url: payload.url || '/',
+        data: payload.data,
+        actions: payload.actions,
       });
 
       Promise.all(subscriptions.map(async (sub) => {
@@ -73,7 +100,7 @@ export class NotificationsService {
         };
 
         try {
-          await webpush.sendNotification(pushSubscription, payload);
+          await webpush.sendNotification(pushSubscription, jsonPayload);
         } catch (err) {
           if (err.statusCode === 410 || err.statusCode === 404) {
             // Subscription expired or invalid, remove it
@@ -117,6 +144,16 @@ export class NotificationsService {
         dto.expires_at || null,
       ],
     );
+
+    if (dto.recipient_id !== 'all' && this.shouldSendPush(dto)) {
+      await this.sendPushNotification(dto.recipient_id, {
+        title: dto.title,
+        body: dto.message,
+        url: dto.action_link || dto.link || '/notifications',
+        data: notification,
+        actions: dto.action_link ? [{ action: 'open', title: dto.action_label || 'Open' }] : undefined,
+      });
+    }
 
     this.logger.log(`Notification created for ${dto.recipient_id}: ${dto.title}`);
     return this.formatNotification(notification);
@@ -172,6 +209,22 @@ export class NotificationsService {
       params,
     );
 
+    if (this.shouldSendPush(notificationData as CreateNotificationDto)) {
+      await Promise.all(
+        recipient_ids.map((recipientId) =>
+          this.sendPushNotification(recipientId, {
+            title: notificationData.title,
+            body: notificationData.message,
+            url: notificationData.action_link || notificationData.link || '/notifications',
+            data: { recipient_id: recipientId, ...notificationData },
+            actions: notificationData.action_link
+              ? [{ action: 'open', title: notificationData.action_label || 'Open' }]
+              : undefined,
+          }),
+        ),
+      );
+    }
+
     this.logger.log(`Bulk created ${recipient_ids.length} notifications: ${notificationData.title}`);
     return notifications.map(n => this.formatNotification(n));
   }
@@ -210,6 +263,22 @@ export class NotificationsService {
     this.logger.log(`Role notification created for role '${role}': ${notificationData.title}`);
     const result = this.formatNotification(notification);
     this.notificationsGateway.sendNotification(result);
+    if (this.shouldSendPush({ recipient_id: 'all', recipient_role: role, ...notificationData } as CreateNotificationDto)) {
+      const users = await this.databaseService.query('SELECT id FROM users WHERE role = $1', [role]);
+      await Promise.all(
+        users.map((user) =>
+          this.sendPushNotification(user.id, {
+            title: notificationData.title,
+            body: notificationData.message,
+            url: notificationData.action_link || notificationData.link || '/notifications',
+            data: { recipient_id: user.id, recipient_role: role, ...notificationData },
+            actions: notificationData.action_link
+              ? [{ action: 'open', title: notificationData.action_label || 'Open' }]
+              : undefined,
+          }),
+        ),
+      );
+    }
     return result;
   }
 

@@ -1472,6 +1472,12 @@ export const notificationAPI = {
       body: JSON.stringify(subscription),
     });
   },
+  unsubscribe: async (payload: { endpoint?: string }) => {
+    return makeApiRequest('/notifications/subscribe', {
+      method: 'DELETE',
+      body: JSON.stringify(payload || {}),
+    });
+  },
 };
 
 // ============================================

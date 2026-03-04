@@ -54,6 +54,13 @@ export class CreatePushSubscriptionDto {
   auth: string;
 }
 
+export class RemovePushSubscriptionDto {
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  endpoint?: string;
+}
+
 export class CreateNotificationDto {
   @ApiProperty({ description: 'User ID or "all" for broadcast' })
   @IsString()

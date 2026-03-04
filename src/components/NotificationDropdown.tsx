@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Bell, X, Check, CheckCheck, Trash2, ExternalLink } from 'lucide-react';
+import { Bell, BellOff, X, Check, CheckCheck, Trash2, ExternalLink } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
 import { toast } from 'sonner';
 import type { Notification as AppNotification } from '../types/entities';
@@ -135,10 +135,13 @@ export function NotificationDropdown({ onNavigate }: NotificationDropdownProps) 
         return;
       }
 
-      const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(vapidKey)
-      });
+      let subscription = await registration.pushManager.getSubscription();
+      if (!subscription) {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidKey)
+        });
+      }
 
       // Format subscription for backend
       const subJson = subscription.toJSON();
@@ -154,6 +157,25 @@ export function NotificationDropdown({ onNavigate }: NotificationDropdownProps) 
     } catch (error) {
       console.error('Failed to enable push:', error);
       toast.error('Failed to enable push notifications');
+    }
+  };
+
+  const disablePushNotifications = async () => {
+    if (!pushSupported) return;
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+      if (subscription) {
+        await notificationAPI.unsubscribe({ endpoint: subscription.endpoint });
+        await subscription.unsubscribe();
+      } else {
+        await notificationAPI.unsubscribe({});
+      }
+      setPushEnabled(false);
+      toast.success('Push notifications disabled');
+    } catch (error) {
+      console.error('Failed to disable push:', error);
+      toast.error('Failed to disable push notifications');
     }
   };
 
@@ -313,6 +335,15 @@ export function NotificationDropdown({ onNavigate }: NotificationDropdownProps) 
                       title="Enable Push Notifications"
                     >
                       <Bell className="w-4 h-4" />
+                    </button>
+                  )}
+                  {pushSupported && pushEnabled && (
+                    <button
+                      onClick={disablePushNotifications}
+                      className="p-1 hover:bg-accent rounded-full text-muted-foreground"
+                      title="Disable Push Notifications"
+                    >
+                      <BellOff className="w-4 h-4" />
                     </button>
                   )}
                 </div>
