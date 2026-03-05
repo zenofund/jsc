@@ -716,7 +716,10 @@ export const loanStatsAPI = {
       rejected_applications: applications.filter((a: any) => a.status === 'rejected').length,
       active_loans: activeDisbursements.length,
       completed_loans: disbursements.filter((d: any) => d.status === 'completed').length,
-      total_disbursed: disbursements.reduce((sum: any, d: any) => sum + parseFloat(d.principal_amount || 0), 0),
+      total_disbursed: disbursements.reduce(
+        (sum: any, d: any) => sum + parseFloat(d.amount_disbursed ?? d.principal_amount ?? 0),
+        0,
+      ),
       total_outstanding: activeDisbursements.reduce((sum: any, d: any) => sum + parseFloat(d.balance_outstanding || 0), 0),
       total_repaid: disbursements.reduce((sum: any, d: any) => sum + parseFloat(d.total_repaid || 0), 0),
       cooperative_members: members.filter((m: any) => m.status === 'active').length,

@@ -986,7 +986,7 @@ export class LoansService {
         COUNT(DISTINCT CASE WHEN la.status = 'approved' THEN la.id END) as approved_applications,
         COUNT(DISTINCT CASE WHEN ld.status = 'active' THEN ld.id END) as active_disbursements,
         COALESCE(SUM(CASE WHEN ld.status = 'active' THEN ld.balance_outstanding ELSE 0 END), 0) as total_outstanding,
-        COALESCE(SUM(CASE WHEN ld.status = 'active' THEN ld.amount_disbursed ELSE 0 END), 0) as total_disbursed
+        COALESCE(SUM(ld.amount_disbursed), 0) as total_disbursed
       FROM loan_applications la
       LEFT JOIN loan_disbursements ld ON la.id = ld.loan_application_id`,
     );
