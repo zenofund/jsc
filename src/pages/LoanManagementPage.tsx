@@ -178,6 +178,7 @@ function ApplicationsTab({
     bank_name: '',
     account_number: '',
     reference_number: '',
+    amount: 0,
   });
   const [decisionModal, setDecisionModal] = useState<{ open: boolean; appId: string | null; action: 'approved' | 'rejected' | null }>({ open: false, appId: null, action: null });
   const [decisionReason, setDecisionReason] = useState<string>('');

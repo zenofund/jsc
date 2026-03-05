@@ -180,15 +180,7 @@ export const loanApplicationAPI = {
       await makeApiRequest('/loans/guarantors', { method: 'POST', body: JSON.stringify(guarantorRecord) });
     }
 
-    // Update application status
-    const updated: LoanApplication = {
-      ...application,
-      status: loanType.requires_guarantors ? 'guarantor_pending' : 'pending',
-      submitted_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-
-    return makeApiRequest(`/loans/applications/${id}`, { method: 'PUT', body: JSON.stringify(updated) });
+    return makeApiRequest(`/loans/applications/${id}/submit`, { method: 'PUT' });
   },
 
   // Approve/Reject loan application

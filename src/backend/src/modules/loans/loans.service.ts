@@ -38,6 +38,14 @@ export class LoansService {
       throw new BadRequestException(`Loan type with code ${dto.code} already exists`);
     }
 
+    const requiresGuarantors = dto.requiresGuarantors ?? false;
+    const minGuarantors = requiresGuarantors
+      ? (dto.minGuarantors ?? dto.requiredGuarantors ?? 0)
+      : 0;
+    const requiredGuarantors = requiresGuarantors
+      ? (dto.requiredGuarantors ?? minGuarantors ?? 0)
+      : 0;
+
     const loanType = await this.databaseService.queryOne(
       `INSERT INTO loan_types (
         code, name, description, max_amount, interest_rate, 
@@ -52,15 +60,15 @@ export class LoansService {
         dto.maxAmount,
         dto.interestRate,
         dto.maxTenureMonths,
-        dto.requiredGuarantors,
+        requiredGuarantors,
         (dto.cooperativeId === '' || dto.cooperativeId === null) ? null : dto.cooperativeId,
         dto.status || 'active',
         userId,
         dto.minServiceYears,
         dto.maxSalaryPercentage,
-        dto.minGuarantors,
+        minGuarantors,
         dto.eligibilityCriteria,
-        dto.requiresGuarantors
+        requiresGuarantors
       ],
     );
 
@@ -151,13 +159,33 @@ export class LoansService {
       updates.push(`max_salary_percentage = $${paramIndex++}`);
       values.push(dto.maxSalaryPercentage);
     }
-    if (dto.requiresGuarantors !== undefined) {
+    const shouldSyncGuarantors =
+      dto.requiresGuarantors !== undefined ||
+      dto.minGuarantors !== undefined ||
+      dto.requiredGuarantors !== undefined;
+    if (shouldSyncGuarantors) {
+      const nextRequiresGuarantors = dto.requiresGuarantors ?? existing.requires_guarantors ?? false;
+      let nextMinGuarantors = dto.minGuarantors ?? existing.min_guarantors ?? 0;
+      let nextRequiredGuarantors = dto.requiredGuarantors ?? existing.required_guarantors ?? 0;
+
+      if (!nextRequiresGuarantors) {
+        nextMinGuarantors = 0;
+        nextRequiredGuarantors = 0;
+      } else {
+        if (!nextMinGuarantors && nextRequiredGuarantors) {
+          nextMinGuarantors = nextRequiredGuarantors;
+        }
+        if (!nextRequiredGuarantors && nextMinGuarantors) {
+          nextRequiredGuarantors = nextMinGuarantors;
+        }
+      }
+
       updates.push(`requires_guarantors = $${paramIndex++}`);
-      values.push(dto.requiresGuarantors);
-    }
-    if (dto.minGuarantors !== undefined) {
-       updates.push(`min_guarantors = $${paramIndex++}`);
-       values.push(dto.minGuarantors);
+      values.push(nextRequiresGuarantors);
+      updates.push(`min_guarantors = $${paramIndex++}`);
+      values.push(nextMinGuarantors);
+      updates.push(`required_guarantors = $${paramIndex++}`);
+      values.push(nextRequiredGuarantors);
     }
     if (dto.cooperativeId !== undefined) {
       if (dto.cooperativeId === '' || dto.cooperativeId === null) {
@@ -332,7 +360,7 @@ export class LoansService {
   async findOneLoanApplication(id: string) {
     const application = await this.databaseService.queryOne(
       `SELECT la.*, lt.name as loan_type_name, lt.cooperative_id,
-        lt.required_guarantors,
+        lt.required_guarantors, lt.requires_guarantors, lt.min_guarantors,
         s.bank_name as staff_bank_name,
         s.account_number as staff_account_number,
         s.account_name as staff_account_name
@@ -410,41 +438,44 @@ export class LoansService {
       throw new BadRequestException('Application already submitted');
     }
 
-    // Check guarantors
     const guarantorCount = application.guarantors.length;
-    if (guarantorCount < application.required_guarantors) {
+    const requiresGuarantors = Boolean(application.requires_guarantors);
+    const minGuarantors = Number(application.min_guarantors ?? application.required_guarantors ?? 0);
+
+    if (requiresGuarantors && guarantorCount < minGuarantors) {
       throw new BadRequestException(
-        `Application requires ${application.required_guarantors} guarantors, only ${guarantorCount} added`,
+        `Application requires ${minGuarantors} guarantors, only ${guarantorCount} added`,
       );
     }
 
     const updated = await this.databaseService.queryOne(
       `UPDATE loan_applications 
-       SET status = 'guarantor_pending', submitted_at = NOW(), updated_at = NOW()
+       SET status = $2, submitted_at = NOW(), updated_at = NOW()
        WHERE id = $1
        RETURNING *`,
-      [id],
+      [id, requiresGuarantors ? 'guarantor_pending' : 'pending'],
     );
 
     this.logger.log(`Loan application ${application.application_number} submitted`);
 
-    // Notify guarantors
-    try {
-      const guarantors = await this.findGuarantors({ loanApplicationId: id });
-      for (const guarantor of guarantors) {
-        await this.notificationsService.create({
-          recipient_id: guarantor.guarantor_staff_id,
-          type: NotificationType.LOAN,
-          category: NotificationCategory.ACTION_REQUIRED,
-          title: 'Loan Guarantor Request',
-          message: `You have been requested to be a guarantor for a loan application by ${application.staff_name || 'a colleague'} (App #${application.application_number}).`,
-          entity_type: 'loan_guarantor',
-          entity_id: guarantor.id,
-          priority: NotificationPriority.HIGH,
-        });
+    if (requiresGuarantors) {
+      try {
+        const guarantors = await this.findGuarantors({ loanApplicationId: id });
+        for (const guarantor of guarantors) {
+          await this.notificationsService.create({
+            recipient_id: guarantor.guarantor_staff_id,
+            type: NotificationType.LOAN,
+            category: NotificationCategory.ACTION_REQUIRED,
+            title: 'Loan Guarantor Request',
+            message: `You have been requested to be a guarantor for a loan application by ${application.staff_name || 'a colleague'} (App #${application.application_number}).`,
+            entity_type: 'loan_guarantor',
+            entity_id: guarantor.id,
+            priority: NotificationPriority.HIGH,
+          });
+        }
+      } catch (error) {
+        this.logger.error(`Failed to send notifications: ${error.message}`);
       }
-    } catch (error) {
-      this.logger.error(`Failed to send notifications: ${error.message}`);
     }
 
     return updated;

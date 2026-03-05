@@ -692,6 +692,7 @@ export interface LoanApplication {
   cooperative_id?: string; // Optional: Link loan to a specific cooperative
   cooperative_name?: string;
   amount_requested: number;
+  amount_approved?: number;
   purpose: string;
   staff_bank_name?: string;
   staff_account_number?: string;
