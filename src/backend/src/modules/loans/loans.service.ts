@@ -256,15 +256,16 @@ export class LoansService {
     // Create application
     const application = await this.databaseService.queryOne(
       `INSERT INTO loan_applications (
-        application_number, staff_id, staff_number,
+        application_number, staff_id, staff_number, staff_name,
         loan_type_id, loan_type_name, amount_requested, purpose, tenure_months,
         monthly_deduction, total_repayment, interest_amount, status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'draft')
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'draft')
       RETURNING *`,
       [
         appNumber,
         dto.staffId,
         staff.staff_number,
+        `${staff.first_name} ${staff.last_name}`,
         dto.loanTypeId,
         loanType.name,
         dto.requestedAmount,
@@ -287,10 +288,14 @@ export class LoansService {
   }) {
     let query = `
       SELECT la.*, lt.name as loan_type_name_derived, lt.cooperative_id,
-        COUNT(lg.id) as guarantor_count
+        COUNT(lg.id) as guarantor_count,
+        s.bank_name as staff_bank_name, 
+        s.account_number as staff_account_number, 
+        s.account_name as staff_account_name
       FROM loan_applications la
       LEFT JOIN loan_types lt ON la.loan_type_id = lt.id
       LEFT JOIN loan_guarantors lg ON la.id = lg.loan_application_id
+      LEFT JOIN staff s ON la.staff_id = s.id
     `;
     const conditions = [];
     const params = [];
@@ -313,7 +318,7 @@ export class LoansService {
       query += ' WHERE ' + conditions.join(' AND ');
     }
 
-    query += ' GROUP BY la.id, lt.name, lt.cooperative_id ORDER BY la.created_at DESC';
+    query += ' GROUP BY la.id, lt.name, lt.cooperative_id, s.bank_name, s.account_number, s.account_name ORDER BY la.created_at DESC';
 
     const applications = await this.databaseService.query(query, params);
     
@@ -327,9 +332,13 @@ export class LoansService {
   async findOneLoanApplication(id: string) {
     const application = await this.databaseService.queryOne(
       `SELECT la.*, lt.name as loan_type_name, lt.cooperative_id,
-        lt.required_guarantors
+        lt.required_guarantors,
+        s.bank_name as staff_bank_name,
+        s.account_number as staff_account_number,
+        s.account_name as staff_account_name
       FROM loan_applications la
       LEFT JOIN loan_types lt ON la.loan_type_id = lt.id
+      LEFT JOIN staff s ON la.staff_id = s.id
       WHERE la.id = $1`,
       [id],
     );
@@ -736,8 +745,9 @@ export class LoansService {
         disbursement_number, loan_application_id, staff_id, staff_number,
         amount_disbursed, disbursement_date, disbursement_method,
         start_month, tenure_months, monthly_deduction, balance_outstanding,
-        payroll_batch_id, disbursed_by, remarks, status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'active')
+        payroll_batch_id, disbursed_by, remarks, status,
+        bank_name, account_number, account_name
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'active', $15, $16, $17)
       RETURNING *`,
       [
         disbNumber,
@@ -754,6 +764,9 @@ export class LoansService {
         dto.payrollBatchId || null,
         userId,
         dto.remarks || null,
+        dto.bankName || application.staff_bank_name || null,
+        dto.accountNumber || application.staff_account_number || null,
+        dto.accountName || application.staff_account_name || null,
       ],
     );
 
@@ -938,7 +951,7 @@ export class LoansService {
   async getLoanStats() {
     const stats = await this.databaseService.queryOne(
       `SELECT 
-        COUNT(DISTINCT CASE WHEN la.status = 'pending' THEN la.id END) as pending_applications,
+        COUNT(DISTINCT CASE WHEN la.status IN ('pending', 'guarantor_pending') THEN la.id END) as pending_applications,
         COUNT(DISTINCT CASE WHEN la.status = 'approved' THEN la.id END) as approved_applications,
         COUNT(DISTINCT CASE WHEN ld.status = 'active' THEN ld.id END) as active_disbursements,
         COALESCE(SUM(CASE WHEN ld.status = 'active' THEN ld.balance_outstanding ELSE 0 END), 0) as total_outstanding,

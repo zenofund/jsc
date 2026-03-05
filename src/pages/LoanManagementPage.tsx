@@ -182,6 +182,17 @@ function ApplicationsTab({
   const [decisionModal, setDecisionModal] = useState<{ open: boolean; appId: string | null; action: 'approved' | 'rejected' | null }>({ open: false, appId: null, action: null });
   const [decisionReason, setDecisionReason] = useState<string>('');
 
+  useEffect(() => {
+    if (selectedApp) {
+      setDisbursementData((prev) => ({
+        ...prev,
+        amount: selectedApp.amount_approved || selectedApp.amount_requested,
+        bank_name: selectedApp.staff_bank_name || '',
+        account_number: selectedApp.staff_account_number || '',
+      }));
+    }
+  }, [selectedApp]);
+
   const filteredApplications = applications.filter((app) => {
     const matchesStatus = statusFilter === 'all' || app.status === statusFilter;
     const matchesSearch =
@@ -194,7 +205,12 @@ function ApplicationsTab({
     try {
       setProcessingId(applicationId);
       const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
-      await loanApplicationAPI.processApproval(applicationId, currentUser.id, currentUser.full_name, action, comments);
+      
+      // Get the application to check amount if approving
+      const app = applications.find(a => a.id === applicationId);
+      const approvedAmount = app ? app.amount_requested : undefined;
+
+      await loanApplicationAPI.processApproval(applicationId, currentUser.id, currentUser.full_name, action, comments, approvedAmount);
       onRefresh();
       showToast.success(`Application ${action} successfully`);
     } catch (error: any) {
@@ -209,11 +225,19 @@ function ApplicationsTab({
     try {
       setIsDisbursing(true);
       const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+      
+      // Ensure we only pass the necessary fields
       await disbursementAPI.create({
-        ...disbursementData,
         loan_application_id: selectedApp.id,
+        disbursement_method: disbursementData.disbursement_method as any,
+        bank_name: disbursementData.bank_name,
+        account_number: disbursementData.account_number,
+        reference_number: disbursementData.reference_number,
         disbursed_by: currentUser.id,
+        // Add amount if available
+        amount: selectedApp.amount_approved || selectedApp.amount_requested,
       });
+      
       onRefresh();
       showToast.success('Loan disbursed successfully');
       setShowDisbursementModal(false);
@@ -315,7 +339,7 @@ function ApplicationsTab({
                     <td className="px-6 py-4 text-center">{getStatusBadge(app.status)}</td>
                     <td className="px-6 py-4">
                       <div className="flex items-center justify-center gap-2">
-                        {app.status === 'pending' && (
+                        {(app.status === 'pending' || app.status === 'guarantor_pending') && (
                           <>
                             <button
                               onClick={() => handleApprove(app.id, 'approved')}

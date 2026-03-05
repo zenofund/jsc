@@ -693,6 +693,9 @@ export interface LoanApplication {
   cooperative_name?: string;
   amount_requested: number;
   purpose: string;
+  staff_bank_name?: string;
+  staff_account_number?: string;
+  staff_account_name?: string;
   tenure_months: number; // Repayment period in months
   monthly_deduction: number; // Calculated monthly repayment
   total_repayment: number; // Principal + Interest

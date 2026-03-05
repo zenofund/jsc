@@ -354,7 +354,7 @@ export function ApprovalsPageEnhanced() {
           break;
         
         case 'loan':
-          await loanApplicationAPI.processApproval(selectedItem.id, user!.id, user!.full_name, 'approved', comments);
+          await loanApplicationAPI.processApproval(selectedItem.id, user!.id, user!.full_name, 'approved', comments, selectedItem.amount);
           break;
         
         case 'leave':

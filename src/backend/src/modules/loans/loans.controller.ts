@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, Request, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query, Request, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { LoansService } from './loans.service';
 import { RolesGuard } from '@common/guards/roles.guard';
@@ -102,7 +102,7 @@ export class LoansController {
     return this.loansService.submitLoanApplication(id, req.user.userId);
   }
 
-  @Put('applications/:id/approve')
+  @Patch('applications/:id/approve')
   @Roles('admin', 'payroll_officer')
   @ApiOperation({ summary: 'Approve loan application' })
   approveLoanApplication(
@@ -113,7 +113,7 @@ export class LoansController {
     return this.loansService.approveLoanApplication(id, dto, req.user.userId);
   }
 
-  @Put('applications/:id/reject')
+  @Patch('applications/:id/reject')
   @Roles('admin', 'payroll_officer')
   @ApiOperation({ summary: 'Reject loan application' })
   rejectLoanApplication(

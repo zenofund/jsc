@@ -202,6 +202,18 @@ export class DisburseLoanDto {
   @IsString()
   @IsOptional()
   remarks?: string;
+
+  @IsString()
+  @IsOptional()
+  bankName?: string;
+
+  @IsString()
+  @IsOptional()
+  accountNumber?: string;
+
+  @IsString()
+  @IsOptional()
+  accountName?: string;
 }
 
 export class RecordRepaymentDto {

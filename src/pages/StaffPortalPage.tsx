@@ -1750,8 +1750,10 @@ export function StaffPortalPage() {
   const renderLoans = () => {
     const handleApplyLoan = async () => {
       if (!user?.staff_id) return;
+      if (isSubmitting) return;
       
       try {
+        setIsSubmitting(true);
         // Prepare application data with optional cooperative link
         const applicationData: any = {
           staff_id: user.staff_id,
@@ -1770,11 +1772,10 @@ export function StaffPortalPage() {
         
         const application = await loanApplicationAPI.create(applicationData);
         
-        // Submit with guarantors if required
-        const selectedLoanType = loanTypes.find(lt => lt.id === loanForm.loan_type_id);
-        if (selectedLoanType?.requires_guarantors && loanForm.guarantors.length > 0) {
-          await loanApplicationAPI.submit(application.id, loanForm.guarantors.map(g => ({ staff_id: g })));
-        }
+        // Submit the application (whether it has guarantors or not)
+        // For loans without guarantors, we pass an empty array
+        const guarantorsList = loanForm.guarantors.map(g => ({ staff_id: g }));
+        await loanApplicationAPI.submit(application.id, guarantorsList);
         
         showToast('success', 'Loan application submitted successfully');
         setShowLoanModal(false);
@@ -2081,9 +2082,13 @@ export function StaffPortalPage() {
               <div className="flex gap-3 pt-4">
                 <button
                   type="submit"
-                  className="flex-1 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                  disabled={isSubmitting}
+                  className="flex-1 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  Submit Application
+                  <span className="inline-flex items-center justify-center gap-2">
+                    {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                    Submit Application
+                  </span>
                 </button>
                 <button
                   type="button"

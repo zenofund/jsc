@@ -113,48 +113,36 @@ export const loanApplicationAPI = {
 
   // Create loan application (draft)
   async create(data: {
-    staff_id: string;
-    loan_type_id: string;
-    amount_requested: number;
-    purpose: string;
-    tenure_months: number;
+    staff_id?: string;
+    loan_type_id?: string;
+    amount_requested?: number;
+    purpose?: string;
+    tenure_months?: number;
+    staffId?: string;
+    loanTypeId?: string;
+    requestedAmount?: number;
+    tenureMonths?: number;
+    guarantors?: Array<{ staff_id?: string; staffId?: string; remarks?: string }>;
   }) {
-    const staff = await makeApiRequest(`/staff/${data.staff_id}`, { method: 'GET' });
-    if (!staff) throw new Error('Staff not found');
+    const staffId = data.staffId || data.staff_id;
+    const loanTypeId = data.loanTypeId || data.loan_type_id;
+    const requestedAmount = data.requestedAmount ?? data.amount_requested;
+    const tenureMonths = data.tenureMonths ?? data.tenure_months;
+    const guarantors = Array.isArray(data.guarantors) ? data.guarantors : [];
 
-    const loanType = await makeApiRequest(`/loans/types/${data.loan_type_id}`, { method: 'GET' });
-    if (!loanType) throw new Error('Loan type not found');
-
-    // Calculate loan details
-    const interestAmount = (data.amount_requested * loanType.interest_rate * data.tenure_months) / (12 * 100);
-    const totalRepayment = data.amount_requested + interestAmount;
-    const monthlyDeduction = totalRepayment / data.tenure_months;
-
-    // Generate application number
-    const applications = await makeApiRequest('/loans/applications', { method: 'GET' });
-    const appNumber = `LN/${new Date().getFullYear()}/${String(applications.length + 1).padStart(5, '0')}`;
-
-    const application: LoanApplication = {
-      id: crypto.randomUUID(),
-      application_number: appNumber,
-      staff_id: data.staff_id,
-      staff_number: staff.staff_number,
-      staff_name: `${staff.bio_data.first_name} ${staff.bio_data.last_name}`,
-      loan_type_id: data.loan_type_id,
-      loan_type_name: loanType.name,
-      amount_requested: data.amount_requested,
+    const payload = {
+      staffId,
+      loanTypeId,
+      requestedAmount: typeof requestedAmount === 'string' ? parseFloat(requestedAmount) : requestedAmount,
+      tenureMonths: typeof tenureMonths === 'string' ? parseInt(tenureMonths, 10) : tenureMonths,
       purpose: data.purpose,
-      tenure_months: data.tenure_months,
-      monthly_deduction: Math.round(monthlyDeduction),
-      total_repayment: Math.round(totalRepayment),
-      interest_amount: Math.round(interestAmount),
-      status: 'draft',
-      approval_history: [],
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      guarantors: guarantors.map((g) => ({
+        staffId: g.staffId || g.staff_id,
+        remarks: g.remarks,
+      })),
     };
 
-    return makeApiRequest('/loans/applications', { method: 'POST', body: JSON.stringify(application) });
+    return makeApiRequest('/loans/applications', { method: 'POST', body: JSON.stringify(payload) });
   },
 
   // Submit loan application for approval
@@ -209,47 +197,30 @@ export const loanApplicationAPI = {
     approverId: string,
     approverName: string,
     action: 'approved' | 'rejected',
-    comments?: string
+    comments?: string,
+    approvedAmount?: number
   ) {
-    const application = await makeApiRequest(`/loans/applications/${id}`, { method: 'GET' });
-    if (!application) throw new Error('Application not found');
+    if (action === 'approved') {
+      let amount = approvedAmount;
+      
+      // If amount not provided, fetch application to get requested amount
+      if (!amount) {
+        const application = await makeApiRequest(`/loans/applications/${id}`, { method: 'GET' });
+        if (!application) throw new Error('Application not found');
+        amount = application.amount_requested;
+      }
 
-    const approval: LoanApproval = {
-      id: crypto.randomUUID(),
-      loan_application_id: id,
-      approval_stage: (application.current_approval_stage || 0) + 1,
-      approver_id: approverId,
-      approver_name: approverName,
-      approver_role: 'approver', // In production, get from user context
-      action,
-      comments,
-      action_date: new Date().toISOString(),
-      created_at: new Date().toISOString(),
-    };
-
-    await makeApiRequest('/loans/approvals', { method: 'POST', body: JSON.stringify(approval) });
-
-    // Update application
-    const updated: LoanApplication = {
-      ...application,
-      status: action === 'approved' ? 'approved' : 'rejected',
-      current_approval_stage: approval.approval_stage,
-      approval_history: [
-        ...application.approval_history,
-        {
-          stage: approval.approval_stage,
-          approver_id: approverId,
-          approver_name: approverName,
-          action,
-          comments,
-          timestamp: new Date().toISOString(),
-        },
-      ],
-      rejection_reason: action === 'rejected' ? comments : undefined,
-      updated_at: new Date().toISOString(),
-    };
-
-    return makeApiRequest(`/loans/applications/${id}`, { method: 'PUT', body: JSON.stringify(updated) });
+      const payload = {
+        approvedAmount: amount,
+        remarks: comments
+      };
+      return makeApiRequest(`/loans/applications/${id}/approve`, { method: 'PATCH', body: JSON.stringify(payload) });
+    } else {
+      const payload = {
+        remarks: comments || 'No reason provided'
+      };
+      return makeApiRequest(`/loans/applications/${id}/reject`, { method: 'PATCH', body: JSON.stringify(payload) });
+    }
   },
 
   // Cancel loan application
@@ -412,63 +383,27 @@ export const disbursementAPI = {
     account_number?: string;
     reference_number?: string;
     disbursed_by: string;
+    amount?: number;
+    disbursement_date?: string;
+    remarks?: string;
+    account_name?: string;
   }) {
     const application = await makeApiRequest(`/loans/applications/${data.loan_application_id}`, { method: 'GET' });
     if (!application) throw new Error('Application not found');
     if (application.status !== 'approved') throw new Error('Only approved applications can be disbursed');
 
-    // Generate disbursement number
-    const disbursements = await makeApiRequest('/loans/disbursements', { method: 'GET' });
-    const disbNumber = `DIS/${new Date().getFullYear()}/${String(disbursements.length + 1).padStart(5, '0')}`;
-
-    // Calculate start and end months
-    const startDate = new Date();
-    startDate.setMonth(startDate.getMonth() + 1); // Start next month
-    const startMonth = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}`;
-
-    const endDate = new Date(startDate);
-    endDate.setMonth(endDate.getMonth() + application.tenure_months - 1);
-    const endMonth = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}`;
-
-    const disbursement: LoanDisbursement = {
-      id: crypto.randomUUID(),
-      disbursement_number: disbNumber,
-      loan_application_id: data.loan_application_id,
-      staff_id: application.staff_id,
-      staff_number: application.staff_number,
-      staff_name: application.staff_name,
-      loan_type_name: application.loan_type_name,
-      principal_amount: application.amount_requested,
-      interest_amount: application.interest_amount,
-      total_amount: application.total_repayment,
-      tenure_months: application.tenure_months,
-      monthly_deduction: application.monthly_deduction,
-      disbursement_date: new Date().toISOString(),
-      disbursement_method: data.disbursement_method,
-      bank_name: data.bank_name,
-      account_number: data.account_number,
-      reference_number: data.reference_number,
-      balance_outstanding: application.total_repayment,
-      total_repaid: 0,
-      status: 'active',
-      start_deduction_month: startMonth,
-      end_deduction_month: endMonth,
-      disbursed_by: data.disbursed_by,
-      created_at: new Date().toISOString(),
+    // Use backend logic instead of client-side logic
+    const payload = {
+      loanApplicationId: data.loan_application_id,
+      disbursementDate: data.disbursement_date || new Date().toISOString(),
+      amount: data.amount || application.amount_approved || application.amount_requested,
+      remarks: data.remarks || data.reference_number, // Map reference number to remarks if needed, or just send remarks
+      bankName: data.bank_name,
+      accountNumber: data.account_number,
+      accountName: data.account_name,
     };
 
-    await makeApiRequest('/loans/disbursements', { method: 'POST', body: JSON.stringify(disbursement) });
-
-    // Update application
-    const updatedApp: LoanApplication = {
-      ...application,
-      status: 'disbursed',
-      disbursement_id: disbursement.id,
-      updated_at: new Date().toISOString(),
-    };
-    await makeApiRequest(`/loans/applications/${data.loan_application_id}`, { method: 'PUT', body: JSON.stringify(updatedApp) });
-
-    return disbursement;
+    return makeApiRequest('/loans/disbursements', { method: 'POST', body: JSON.stringify(payload) });
   },
 
   // Get loan statement
