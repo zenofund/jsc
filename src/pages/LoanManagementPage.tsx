@@ -331,9 +331,9 @@ function ApplicationsTab({
                     </td>
                     <td className="px-6 py-4 text-sm text-card-foreground">{app.loan_type_name}</td>
                     <td className="px-6 py-4 text-right">
-                      <div className="text-sm text-card-foreground">₦{app.amount_requested.toLocaleString()}</div>
+                      <div className="text-sm text-card-foreground">{formatCurrency(app.amount_requested)}</div>
                       <div className="text-xs text-muted-foreground">
-                        +₦{app.interest_amount.toLocaleString()} interest
+                        +{formatCurrency(app.interest_amount)} interest
                       </div>
                     </td>
                     <td className="px-6 py-4 text-center text-sm text-card-foreground">{app.tenure_months} months</td>
@@ -977,12 +977,16 @@ function DisbursementsTab({ disbursements }: { disbursements: LoanDisbursement[]
                     </td>
                     <td className="px-6 py-4 text-sm text-card-foreground">{disb.loan_type_name}</td>
                     <td className="px-6 py-4 text-right">
-                      <div className="text-sm text-card-foreground">₦{disb.total_amount.toLocaleString()}</div>
+                      <div className="text-sm text-card-foreground">
+                        {formatCurrency(disb.total_amount ?? disb.amount_disbursed ?? disb.principal_amount ?? 0)}
+                      </div>
                       <div className="text-xs text-muted-foreground">
-                        ₦{disb.monthly_deduction.toLocaleString()}/mo
+                        {formatCurrency(disb.monthly_deduction ?? 0)}/mo
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-right text-sm text-card-foreground">₦{disb.balance_outstanding.toLocaleString()}</td>
+                    <td className="px-6 py-4 text-right text-sm text-card-foreground">
+                      {formatCurrency(disb.balance_outstanding ?? 0)}
+                    </td>
                     <td className="px-6 py-4 text-center">
                       <span
                         className={`px-2 py-1 rounded text-xs text-white ${
@@ -1022,15 +1026,15 @@ function DisbursementsTab({ disbursements }: { disbursements: LoanDisbursement[]
               <div className="grid grid-cols-2 gap-4 p-4 bg-muted rounded">
                 <div>
                   <div className="text-sm text-muted-foreground">Total Amount</div>
-                  <div className="text-lg text-card-foreground">₦{statement.summary.total_amount.toLocaleString()}</div>
+                  <div className="text-lg text-card-foreground">{formatCurrency(statement.summary.total_amount)}</div>
                 </div>
                 <div>
                   <div className="text-sm text-muted-foreground">Outstanding</div>
-                  <div className="text-lg text-card-foreground">₦{statement.summary.balance_outstanding.toLocaleString()}</div>
+                  <div className="text-lg text-card-foreground">{formatCurrency(statement.summary.balance_outstanding)}</div>
                 </div>
                 <div>
                   <div className="text-sm text-muted-foreground">Total Repaid</div>
-                  <div className="text-lg text-card-foreground">₦{statement.summary.total_repaid.toLocaleString()}</div>
+                  <div className="text-lg text-card-foreground">{formatCurrency(statement.summary.total_repaid)}</div>
                 </div>
                 <div>
                   <div className="text-sm text-muted-foreground">Months Remaining</div>
@@ -1050,8 +1054,8 @@ function DisbursementsTab({ disbursements }: { disbursements: LoanDisbursement[]
                           <div className="text-sm text-muted-foreground">{rep.payment_method}</div>
                         </div>
                         <div className="text-right">
-                          <div className="text-card-foreground">₦{rep.amount_paid.toLocaleString()}</div>
-                          <div className="text-sm text-muted-foreground">Balance: ₦{rep.balance_after_payment.toLocaleString()}</div>
+                          <div className="text-card-foreground">{formatCurrency(rep.amount_paid)}</div>
+                          <div className="text-sm text-muted-foreground">Balance: {formatCurrency(rep.balance_after_payment)}</div>
                         </div>
                       </div>
                     ))
@@ -1220,7 +1224,10 @@ function ReportsTab() {
         const statusMatch = statusFilter === 'all' || d.status === statusFilter;
         return statusMatch && inRange(d.disbursement_date);
       });
-      const totalDisbursed = filtered.reduce((sum, d) => sum + (d.principal_amount || 0), 0);
+      const totalDisbursed = filtered.reduce(
+        (sum, d) => sum + (d.amount_disbursed ?? d.principal_amount ?? 0),
+        0,
+      );
       const totalRepaid = filtered.reduce((sum, d) => sum + (d.total_repaid || 0), 0);
       const totalOutstanding = filtered.reduce((sum, d) => sum + (d.balance_outstanding || 0), 0);
       const columns: ReportColumn[] = [
@@ -1239,7 +1246,7 @@ function ReportsTab() {
         staff_name: d.staff_name,
         staff_number: d.staff_number,
         loan_type_name: d.loan_type_name,
-        principal_amount: formatCurrency(d.principal_amount),
+        principal_amount: formatCurrency(d.amount_disbursed ?? d.principal_amount ?? 0),
         total_repaid: formatCurrency(d.total_repaid),
         balance_outstanding: formatCurrency(d.balance_outstanding),
         status: d.status.replace('_', ' '),
@@ -1321,7 +1328,7 @@ function ReportsTab() {
           };
         }
         acc[keyValue].total_loans += 1;
-        acc[keyValue].total_disbursed += d.principal_amount || 0;
+        acc[keyValue].total_disbursed += d.amount_disbursed ?? d.principal_amount ?? 0;
         acc[keyValue].total_repaid += d.total_repaid || 0;
         acc[keyValue].total_outstanding += d.balance_outstanding || 0;
         return acc;

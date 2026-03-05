@@ -13,7 +13,7 @@ import {
   Wallet,
   CreditCard
 } from 'lucide-react';
-import { formatCompactCurrency } from '../utils/format';
+import { formatCompactCurrency, formatCurrency } from '../utils/format';
 import { PageSkeleton } from '../components/PageLoader';
 import { cooperativeAPI, disbursementAPI } from '../lib/loanAPI';
 import type { Cooperative, CooperativeMember, CooperativeContribution, LoanDisbursement } from '../types/entities';
@@ -327,19 +327,19 @@ function OverviewReport({ cooperatives, selectedCooperativeId }: { cooperatives:
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Contributions</p>
-                  <p className="text-sm text-card-foreground">₦{(stat?.total_contributions || 0).toLocaleString()}</p>
+                  <p className="text-sm text-card-foreground">{formatCurrency(stat?.total_contributions)}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Share Capital</p>
-                  <p className="text-sm text-card-foreground">₦{(stat?.total_share_capital || 0).toLocaleString()}</p>
+                  <p className="text-sm text-card-foreground">{formatCurrency(stat?.total_share_capital)}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Loans Disbursed</p>
-                  <p className="text-sm text-card-foreground">₦{(stat?.total_loans_disbursed || 0).toLocaleString()}</p>
+                  <p className="text-sm text-card-foreground">{formatCurrency(stat?.total_loans_disbursed)}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Outstanding</p>
-                  <p className="text-sm text-card-foreground">₦{(stat?.total_outstanding || 0).toLocaleString()}</p>
+                  <p className="text-sm text-card-foreground">{formatCurrency(stat?.total_outstanding)}</p>
                 </div>
               </div>
             </div>

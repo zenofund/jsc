@@ -405,15 +405,20 @@ export const disbursementAPI = {
 
     const repayments = await makeApiRequest(`/loans/repayments?disbursement_id=${disbursementId}`, { method: 'GET' });
 
+    const totalAmount = disbursement.total_amount ?? disbursement.amount_disbursed ?? disbursement.principal_amount ?? 0;
+    const totalRepaid = disbursement.total_repaid ?? 0;
+    const balanceOutstanding = disbursement.balance_outstanding ?? 0;
+    const tenureMonths = disbursement.tenure_months ?? 0;
+
     return {
       disbursement,
       repayments: repayments.sort((a: any, b: any) => a.repayment_month.localeCompare(b.repayment_month)),
       summary: {
-        total_amount: disbursement.total_amount,
-        total_repaid: disbursement.total_repaid,
-        balance_outstanding: disbursement.balance_outstanding,
+        total_amount: totalAmount,
+        total_repaid: totalRepaid,
+        balance_outstanding: balanceOutstanding,
         months_paid: repayments.length,
-        months_remaining: disbursement.tenure_months - repayments.length,
+        months_remaining: Math.max(0, tenureMonths - repayments.length),
       },
     };
   },
