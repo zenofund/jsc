@@ -132,6 +132,7 @@ export class DeductionsService {
   async createStaffDeduction(dto: any, userId: string, userRole?: string) {
     const deductionCode = dto.deduction_code || dto.deductionCode;
     const deductionName = dto.deduction_name || dto.deductionName;
+    const deductionId = dto.deduction_id || dto.deductionId;
 
     // Determine initial status based on role
     let initialStatus = 'active';
@@ -139,29 +140,26 @@ export class DeductionsService {
       initialStatus = 'pending';
     }
 
-    // 1. Check if deduction exists
-    let deduction = await this.databaseService.queryOne(
-      'SELECT * FROM deductions WHERE code = $1',
-      [deductionCode],
-    );
-
-    // 2. If not, create global deduction
+    let deduction = null;
+    if (deductionId) {
+      deduction = await this.databaseService.queryOne(
+        'SELECT * FROM deductions WHERE id = $1',
+        [deductionId],
+      );
+    } else if (deductionCode) {
+      deduction = await this.databaseService.queryOne(
+        'SELECT * FROM deductions WHERE code = $1',
+        [deductionCode],
+      );
+    }
     if (!deduction) {
-      try {
-        deduction = await this.createGlobalDeduction({
-          code: deductionCode,
-          name: deductionName,
-          type: dto.type || 'fixed',
-          appliesToAll: false, // Default to false for ad-hoc creations
-        }, userId);
-      } catch (error) {
-        // If race condition or error, try fetching again
-         deduction = await this.databaseService.queryOne(
-          'SELECT * FROM deductions WHERE code = $1',
-          [deductionCode],
-        );
-        if (!deduction) throw new BadRequestException(`Failed to create or find deduction with code ${deductionCode}. Detailed error: ${error.message}`);
-      }
+      throw new BadRequestException('Deduction must be selected from Payroll Setup');
+    }
+    if (deduction.applies_to_all) {
+      throw new BadRequestException('Global deductions cannot be assigned as staff-specific');
+    }
+    if (deduction.status !== 'active') {
+      throw new BadRequestException('Selected deduction is not active');
     }
 
     // 3. Create staff deduction linked to (potentially new) global deduction
@@ -173,9 +171,9 @@ export class DeductionsService {
       RETURNING *`,
       [
         dto.staff_id || dto.staffId,
-        deduction.id, // Use the ID we resolved
-        dto.amount || null,
-        dto.percentage || null,
+        deduction.id,
+        deduction.type === 'fixed' ? (dto.amount || null) : null,
+        deduction.type === 'percentage' ? (dto.percentage || null) : null,
         (dto.effective_from || dto.startMonth) ? `${(dto.effective_from || dto.startMonth).substring(0, 7)}-01` : null,
         (dto.effective_to || dto.endMonth) ? `${(dto.effective_to || dto.endMonth).substring(0, 7)}-01` : null,
         dto.frequency || 'monthly',

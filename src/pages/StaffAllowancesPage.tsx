@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../contexts/ConfirmContext';
-import { staffAPI, staffAllowanceAPI, staffDeductionAPI } from '../lib/api-client';
-import { Staff, StaffAllowance, StaffDeduction } from '../types/entities';
+import { staffAPI, staffAllowanceAPI, staffDeductionAPI, allowanceAPI, deductionAPI } from '../lib/api-client';
+import { Staff, StaffAllowance, StaffDeduction, Allowance, Deduction } from '../types/entities';
 import { Plus, Edit, Trash2, DollarSign, User, Calendar, X, Loader2 } from 'lucide-react';
 import { StatusBadge } from '../components/StatusBadge';
 import { Modal } from '../components/Modal';
@@ -22,6 +22,8 @@ export function StaffAllowancesPage() {
   const [selectedStaff, setSelectedStaff] = useState<Staff | null>(null);
   const [staffAllowances, setStaffAllowances] = useState<StaffAllowance[]>([]);
   const [staffDeductions, setStaffDeductions] = useState<StaffDeduction[]>([]);
+  const [allowanceOptions, setAllowanceOptions] = useState<Allowance[]>([]);
+  const [deductionOptions, setDeductionOptions] = useState<Deduction[]>([]);
   
   const [showAllowanceModal, setShowAllowanceModal] = useState(false);
   const [showDeductionModal, setShowDeductionModal] = useState(false);
@@ -38,6 +40,24 @@ export function StaffAllowancesPage() {
       loadStaffItems();
     }
   }, [selectedStaff]);
+
+  useEffect(() => {
+    const loadCatalog = async () => {
+      try {
+        const [allowances, deductions] = await Promise.all([
+          allowanceAPI.getAllAllowances(),
+          deductionAPI.getAllDeductions(),
+        ]);
+        const filteredAllowances = (allowances || []).filter((a: any) => a.status === 'active' && a.applies_to_all === false);
+        const filteredDeductions = (deductions || []).filter((d: any) => d.status === 'active' && d.applies_to_all === false);
+        setAllowanceOptions(filteredAllowances);
+        setDeductionOptions(filteredDeductions);
+      } catch (error: any) {
+        showToast('error', error.message || 'Failed to load allowance/deduction catalog');
+      }
+    };
+    loadCatalog();
+  }, []);
 
 // ... existing code ...
   const loadStaffItems = async () => {
@@ -61,14 +81,17 @@ export function StaffAllowancesPage() {
     initialData, 
     onSubmit, 
     onCancel, 
-    isSubmitting 
+    isSubmitting,
+    allowanceOptions,
   }: { 
     initialData?: StaffAllowance | null, 
     onSubmit: (data: any) => void, 
     onCancel: () => void, 
-    isSubmitting: boolean 
+    isSubmitting: boolean,
+    allowanceOptions: Allowance[],
   }) => {
     const [localFormData, setLocalFormData] = useState({
+      allowance_id: '',
       allowance_code: initialData?.allowance_code ?? '',
       allowance_name: initialData?.allowance_name ?? '',
       type: initialData?.type ?? 'fixed',
@@ -85,7 +108,9 @@ export function StaffAllowancesPage() {
     // Update state when initialData changes
     useEffect(() => {
       if (initialData) {
+        const match = allowanceOptions.find((a) => a.code === initialData.allowance_code);
         setLocalFormData({
+          allowance_id: match?.id || '',
           allowance_code: initialData.allowance_code ?? '',
           allowance_name: initialData.allowance_name ?? '',
           type: initialData.type ?? 'fixed',
@@ -99,36 +124,46 @@ export function StaffAllowancesPage() {
           notes: initialData.notes ?? '',
         });
       }
-    }, [initialData]);
+    }, [initialData, allowanceOptions]);
 
     return (
       <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1">
-              Allowance Code *
-            </label>
-            <input
-              type="text"
-              value={localFormData.allowance_code}
-              onChange={(e) => setLocalFormData({ ...localFormData, allowance_code: e.target.value.toUpperCase() })}
-              placeholder="e.g., OVT, ACT"
-              className="w-full p-2 border border-border rounded-md bg-background text-foreground"
-            />
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1">
-              Allowance Name *
-            </label>
-            <input
-              type="text"
-              value={localFormData.allowance_name}
-              onChange={(e) => setLocalFormData({ ...localFormData, allowance_name: e.target.value })}
-              placeholder="e.g., Overtime Payment"
-              className="w-full p-2 border border-border rounded-md bg-background text-foreground"
-            />
-          </div>
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-1">
+            Allowance *
+          </label>
+          <select
+            value={localFormData.allowance_id}
+            onChange={(e) => {
+              const selected = allowanceOptions.find((a) => a.id === e.target.value);
+              if (!selected) {
+                setLocalFormData({
+                  ...localFormData,
+                  allowance_id: e.target.value,
+                });
+                return;
+              }
+              setLocalFormData({
+                ...localFormData,
+                allowance_id: selected.id,
+                allowance_code: selected.code,
+                allowance_name: selected.name,
+                type: selected.type,
+                is_taxable: selected.is_taxable,
+                is_pensionable: selected.is_pensionable,
+                amount: selected.type === 'fixed' ? (selected.amount ?? 0) : localFormData.amount,
+                percentage: selected.type === 'percentage' ? (selected.percentage ?? 0) : localFormData.percentage,
+              });
+            }}
+            className="w-full p-2 border border-border rounded-md bg-background text-foreground"
+          >
+            <option value="">-- Select Allowance --</option>
+            {allowanceOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.code} - {option.name}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
@@ -136,8 +171,8 @@ export function StaffAllowancesPage() {
             <label className="block text-sm font-medium text-foreground mb-1">Type</label>
             <select
               value={localFormData.type}
-              onChange={(e) => setLocalFormData({ ...localFormData, type: e.target.value as 'fixed' | 'percentage' })}
-              className="w-full p-2 border border-border rounded-md bg-background text-foreground"
+              disabled
+              className="w-full p-2 border border-border rounded-md bg-muted text-foreground"
             >
               <option value="fixed">Fixed Amount</option>
               <option value="percentage">Percentage of Basic</option>
@@ -178,7 +213,7 @@ export function StaffAllowancesPage() {
               <input
                 type="checkbox"
                 checked={localFormData.is_taxable}
-                onChange={(e) => setLocalFormData({ ...localFormData, is_taxable: e.target.checked })}
+                disabled
                 className="size-4"
               />
               <span className="text-sm text-foreground">Taxable</span>
@@ -187,7 +222,7 @@ export function StaffAllowancesPage() {
               <input
                 type="checkbox"
                 checked={localFormData.is_pensionable}
-                onChange={(e) => setLocalFormData({ ...localFormData, is_pensionable: e.target.checked })}
+                disabled
                 className="size-4"
               />
               <span className="text-sm text-foreground">Pensionable</span>
@@ -255,14 +290,17 @@ export function StaffAllowancesPage() {
     initialData, 
     onSubmit, 
     onCancel, 
-    isSubmitting 
+    isSubmitting,
+    deductionOptions,
   }: { 
     initialData?: StaffDeduction | null, 
     onSubmit: (data: any) => void, 
     onCancel: () => void, 
-    isSubmitting: boolean 
+    isSubmitting: boolean,
+    deductionOptions: Deduction[],
   }) => {
     const [localFormData, setLocalFormData] = useState({
+      deduction_id: '',
       deduction_code: initialData?.deduction_code ?? '',
       deduction_name: initialData?.deduction_name ?? '',
       type: initialData?.type ?? 'fixed',
@@ -277,7 +315,9 @@ export function StaffAllowancesPage() {
     // Update state when initialData changes
     useEffect(() => {
       if (initialData) {
+        const match = deductionOptions.find((d) => d.code === initialData.deduction_code);
         setLocalFormData({
+          deduction_id: match?.id || '',
           deduction_code: initialData.deduction_code ?? '',
           deduction_name: initialData.deduction_name ?? '',
           type: initialData.type ?? 'fixed',
@@ -289,36 +329,44 @@ export function StaffAllowancesPage() {
           notes: initialData.notes ?? '',
         });
       }
-    }, [initialData]);
+    }, [initialData, deductionOptions]);
 
     return (
       <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1">
-              Deduction Code *
-            </label>
-            <input
-              type="text"
-              value={localFormData.deduction_code}
-              onChange={(e) => setLocalFormData({ ...localFormData, deduction_code: e.target.value.toUpperCase() })}
-              placeholder="e.g., LOAN, DISC"
-              className="w-full p-2 border border-border rounded-md bg-background text-foreground"
-            />
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1">
-              Deduction Name *
-            </label>
-            <input
-              type="text"
-              value={localFormData.deduction_name}
-              onChange={(e) => setLocalFormData({ ...localFormData, deduction_name: e.target.value })}
-              placeholder="e.g., Loan Repayment"
-              className="w-full p-2 border border-border rounded-md bg-background text-foreground"
-            />
-          </div>
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-1">
+            Deduction *
+          </label>
+          <select
+            value={localFormData.deduction_id}
+            onChange={(e) => {
+              const selected = deductionOptions.find((d) => d.id === e.target.value);
+              if (!selected) {
+                setLocalFormData({
+                  ...localFormData,
+                  deduction_id: e.target.value,
+                });
+                return;
+              }
+              setLocalFormData({
+                ...localFormData,
+                deduction_id: selected.id,
+                deduction_code: selected.code,
+                deduction_name: selected.name,
+                type: selected.type,
+                amount: selected.type === 'fixed' ? (selected.amount ?? 0) : localFormData.amount,
+                percentage: selected.type === 'percentage' ? (selected.percentage ?? 0) : localFormData.percentage,
+              });
+            }}
+            className="w-full p-2 border border-border rounded-md bg-background text-foreground"
+          >
+            <option value="">-- Select Deduction --</option>
+            {deductionOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.code} - {option.name}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
@@ -326,8 +374,8 @@ export function StaffAllowancesPage() {
             <label className="block text-sm font-medium text-foreground mb-1">Type</label>
             <select
               value={localFormData.type}
-              onChange={(e) => setLocalFormData({ ...localFormData, type: e.target.value as 'fixed' | 'percentage' })}
-              className="w-full p-2 border border-border rounded-md bg-background text-foreground"
+              disabled
+              className="w-full p-2 border border-border rounded-md bg-muted text-foreground"
             >
               <option value="fixed">Fixed Amount</option>
               <option value="percentage">Percentage of Gross</option>
@@ -429,8 +477,8 @@ export function StaffAllowancesPage() {
   };
 
   const handleSaveAllowance = async (formData: any) => {
-    if (!selectedStaff || !formData.allowance_code || !formData.allowance_name) {
-      showToast('error', 'Please fill required fields');
+    if (!selectedStaff || !formData.allowance_id) {
+      showToast('error', 'Please select an allowance');
       return;
     }
 
@@ -440,6 +488,7 @@ export function StaffAllowancesPage() {
         staff_id: selectedStaff.id,
         staff_number: selectedStaff.staff_number,
         staff_name: `${selectedStaff.bio_data.first_name} ${selectedStaff.bio_data.last_name}`,
+        allowance_id: formData.allowance_id,
         allowance_code: formData.allowance_code,
         allowance_name: formData.allowance_name,
         type: formData.type,
@@ -482,8 +531,8 @@ export function StaffAllowancesPage() {
   };
 
   const handleSaveDeduction = async (formData: any) => {
-    if (!selectedStaff || !formData.deduction_code || !formData.deduction_name) {
-      showToast('error', 'Please fill required fields');
+    if (!selectedStaff || !formData.deduction_id) {
+      showToast('error', 'Please select a deduction');
       return;
     }
 
@@ -493,6 +542,7 @@ export function StaffAllowancesPage() {
         staff_id: selectedStaff.id,
         staff_number: selectedStaff.staff_number,
         staff_name: `${selectedStaff.bio_data.first_name} ${selectedStaff.bio_data.last_name}`,
+        deduction_id: formData.deduction_id,
         deduction_code: formData.deduction_code,
         deduction_name: formData.deduction_name,
         type: formData.type,
@@ -820,6 +870,7 @@ export function StaffAllowancesPage() {
             onSubmit={handleSaveAllowance}
             onCancel={() => setShowAllowanceModal(false)}
             isSubmitting={isSubmitting}
+            allowanceOptions={allowanceOptions}
           />
         </Modal>
       )}
@@ -836,6 +887,7 @@ export function StaffAllowancesPage() {
             onSubmit={handleSaveDeduction}
             onCancel={() => setShowDeductionModal(false)}
             isSubmitting={isSubmitting}
+            deductionOptions={deductionOptions}
           />
         </Modal>
       )}

@@ -153,30 +153,27 @@ export class AllowancesService {
       initialStatus = 'pending';
     }
 
-    // 1. Check if allowance exists
-    let allowance = await this.databaseService.queryOne(
-      'SELECT * FROM allowances WHERE code = $1',
-      [allowanceCode],
-    );
-
-    // 2. If not, create global allowance
+    const allowanceId = dto.allowance_id || dto.allowanceId;
+    let allowance = null;
+    if (allowanceId) {
+      allowance = await this.databaseService.queryOne(
+        'SELECT * FROM allowances WHERE id = $1',
+        [allowanceId],
+      );
+    } else if (allowanceCode) {
+      allowance = await this.databaseService.queryOne(
+        'SELECT * FROM allowances WHERE code = $1',
+        [allowanceCode],
+      );
+    }
     if (!allowance) {
-      try {
-        allowance = await this.createGlobalAllowance({
-          code: allowanceCode,
-          name: allowanceName,
-          type: dto.type || 'fixed',
-          isTaxable: dto.is_taxable ?? true,
-          appliesToAll: false, // Default to false for ad-hoc creations
-        }, userId);
-      } catch (error) {
-        // If race condition or error, try fetching again
-         allowance = await this.databaseService.queryOne(
-          'SELECT * FROM allowances WHERE code = $1',
-          [allowanceCode],
-        );
-        if (!allowance) throw new BadRequestException(`Failed to create or find allowance with code ${allowanceCode}. Detailed error: ${error.message}`);
-      }
+      throw new BadRequestException('Allowance must be selected from Payroll Setup');
+    }
+    if (allowance.applies_to_all) {
+      throw new BadRequestException('Global allowances cannot be assigned as staff-specific');
+    }
+    if (allowance.status !== 'active') {
+      throw new BadRequestException('Selected allowance is not active');
     }
 
     // 3. Create staff allowance linked to (potentially new) global allowance
@@ -188,9 +185,9 @@ export class AllowancesService {
       RETURNING *`,
       [
         dto.staff_id || dto.staffId,
-        allowance.id, // Use the ID we resolved
-        dto.amount || null,
-        dto.percentage || null,
+        allowance.id,
+        allowance.type === 'fixed' ? (dto.amount || null) : null,
+        allowance.type === 'percentage' ? (dto.percentage || null) : null,
         (dto.effective_from || dto.startMonth) ? `${(dto.effective_from || dto.startMonth).substring(0, 7)}-01` : null,
         (dto.effective_to || dto.endMonth) ? `${(dto.effective_to || dto.endMonth).substring(0, 7)}-01` : null,
         dto.frequency || 'monthly',

@@ -426,8 +426,9 @@ export class PayrollService {
         if (deduction.type === 'fixed') {
           amount = parseFloat(deduction.amount);
         } else if (deduction.type === 'percentage') {
-          // Special handling for Pension: Calculate on Gross Pay
-          if (deduction.code === 'PENSION') {
+          const code = String(deduction.code || '').toUpperCase();
+          const name = String(deduction.name || '').toUpperCase();
+          if (code.includes('PENSION') || name.includes('PENSION') || code.includes('NHF') || name.includes('NHF') || name.includes('HOUSING FUND')) {
             amount = (grossPay * parseFloat(deduction.percentage)) / 100;
           } else {
             amount = (basicSalary * parseFloat(deduction.percentage)) / 100;
@@ -469,8 +470,9 @@ export class PayrollService {
         if (deduction.type === 'fixed') {
           amount = parseFloat(deduction.amount);
         } else if (deduction.type === 'percentage') {
-          // Special handling for Pension: Calculate on Gross Pay
-          if ((deduction.deduction_code || deduction.code) === 'PENSION') {
+          const code = String(deduction.deduction_code || deduction.code || '').toUpperCase();
+          const name = String(deduction.deduction_name || deduction.name || '').toUpperCase();
+          if (code.includes('PENSION') || name.includes('PENSION') || code.includes('NHF') || name.includes('NHF') || name.includes('HOUSING FUND')) {
             amount = (grossPay * parseFloat(deduction.percentage)) / 100;
           } else {
             amount = (basicSalary * parseFloat(deduction.percentage)) / 100;
