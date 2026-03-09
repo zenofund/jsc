@@ -743,6 +743,7 @@ export interface LoanDisbursement {
   loan_type_name: string;
   cooperative_id?: string; // Optional: Link disbursement to a specific cooperative
   cooperative_name?: string;
+  amount_disbursed?: number;
   principal_amount: number;
   interest_amount: number;
   total_amount: number; // Principal + Interest

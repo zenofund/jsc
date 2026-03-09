@@ -180,8 +180,8 @@ function ApplicationsTab({
     reference_number: '',
     amount: 0,
   });
-  const [decisionModal, setDecisionModal] = useState<{ open: boolean; appId: string | null; action: 'approved' | 'rejected' | null }>({ open: false, appId: null, action: null });
-  const [decisionReason, setDecisionReason] = useState<string>('');
+  const [approvalModal, setApprovalModal] = useState<{ open: boolean; app: LoanApplication | null; action: 'approved' | 'rejected' | null }>({ open: false, app: null, action: null });
+  const [approvalComment, setApprovalComment] = useState('');
 
   useEffect(() => {
     if (selectedApp) {
@@ -343,7 +343,10 @@ function ApplicationsTab({
                         {(app.status === 'pending' || app.status === 'guarantor_pending') && (
                           <>
                             <button
-                              onClick={() => handleApprove(app.id, 'approved')}
+                              onClick={() => {
+                                setApprovalModal({ open: true, app, action: 'approved' });
+                                setApprovalComment('');
+                              }}
                               disabled={processingId === app.id}
                               className="p-2 rounded hover:bg-green-600 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                               title="Approve"
@@ -356,8 +359,8 @@ function ApplicationsTab({
                             </button>
                             <button
                               onClick={() => {
-                                setDecisionModal({ open: true, appId: app.id, action: 'rejected' });
-                                setDecisionReason('');
+                                setApprovalModal({ open: true, app, action: 'rejected' });
+                                setApprovalComment('');
                               }}
                               disabled={processingId === app.id}
                               className="p-2 rounded hover:bg-red-600 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -470,47 +473,47 @@ function ApplicationsTab({
         </div>
       )}
 
-      {/* Decision Reason Modal */}
-      {decisionModal.open && decisionModal.action === 'rejected' && decisionModal.appId && (
+      {/* Approval Modal */}
+      {approvalModal.open && approvalModal.app && approvalModal.action && (
         <div className="fixed inset-0 bg-background/30 backdrop-blur-md flex items-center justify-center z-50 p-4">
           <div className="max-w-md w-full rounded-lg p-6 bg-card border border-border">
             <div className="flex justify-between items-center mb-4">
-              <h3>Rejection Reason</h3>
-              <button onClick={() => setDecisionModal({ open: false, appId: null, action: null })} className="p-1 hover:bg-accent rounded">
+              <h3>{approvalModal.action === 'approved' ? 'Approve Loan' : 'Reject Loan'}</h3>
+              <button onClick={() => setApprovalModal({ open: false, app: null, action: null })} className="p-1 hover:bg-accent rounded">
                 <X className="w-5 h-5" />
               </button>
             </div>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm mb-1 text-card-foreground">Please provide a reason</label>
+                <label className="block text-sm mb-1 text-card-foreground">Comment (Optional)</label>
                 <textarea
-                  value={decisionReason}
-                  onChange={(e) => setDecisionReason(e.target.value)}
+                  value={approvalComment}
+                  onChange={(e) => setApprovalComment(e.target.value)}
                   rows={4}
                   className="w-full px-3 py-2 rounded border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                  placeholder="Enter a brief reason for rejection"
+                  placeholder="Add a comment for this decision"
                 />
               </div>
               <div className="flex justify-end gap-2">
                 <button
-                  onClick={() => setDecisionModal({ open: false, appId: null, action: null })}
+                  onClick={() => setApprovalModal({ open: false, app: null, action: null })}
                   className="px-4 py-2 text-foreground hover:bg-accent rounded"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={async () => {
-                    if (!decisionReason.trim()) {
-                      showToast.warning('Rejection reason is required');
-                      return;
-                    }
-                    const targetId = decisionModal.appId!;
-                    setDecisionModal({ open: false, appId: null, action: null });
-                    await handleApprove(targetId, 'rejected', decisionReason.trim());
+                    const targetId = approvalModal.app?.id;
+                    const action = approvalModal.action;
+                    if (!targetId || !action) return;
+                    setApprovalModal({ open: false, app: null, action: null });
+                    await handleApprove(targetId, action, approvalComment.trim());
                   }}
-                  className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+                  className={`px-4 py-2 text-white rounded ${
+                    approvalModal.action === 'approved' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'
+                  }`}
                 >
-                  Submit
+                  {approvalModal.action === 'approved' ? 'Approve' : 'Reject'}
                 </button>
               </div>
             </div>
