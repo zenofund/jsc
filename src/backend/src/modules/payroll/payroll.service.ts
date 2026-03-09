@@ -1432,6 +1432,116 @@ export class PayrollService {
     };
   }
 
+  async getPaymentTrace(batchId: string) {
+    const batch = await this.databaseService.queryOne(
+      `SELECT id, batch_number, payroll_month, status
+       FROM payroll_batches
+       WHERE id = $1`,
+      [batchId],
+    );
+
+    if (!batch) {
+      throw new NotFoundException(`Payroll batch #${batchId} not found`);
+    }
+
+    const lines = await this.databaseService.query(
+      `SELECT id, staff_id, staff_number, staff_name, net_pay, bank_name, account_number
+       FROM payroll_lines
+       WHERE payroll_batch_id = $1
+       ORDER BY staff_number`,
+      [batchId],
+    );
+
+    const paymentBatches = await this.databaseService.query(
+      `SELECT id, status, created_at
+       FROM payment_batches
+       WHERE payroll_batch_id = $1
+       ORDER BY created_at DESC`,
+      [batchId],
+    );
+
+    if (!paymentBatches.length) {
+      const unpaid = lines.map((line) => ({
+        staff_id: line.staff_id,
+        staff_number: line.staff_number,
+        staff_name: line.staff_name,
+        net_pay: line.net_pay,
+        reason: 'No payment batch generated',
+      }));
+
+      return {
+        batch,
+        total_staff: lines.length,
+        paid_count: 0,
+        unpaid_count: unpaid.length,
+        payment_batch_ids: [],
+        unpaid,
+      };
+    }
+
+    const paymentBatchIds = paymentBatches.map((pb) => pb.id);
+    const transactions = await this.databaseService.query(
+      `SELECT id, payment_batch_id, staff_id, staff_number, status, bank_response_message, updated_at
+       FROM payment_transactions
+       WHERE payment_batch_id = ANY($1::uuid[])
+       ORDER BY updated_at DESC`,
+      [paymentBatchIds],
+    );
+
+    const transactionMap = new Map<string, any>();
+    for (const tx of transactions) {
+      const keys = [tx.staff_id, tx.staff_number].filter(Boolean);
+      for (const key of keys) {
+        if (!transactionMap.has(key)) {
+          transactionMap.set(key, tx);
+        }
+      }
+    }
+
+    let paidCount = 0;
+    const unpaid: Array<any> = [];
+
+    for (const line of lines) {
+      const tx = transactionMap.get(line.staff_id) || transactionMap.get(line.staff_number);
+      const netPay = typeof line.net_pay === 'number' ? line.net_pay : parseFloat(line.net_pay || '0');
+      const missingBank = !line.bank_name || !line.account_number;
+
+      if (tx?.status === 'successful' || tx?.status === 'completed' || tx?.status === 'confirmed') {
+        paidCount += 1;
+        continue;
+      }
+
+      let reason = 'Not in payment batch';
+      if (missingBank) {
+        reason = 'Missing bank details';
+      } else if (!netPay || netPay <= 0) {
+        reason = 'Zero net pay';
+      } else if (tx?.status === 'failed') {
+        reason = tx.bank_response_message || 'Payment failed';
+      } else if (tx?.status === 'processing' || tx?.status === 'pending') {
+        reason = `Payment ${tx.status}`;
+      }
+
+      unpaid.push({
+        staff_id: line.staff_id,
+        staff_number: line.staff_number,
+        staff_name: line.staff_name,
+        net_pay: netPay,
+        transaction_status: tx?.status || 'none',
+        reason,
+      });
+    }
+
+    return {
+      batch,
+      total_staff: lines.length,
+      paid_count: paidCount,
+      unpaid_count: unpaid.length,
+      payment_batch_ids: paymentBatchIds,
+      unpaid,
+    };
+  }
+
   /**
    * Delete batch (only draft batches)
    */

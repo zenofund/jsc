@@ -105,6 +105,13 @@ export class PayrollController {
     return this.payrollService.getPayrollLines(id, query);
   }
 
+  @Get('batches/:id/payment-trace')
+  @Roles('admin', 'payroll_officer', 'cashier')
+  @ApiOperation({ summary: 'Get payment trace for a payroll batch' })
+  getPaymentTrace(@Param('id') id: string) {
+    return this.payrollService.getPaymentTrace(id);
+  }
+
   @Get('payslips/staff/:staffId')
   @ApiOperation({ summary: 'Get all payslips for a staff member' })
   getStaffPayslips(@Param('staffId') staffId: string, @Query('payrollMonth') payrollMonth?: string) {

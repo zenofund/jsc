@@ -137,6 +137,46 @@ body {
   -webkit-overflow-scrolling: touch;
 }
 
+:root {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--primary) 70%, #0000) color-mix(in oklab, var(--muted) 70%, #0000);
+}
+
+.dark {
+  scrollbar-color: color-mix(in oklab, var(--primary) 55%, #0000) color-mix(in oklab, var(--muted) 60%, #0000);
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: color-mix(in oklab, var(--muted) 65%, #0000);
+  border-radius: 999px;
+}
+
+.dark *::-webkit-scrollbar-track {
+  background: color-mix(in oklab, var(--muted) 55%, #0000);
+}
+
+*::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--primary) 60%, #0000);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklab, var(--primary) 75%, #0000);
+}
+
+.dark *::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--primary) 55%, #0000);
+}
+
+.dark *::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklab, var(--primary) 70%, #0000);
+}
+
 input, select, textarea {
   font-size: 16px;
 }

@@ -203,15 +203,22 @@ export class PromotionsService {
         const monthlyDifference = newNetSalary - oldNetSalary;
         
         if (monthlyDifference > 0) {
-          const totalArrears = monthlyDifference * monthsDiff;
+          const daysInEffectiveMonth = new Date(effectiveMonth.getFullYear(), effectiveMonth.getMonth() + 1, 0).getDate();
+          const effectiveDay = effectiveDateObj.getDate();
+          const eligibleDays = Math.max(0, daysInEffectiveMonth - (effectiveDay - 1));
+          const dailyDifference = monthlyDifference / daysInEffectiveMonth;
+          const proratedFirstMonth = dailyDifference * eligibleDays;
+          const fullMonthsAfter = Math.max(0, monthsDiff - 1);
+          const totalArrears = proratedFirstMonth + (monthlyDifference * fullMonthsAfter);
           
           const details = [];
           for (let i = 0; i < monthsDiff; i++) {
             const monthDate = new Date(effectiveMonth.getFullYear(), effectiveMonth.getMonth() + i, 1);
             const monthStr = monthDate.toISOString().substring(0, 7);
+            const amount = i === 0 ? proratedFirstMonth : monthlyDifference;
             details.push({
               month: monthStr,
-              amount: monthlyDifference
+              amount
             });
           }
           
@@ -254,7 +261,14 @@ export class PromotionsService {
   /**
    * Calculate arrears preview for a potential promotion
    */
-  async calculateArrearsPreview(staffId: string, newGradeLevel: number, newStep: number, effectiveDate: string) {
+  async calculateArrearsPreview(
+    staffId: string,
+    newGradeLevel: number,
+    newStep: number,
+    effectiveDate: string,
+    oldGradeLevel?: number,
+    oldStep?: number,
+  ) {
     const staff = await this.databaseService.queryOne('SELECT * FROM staff WHERE id = $1', [staffId]);
     if (!staff) {
       throw new NotFoundException(`Staff member with ID ${staffId} does not exist.`);
@@ -263,7 +277,9 @@ export class PromotionsService {
     // Calculate Old Basic Salary based on current Grade/Step (don't rely on stored current_basic_salary which might be stale)
     let oldBasicSalary: number;
     try {
-      oldBasicSalary = await this.salaryLookupService.getBasicSalary(staff.grade_level, staff.step);
+      const gradeLevel = typeof oldGradeLevel === 'number' ? oldGradeLevel : staff.grade_level;
+      const stepLevel = typeof oldStep === 'number' ? oldStep : staff.step;
+      oldBasicSalary = await this.salaryLookupService.getBasicSalary(gradeLevel, stepLevel);
     } catch (error) {
       // Fallback to stored salary if lookup fails (e.g. old grade not in current structure)
       this.logger.warn(`Could not lookup old salary for staff ${staffId} (GL${staff.grade_level}/${staff.step}). Using stored value.`);
@@ -278,26 +294,40 @@ export class PromotionsService {
       throw new NotFoundException(`Could not determine salary for Grade ${newGradeLevel} Step ${newStep}.`);
     }
 
-    // Calculate Net Salaries (Gross - Deductions)
-    const oldGrossSalary = await this.calculateGrossSalary(staffId, oldBasicSalary);
-    const newGrossSalary = await this.calculateGrossSalary(staffId, newBasicSalary);
+    const oldAllowances = await this.calculateAllowanceBreakdown(staffId, oldBasicSalary);
+    const newAllowances = await this.calculateAllowanceBreakdown(staffId, newBasicSalary);
+    const oldGrossSalary = oldBasicSalary + oldAllowances.total;
+    const newGrossSalary = newBasicSalary + newAllowances.total;
     
-    const oldDeductions = await this.calculateTotalDeductions(staffId, oldBasicSalary);
-    const newDeductions = await this.calculateTotalDeductions(staffId, newBasicSalary);
+    const oldDeductions = await this.calculateDeductionBreakdown(staffId, oldBasicSalary);
+    const newDeductions = await this.calculateDeductionBreakdown(staffId, newBasicSalary);
 
-    const oldNetSalary = oldGrossSalary - oldDeductions;
-    const newNetSalary = newGrossSalary - newDeductions;
+    const oldNetSalary = oldGrossSalary - oldDeductions.total;
+    const newNetSalary = newGrossSalary - newDeductions.total;
 
     // Calculate Difference
     const monthlyDifference = newNetSalary - oldNetSalary;
     
     // Calculate Months Owed
-    const effectiveMonth = new Date(effectiveDate);
+    const effectiveDateObj = new Date(effectiveDate);
+    const effectiveMonth = new Date(effectiveDateObj.getFullYear(), effectiveDateObj.getMonth(), 1);
     const today = new Date();
-    // Calculate full months difference
-    const monthsDiff = (today.getFullYear() - effectiveMonth.getFullYear()) * 12 + (today.getMonth() - effectiveMonth.getMonth());
+    const currentMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    const monthsDiff = (currentMonth.getFullYear() - effectiveMonth.getFullYear()) * 12 + (currentMonth.getMonth() - effectiveMonth.getMonth());
     
-    const totalArrears = Math.max(0, monthlyDifference * monthsDiff);
+    const safeMonthsDiff = Math.max(0, monthsDiff);
+    let totalArrears = 0;
+    let proratedFirstMonth = 0;
+    let fullMonthsAfter = 0;
+    if (monthlyDifference > 0 && safeMonthsDiff > 0) {
+      const daysInEffectiveMonth = new Date(effectiveMonth.getFullYear(), effectiveMonth.getMonth() + 1, 0).getDate();
+      const effectiveDay = effectiveDateObj.getDate();
+      const eligibleDays = Math.max(0, daysInEffectiveMonth - (effectiveDay - 1));
+      const dailyDifference = monthlyDifference / daysInEffectiveMonth;
+      proratedFirstMonth = dailyDifference * eligibleDays;
+      fullMonthsAfter = Math.max(0, safeMonthsDiff - 1);
+      totalArrears = proratedFirstMonth + (monthlyDifference * fullMonthsAfter);
+    }
 
     return {
       oldBasicSalary,
@@ -305,8 +335,16 @@ export class PromotionsService {
       oldNetSalary,
       newNetSalary,
       monthlyDifference,
-      monthsDiff: Math.max(0, monthsDiff),
-      totalArrears
+      monthsDiff: safeMonthsDiff,
+      proratedFirstMonth,
+      fullMonthsAfter,
+      totalArrears,
+      oldGrossSalary,
+      newGrossSalary,
+      oldAllowances,
+      newAllowances,
+      oldDeductions,
+      newDeductions,
     };
   }
 
@@ -430,5 +468,129 @@ export class PromotionsService {
     }
 
     return totalDeductions;
+  }
+
+  private async calculateAllowanceBreakdown(
+    staffId: string,
+    basicSalary: number,
+  ): Promise<{ total: number; items: Array<{ code: string; name: string; amount: number; type: string; source: string }> }> {
+    const globalAllowances = await this.databaseService.query(
+      `SELECT * FROM allowances WHERE status = 'active' AND applies_to_all = true`,
+    );
+
+    const staffAllowances = await this.databaseService.query(
+      `SELECT sa.*, a.type as allowance_type, a.percentage as global_percentage, a.name as allowance_name, a.code as allowance_code
+       FROM staff_allowances sa
+       JOIN allowances a ON sa.allowance_id = a.id
+       WHERE sa.status = 'active' AND sa.staff_id = $1`,
+      [staffId],
+    );
+
+    const items: Array<{ code: string; name: string; amount: number; type: string; source: string }> = [];
+    let total = 0;
+
+    for (const allowance of globalAllowances) {
+      let amount = 0;
+      if (allowance.type === 'percentage') {
+        amount = (basicSalary * parseFloat(allowance.percentage)) / 100;
+      } else if (allowance.type === 'fixed') {
+        amount = parseFloat(allowance.amount);
+      }
+      if (amount) {
+        items.push({
+          code: allowance.code,
+          name: allowance.name,
+          amount,
+          type: allowance.type,
+          source: 'global',
+        });
+        total += amount;
+      }
+    }
+
+    for (const allowance of staffAllowances) {
+      const type = allowance.allowance_type;
+      let amount = 0;
+      if (type === 'percentage') {
+        const pct = allowance.percentage ? parseFloat(allowance.percentage) : 0;
+        amount = (basicSalary * pct) / 100;
+      } else if (type === 'fixed') {
+        amount = allowance.amount ? parseFloat(allowance.amount) : 0;
+      }
+      if (amount) {
+        items.push({
+          code: allowance.allowance_code,
+          name: allowance.allowance_name,
+          amount,
+          type,
+          source: 'staff',
+        });
+        total += amount;
+      }
+    }
+
+    return { total, items };
+  }
+
+  private async calculateDeductionBreakdown(
+    staffId: string,
+    basicSalary: number,
+  ): Promise<{ total: number; items: Array<{ code: string; name: string; amount: number; type: string; source: string }> }> {
+    const globalDeductions = await this.databaseService.query(
+      `SELECT * FROM deductions WHERE status = 'active' AND applies_to_all = true AND code != 'TAX'`,
+    );
+
+    const staffDeductions = await this.databaseService.query(
+      `SELECT sd.*, d.type as deduction_type, d.percentage as global_percentage, d.name as deduction_name, d.code as deduction_code
+       FROM staff_deductions sd
+       JOIN deductions d ON sd.deduction_id = d.id
+       WHERE sd.status = 'active' AND sd.staff_id = $1 AND d.code != 'TAX'`,
+      [staffId],
+    );
+
+    const items: Array<{ code: string; name: string; amount: number; type: string; source: string }> = [];
+    let total = 0;
+
+    for (const deduction of globalDeductions) {
+      let amount = 0;
+      if (deduction.type === 'percentage') {
+        amount = (basicSalary * parseFloat(deduction.percentage)) / 100;
+      } else if (deduction.type === 'fixed') {
+        amount = parseFloat(deduction.amount);
+      }
+      if (amount) {
+        items.push({
+          code: deduction.code,
+          name: deduction.name,
+          amount,
+          type: deduction.type,
+          source: 'global',
+        });
+        total += amount;
+      }
+    }
+
+    for (const deduction of staffDeductions) {
+      const type = deduction.deduction_type;
+      let amount = 0;
+      if (type === 'percentage') {
+        const pct = deduction.percentage ? parseFloat(deduction.percentage) : 0;
+        amount = (basicSalary * pct) / 100;
+      } else if (type === 'fixed') {
+        amount = deduction.amount ? parseFloat(deduction.amount) : 0;
+      }
+      if (amount) {
+        items.push({
+          code: deduction.deduction_code,
+          name: deduction.deduction_name,
+          amount,
+          type,
+          source: 'staff',
+        });
+        total += amount;
+      }
+    }
+
+    return { total, items };
   }
 }

@@ -25,7 +25,9 @@ export class PromotionsController {
       body.staffId,
       body.newGradeLevel,
       body.newStep,
-      body.effectiveDate
+      body.effectiveDate,
+      body.oldGradeLevel,
+      body.oldStep,
     );
   }
 

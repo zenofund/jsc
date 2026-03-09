@@ -383,7 +383,13 @@ export const payrollAPI = {
       method: 'GET',
     });
     const raw = result.data || result;
-    const meta = result.meta || { total: Array.isArray(raw) ? raw.length : 0, page: 1, limit: 1000, totalPages: 1 };
+    const metaRaw = result.meta || { total: Array.isArray(raw) ? raw.length : 0, page: 1, limit: 1000, totalPages: 1 };
+    const meta = {
+      total: Number(metaRaw.total) || 0,
+      page: Number(metaRaw.page) || 1,
+      limit: Number(metaRaw.limit) || 1000,
+      totalPages: Number(metaRaw.totalPages) || 1,
+    };
 
     const normalizeLine = (line: any) => {
       const parseArray = (value: any) => {
@@ -436,6 +442,12 @@ export const payrollAPI = {
 
   async getPendingPayments() {
     return makeApiRequest('/payroll/pending-payments', {
+      method: 'GET',
+    });
+  },
+
+  async getPaymentTrace(batchId: string) {
+    return makeApiRequest(`/payroll/batches/${batchId}/payment-trace`, {
       method: 'GET',
     });
   },
@@ -529,20 +541,27 @@ export const promotionAPI = {
     });
   },
 
-  async previewArrears(staffId: string, newGradeLevel: number, newStep: number, effectiveDate: string) {
+  async previewArrears(
+    staffId: string,
+    newGradeLevel: number,
+    newStep: number,
+    effectiveDate: string,
+    oldGradeLevel?: number,
+    oldStep?: number,
+  ) {
     return makeApiRequest('/promotions/preview-arrears', {
       method: 'POST',
-      body: JSON.stringify({ staffId, newGradeLevel, newStep, effectiveDate }),
+      body: JSON.stringify({ staffId, newGradeLevel, newStep, effectiveDate, oldGradeLevel, oldStep }),
     });
   },
 
-  async approvePromotion(promotionId: string, approverId: string, approverEmail: string) {
+  async approvePromotion(promotionId: string, approverId: string, approverEmail: string, comment?: string) {
     // Note: Endpoint `/promotions/:id/approve` is MISSING in PromotionsController.
     // It has `getStaffPromotions`, `promoteStaff`, `getEligiblePromotions`, `getAll`.
     // Approval logic might be missing or handled via `promoteStaff` directly if it auto-approves.
     return makeApiRequest(`/promotions/${promotionId}/approve`, {
       method: 'POST',
-      body: JSON.stringify({ approverId, approverEmail }),
+      body: JSON.stringify({ approverId, approverEmail, comment }),
     });
   },
 

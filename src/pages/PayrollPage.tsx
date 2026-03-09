@@ -32,6 +32,9 @@ export function PayrollPage() {
   const [processingBatchId, setProcessingBatchId] = useState<string | null>(null);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [batchToRegenerate, setBatchToRegenerate] = useState<string | null>(null);
+  const [showTraceModal, setShowTraceModal] = useState(false);
+  const [traceLoading, setTraceLoading] = useState(false);
+  const [traceData, setTraceData] = useState<any>(null);
 
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
@@ -161,6 +164,21 @@ export function PayrollPage() {
       setExecutingPayment(false);
     }
   };
+
+  const handleOpenTrace = async (batch: PayrollBatch) => {
+    try {
+      setTraceLoading(true);
+      setShowTraceModal(true);
+      const data = await payrollAPI.getPaymentTrace(batch.id);
+      setTraceData(data);
+    } catch (error: any) {
+      console.error('Failed to load payment trace:', error);
+      showToast('error', error.message || 'Failed to load payment trace');
+      setTraceData(null);
+    } finally {
+      setTraceLoading(false);
+    }
+  };
   const handleSubmitForApproval = async (batchId: string) => {
     try {
       const token = localStorage.getItem('jsc_auth_token');
@@ -218,9 +236,9 @@ export function PayrollPage() {
       const meta = !Array.isArray(response) && response.meta ? response.meta : { total: lines.length, page: 1, limit: 100, totalPages: 1 };
       
       setPayrollLines(lines);
-      setPage(meta.page);
-      setTotalPages(meta.totalPages);
-      setTotalLines(meta.total);
+      setPage(Number(meta.page) || 1);
+      setTotalPages(Number(meta.totalPages) || 1);
+      setTotalLines(Number(meta.total) || lines.length);
     } catch (error) {
       console.error("Error fetching payroll lines:", error);
       setPayrollLines([]);
@@ -239,9 +257,9 @@ export function PayrollPage() {
       const meta = !Array.isArray(response) && response.meta ? response.meta : { total: lines.length, page: newPage, limit: 100, totalPages: 1 };
       
       setPayrollLines(lines);
-      setPage(meta.page);
-      setTotalPages(meta.totalPages);
-      setTotalLines(meta.total);
+      setPage(Number(meta.page) || newPage);
+      setTotalPages(Number(meta.totalPages) || 1);
+      setTotalLines(Number(meta.total) || lines.length);
     } catch (error) {
       console.error("Error fetching payroll lines:", error);
     } finally {
@@ -262,8 +280,8 @@ export function PayrollPage() {
       
       setPayrollLines(lines);
       setPage(1); // Reset to page 1
-      setTotalPages(meta.totalPages);
-      setTotalLines(meta.total);
+      setTotalPages(Number(meta.totalPages) || 1);
+      setTotalLines(Number(meta.total) || lines.length);
     } catch (error) {
       console.error("Error fetching payroll lines:", error);
     } finally {
@@ -376,6 +394,18 @@ export function PayrollPage() {
             >
               <CreditCard className="h-3 w-3" />
               Pay
+            </button>
+          )}
+          {(row.status === 'locked' || row.status === 'paid' || row.status === 'ready_for_payment') && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleOpenTrace(row);
+              }}
+              className="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 flex items-center gap-1"
+            >
+              <AlertCircle className="h-3 w-3" />
+              Trace
             </button>
           )}
         </div>
@@ -641,6 +671,72 @@ export function PayrollPage() {
               </button>
             </div>
           </div>
+        </Modal>
+      )}
+
+      {showTraceModal && (
+        <Modal
+          isOpen={true}
+          title={`Payment Trace - ${traceData?.batch?.batch_number || selectedBatch?.batch_number || ''}`}
+          onClose={() => {
+            setShowTraceModal(false);
+            setTraceData(null);
+          }}
+          size="lg"
+        >
+          {traceLoading ? (
+            <div className="py-8 text-center text-muted-foreground">Loading payment trace...</div>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="rounded-lg border border-border bg-card p-3">
+                  <div className="text-xs text-muted-foreground">Total Staff</div>
+                  <div className="text-lg text-card-foreground">{traceData?.total_staff || 0}</div>
+                </div>
+                <div className="rounded-lg border border-border bg-card p-3">
+                  <div className="text-xs text-muted-foreground">Paid</div>
+                  <div className="text-lg text-card-foreground">{traceData?.paid_count || 0}</div>
+                </div>
+                <div className="rounded-lg border border-border bg-card p-3">
+                  <div className="text-xs text-muted-foreground">Unpaid</div>
+                  <div className="text-lg text-card-foreground">{traceData?.unpaid_count || 0}</div>
+                </div>
+              </div>
+              <div className="rounded-lg border border-border overflow-hidden">
+                <table className="w-full">
+                  <thead className="bg-muted">
+                    <tr>
+                      <th className="px-4 py-2 text-left text-xs uppercase tracking-wider text-muted-foreground">Staff</th>
+                      <th className="px-4 py-2 text-left text-xs uppercase tracking-wider text-muted-foreground">Net Pay</th>
+                      <th className="px-4 py-2 text-left text-xs uppercase tracking-wider text-muted-foreground">Status</th>
+                      <th className="px-4 py-2 text-left text-xs uppercase tracking-wider text-muted-foreground">Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {(traceData?.unpaid || []).length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="px-4 py-6 text-center text-muted-foreground">
+                          No unpaid staff found
+                        </td>
+                      </tr>
+                    ) : (
+                      (traceData?.unpaid || []).map((item: any) => (
+                        <tr key={`${item.staff_id || item.staff_number}`}>
+                          <td className="px-4 py-3">
+                            <div className="text-sm text-card-foreground">{item.staff_name}</div>
+                            <div className="text-xs text-muted-foreground">{item.staff_number}</div>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-card-foreground">{formatCurrency(item.net_pay)}</td>
+                          <td className="px-4 py-3 text-sm text-card-foreground">{item.transaction_status || 'none'}</td>
+                          <td className="px-4 py-3 text-sm text-muted-foreground">{item.reason}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </Modal>
       )}
     </div>

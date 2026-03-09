@@ -9,7 +9,8 @@ import { useConfirm } from '../contexts/ConfirmContext';
 import { promotionAPI, staffAPI, settingsAPI } from '../lib/api-client';
 import { Promotion, Staff } from '../types/entities';
 import { PageSkeleton } from '../components/PageLoader';
-import { TrendingUp, Plus, CheckCircle, XCircle, Eye, AlertCircle, Calendar, Loader2, X } from 'lucide-react';
+import { TrendingUp, Plus, CheckCircle, XCircle, Eye, AlertCircle, Calendar, Loader2 } from 'lucide-react';
+import { formatCurrency } from '../utils/format';
 
 export function PromotionsPage() {
   const { user } = useAuth();
@@ -24,8 +25,7 @@ export function PromotionsPage() {
   const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [processingPromotionId, setProcessingPromotionId] = useState<string | null>(null);
-  const [showRejectReasonModal, setShowRejectReasonModal] = useState(false);
-  const [rejectReason, setRejectReason] = useState('');
+  const [approvalComment, setApprovalComment] = useState('');
   const [allowedGrades, setAllowedGrades] = useState<number[]>([3,4,5,6,7,8,9,10,12,13,14,15,16,17]);
 
   // Form state
@@ -46,7 +46,17 @@ export function PromotionsPage() {
     totalArrears: number;
     oldSalary: number;
     newSalary: number;
+    oldGrossSalary: number;
+    newGrossSalary: number;
+    oldAllowances: { total: number; items: Array<{ code: string; name: string; amount: number; type: string; source: string }> };
+    newAllowances: { total: number; items: Array<{ code: string; name: string; amount: number; type: string; source: string }> };
+    oldDeductions: { total: number; items: Array<{ code: string; name: string; amount: number; type: string; source: string }> };
+    newDeductions: { total: number; items: Array<{ code: string; name: string; amount: number; type: string; source: string }> };
+    proratedFirstMonth: number;
+    fullMonthsAfter: number;
   } | null>(null);
+  const [detailsArrearsPreview, setDetailsArrearsPreview] = useState<typeof arrearsPreview | null>(null);
+  const [detailsPreviewLoading, setDetailsPreviewLoading] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -131,7 +141,9 @@ export function PromotionsPage() {
         formData.staff_id,
         formData.new_grade_level,
         formData.new_step,
-        formData.effective_date
+        formData.effective_date,
+        formData.old_grade_level,
+        formData.old_step,
       );
 
       setArrearsPreview({
@@ -140,6 +152,14 @@ export function PromotionsPage() {
         totalArrears: result.totalArrears,
         oldSalary: result.oldNetSalary,
         newSalary: result.newNetSalary,
+        oldGrossSalary: result.oldGrossSalary,
+        newGrossSalary: result.newGrossSalary,
+        oldAllowances: result.oldAllowances,
+        newAllowances: result.newAllowances,
+        oldDeductions: result.oldDeductions,
+        newDeductions: result.newDeductions,
+        proratedFirstMonth: result.proratedFirstMonth,
+        fullMonthsAfter: result.fullMonthsAfter,
       });
     } catch (error) {
       console.error('Failed to calculate arrears preview:', error);
@@ -151,6 +171,46 @@ export function PromotionsPage() {
   useEffect(() => {
     calculateArrearsPreview();
   }, [formData.new_grade_level, formData.new_step, formData.effective_date, formData.staff_id]);
+
+  useEffect(() => {
+    const loadDetailsPreview = async () => {
+      if (!showDetailsModal || !selectedPromotion) {
+        setDetailsArrearsPreview(null);
+        return;
+      }
+      try {
+        setDetailsPreviewLoading(true);
+        const result = await promotionAPI.previewArrears(
+          selectedPromotion.staff_id,
+          selectedPromotion.new_grade_level,
+          selectedPromotion.new_step,
+          selectedPromotion.effective_date,
+          selectedPromotion.old_grade_level,
+          selectedPromotion.old_step,
+        );
+        setDetailsArrearsPreview({
+          monthlyDifference: result.monthlyDifference,
+          monthsOwed: result.monthsDiff,
+          totalArrears: result.totalArrears,
+          oldSalary: result.oldNetSalary,
+          newSalary: result.newNetSalary,
+          oldGrossSalary: result.oldGrossSalary,
+          newGrossSalary: result.newGrossSalary,
+          oldAllowances: result.oldAllowances,
+          newAllowances: result.newAllowances,
+          oldDeductions: result.oldDeductions,
+          newDeductions: result.newDeductions,
+          proratedFirstMonth: result.proratedFirstMonth,
+          fullMonthsAfter: result.fullMonthsAfter,
+        });
+      } catch {
+        setDetailsArrearsPreview(null);
+      } finally {
+        setDetailsPreviewLoading(false);
+      }
+    };
+    loadDetailsPreview();
+  }, [showDetailsModal, selectedPromotion]);
 
   const handleCreatePromotion = async () => {
     if (!formData.staff_id || !formData.new_grade_level || !formData.new_step || !formData.effective_date) {
@@ -202,9 +262,10 @@ export function PromotionsPage() {
 
     try {
       setProcessingPromotionId(promotionId);
-      await promotionAPI.approvePromotion(promotionId, user!.id, user!.email);
+      await promotionAPI.approvePromotion(promotionId, user!.id, user!.email, approvalComment.trim());
       showToast('success', 'Promotion approved successfully. Staff record updated and arrears calculated.');
       setShowDetailsModal(false);
+      setApprovalComment('');
       loadData();
     } catch (error) {
       showToast('error', 'Failed to approve promotion');
@@ -215,9 +276,18 @@ export function PromotionsPage() {
 
   const handleRejectPromotion = async (promotionId: string) => {
     if (!await confirm('Are you sure you want to reject this promotion?')) return;
-    setRejectReason('');
-    setShowRejectReasonModal(true);
-    setSelectedPromotion(promotions.find(p => p.id === promotionId) || null);
+    try {
+      setProcessingPromotionId(promotionId);
+      await promotionAPI.rejectPromotion(promotionId, user!.id, user!.email, approvalComment.trim());
+      showToast('success', 'Promotion rejected');
+      setShowDetailsModal(false);
+      setApprovalComment('');
+      loadData();
+    } catch {
+      showToast('error', 'Failed to reject promotion');
+    } finally {
+      setProcessingPromotionId(null);
+    }
   };
 
   const resetForm = () => {
@@ -231,6 +301,7 @@ export function PromotionsPage() {
       justification: '',
     });
     setArrearsPreview(null);
+    setApprovalComment('');
   };
 
   const getStaffName = (staffId: string): string => {
@@ -302,6 +373,7 @@ export function PromotionsPage() {
             onClick={(e) => {
               e.stopPropagation();
               setSelectedPromotion(row);
+              setApprovalComment('');
               setShowDetailsModal(true);
             }}
             className="p-1 hover:bg-accent rounded"
@@ -420,62 +492,7 @@ export function PromotionsPage() {
         </div>
       </div>
 
-      {/* Reject Reason Modal */}
-      {showRejectReasonModal && selectedPromotion && (
-        <div className="fixed inset-0 bg-background/30 backdrop-blur-md flex items-center justify-center z-50 p-4">
-          <div className="max-w-md w-full rounded-lg p-6 bg-card border border-border">
-            <div className="flex justify-between items-center mb-4">
-              <h3>Reject Promotion</h3>
-              <button onClick={() => setShowRejectReasonModal(false)} className="p-1 hover:bg-accent rounded">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-1">Reason</label>
-                <textarea
-                  value={rejectReason}
-                  onChange={(e) => setRejectReason(e.target.value)}
-                  rows={4}
-                  className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-                  placeholder="Provide a brief reason for rejection"
-                />
-              </div>
-              <div className="flex justify-end gap-2">
-                <button
-                  onClick={() => setShowRejectReasonModal(false)}
-                  className="px-4 py-2 text-foreground hover:bg-accent rounded"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={async () => {
-                    if (!rejectReason.trim()) {
-                      showToast('warning', 'Rejection reason is required');
-                      return;
-                    }
-                    try {
-                      setProcessingPromotionId(selectedPromotion.id);
-                      await promotionAPI.rejectPromotion(selectedPromotion.id, user!.id, user!.email, rejectReason.trim());
-                      showToast('success', 'Promotion rejected');
-                      setShowRejectReasonModal(false);
-                      setShowDetailsModal(false);
-                      loadData();
-                    } catch {
-                      showToast('error', 'Failed to reject promotion');
-                    } finally {
-                      setProcessingPromotionId(null);
-                    }
-                  }}
-                  className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
-                >
-                  Submit
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      
 
       {/* Info Banner */}
       <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 rounded-lg">
@@ -648,19 +665,19 @@ export function PromotionsPage() {
                     <div>
                       <span className="text-orange-700 dark:text-orange-300">Old Monthly Salary:</span>
                       <div className="font-semibold text-orange-900 dark:text-orange-200">
-                        ₦{arrearsPreview.oldSalary.toLocaleString()}
+                        {formatCurrency(arrearsPreview.oldSalary)}
                       </div>
                     </div>
                     <div>
                       <span className="text-orange-700 dark:text-orange-300">New Monthly Salary:</span>
                       <div className="font-semibold text-orange-900 dark:text-orange-200">
-                        ₦{arrearsPreview.newSalary.toLocaleString()}
+                        {formatCurrency(arrearsPreview.newSalary)}
                       </div>
                     </div>
                     <div>
                       <span className="text-orange-700 dark:text-orange-300">Monthly Difference:</span>
                       <div className="font-semibold text-orange-900 dark:text-orange-200">
-                        ₦{arrearsPreview.monthlyDifference.toLocaleString()}
+                        {formatCurrency(arrearsPreview.monthlyDifference)}
                       </div>
                     </div>
                     <div>
@@ -670,10 +687,97 @@ export function PromotionsPage() {
                       </div>
                     </div>
                   </div>
+                  <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <span className="text-orange-700 dark:text-orange-300">Old Gross:</span>
+                      <div className="font-semibold text-orange-900 dark:text-orange-200">
+                        {formatCurrency(arrearsPreview.oldGrossSalary)}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-orange-700 dark:text-orange-300">New Gross:</span>
+                      <div className="font-semibold text-orange-900 dark:text-orange-200">
+                        {formatCurrency(arrearsPreview.newGrossSalary)}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-orange-700 dark:text-orange-300">Old Deductions:</span>
+                      <div className="font-semibold text-orange-900 dark:text-orange-200">
+                        {formatCurrency(arrearsPreview.oldDeductions.total)}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-orange-700 dark:text-orange-300">New Deductions:</span>
+                      <div className="font-semibold text-orange-900 dark:text-orange-200">
+                        {formatCurrency(arrearsPreview.newDeductions.total)}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-3 text-xs text-orange-700 dark:text-orange-300">
+                    Prorated first month: {formatCurrency(arrearsPreview.proratedFirstMonth)} · Full months after: {arrearsPreview.fullMonthsAfter}
+                  </div>
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="rounded-lg border border-orange-200 dark:border-orange-900 bg-white/60 dark:bg-orange-950/40 p-3">
+                      <div className="text-xs text-orange-800 dark:text-orange-300 mb-2">Old Allowances</div>
+                      <div className="space-y-1 text-sm">
+                        {arrearsPreview.oldAllowances.items.map((item, idx) => (
+                          <div key={`${item.code}-${idx}`} className="flex items-center justify-between">
+                            <span className="text-orange-900 dark:text-orange-100">{item.name}</span>
+                            <span className="text-orange-900 dark:text-orange-100">{formatCurrency(item.amount)}</span>
+                          </div>
+                        ))}
+                        {arrearsPreview.oldAllowances.items.length === 0 && (
+                          <div className="text-orange-700 dark:text-orange-300">No allowances</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-orange-200 dark:border-orange-900 bg-white/60 dark:bg-orange-950/40 p-3">
+                      <div className="text-xs text-orange-800 dark:text-orange-300 mb-2">New Allowances</div>
+                      <div className="space-y-1 text-sm">
+                        {arrearsPreview.newAllowances.items.map((item, idx) => (
+                          <div key={`${item.code}-${idx}`} className="flex items-center justify-between">
+                            <span className="text-orange-900 dark:text-orange-100">{item.name}</span>
+                            <span className="text-orange-900 dark:text-orange-100">{formatCurrency(item.amount)}</span>
+                          </div>
+                        ))}
+                        {arrearsPreview.newAllowances.items.length === 0 && (
+                          <div className="text-orange-700 dark:text-orange-300">No allowances</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-orange-200 dark:border-orange-900 bg-white/60 dark:bg-orange-950/40 p-3">
+                      <div className="text-xs text-orange-800 dark:text-orange-300 mb-2">Old Deductions</div>
+                      <div className="space-y-1 text-sm">
+                        {arrearsPreview.oldDeductions.items.map((item, idx) => (
+                          <div key={`${item.code}-${idx}`} className="flex items-center justify-between">
+                            <span className="text-orange-900 dark:text-orange-100">{item.name}</span>
+                            <span className="text-orange-900 dark:text-orange-100">{formatCurrency(item.amount)}</span>
+                          </div>
+                        ))}
+                        {arrearsPreview.oldDeductions.items.length === 0 && (
+                          <div className="text-orange-700 dark:text-orange-300">No deductions</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-orange-200 dark:border-orange-900 bg-white/60 dark:bg-orange-950/40 p-3">
+                      <div className="text-xs text-orange-800 dark:text-orange-300 mb-2">New Deductions</div>
+                      <div className="space-y-1 text-sm">
+                        {arrearsPreview.newDeductions.items.map((item, idx) => (
+                          <div key={`${item.code}-${idx}`} className="flex items-center justify-between">
+                            <span className="text-orange-900 dark:text-orange-100">{item.name}</span>
+                            <span className="text-orange-900 dark:text-orange-100">{formatCurrency(item.amount)}</span>
+                          </div>
+                        ))}
+                        {arrearsPreview.newDeductions.items.length === 0 && (
+                          <div className="text-orange-700 dark:text-orange-300">No deductions</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                   <div className="mt-3 pt-3 border-t border-orange-200 dark:border-orange-800">
                     <span className="text-orange-700 dark:text-orange-300 text-sm">Total Arrears:</span>
                     <div className="text-xl font-bold text-orange-900 dark:text-orange-100">
-                      ₦{arrearsPreview.totalArrears.toLocaleString()}
+                      {formatCurrency(arrearsPreview.totalArrears)}
                     </div>
                   </div>
                 </div>
@@ -704,6 +808,7 @@ export function PromotionsPage() {
           onClose={() => {
             setShowDetailsModal(false);
             setSelectedPromotion(null);
+            setApprovalComment('');
           }}
           title="Promotion Details"
           footer={
@@ -796,6 +901,153 @@ export function PromotionsPage() {
                 </div>
               </div>
             )}
+
+            {selectedPromotion.status === 'pending' && (user?.role === 'admin' || user?.role === 'approver') && (
+              <div className="p-4 bg-muted/30 rounded-lg">
+                <label className="block text-xs text-muted-foreground mb-2">Approval / Rejection Comment (Optional)</label>
+                <textarea
+                  value={approvalComment}
+                  onChange={(e) => setApprovalComment(e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                  placeholder="Add an optional comment for approval or rejection"
+                />
+              </div>
+            )}
+
+            <div className="p-4 bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-900 rounded-lg">
+              <h4 className="font-medium text-orange-900 dark:text-orange-400 mb-2 flex items-center gap-2">
+                <Calendar className="w-4 h-4" />
+                Arrears Preview (Audit)
+              </h4>
+              {detailsPreviewLoading ? (
+                <div className="text-sm text-orange-700 dark:text-orange-300">Loading preview...</div>
+              ) : detailsArrearsPreview ? (
+                <div className="space-y-3 text-sm">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <span className="text-orange-700 dark:text-orange-300">Old Net:</span>
+                      <div className="font-semibold text-orange-900 dark:text-orange-200">
+                        {formatCurrency(detailsArrearsPreview.oldSalary)}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-orange-700 dark:text-orange-300">New Net:</span>
+                      <div className="font-semibold text-orange-900 dark:text-orange-200">
+                        {formatCurrency(detailsArrearsPreview.newSalary)}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-orange-700 dark:text-orange-300">Monthly Difference:</span>
+                      <div className="font-semibold text-orange-900 dark:text-orange-200">
+                        {formatCurrency(detailsArrearsPreview.monthlyDifference)}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-orange-700 dark:text-orange-300">Months Owed:</span>
+                      <div className="font-semibold text-orange-900 dark:text-orange-200">
+                        {detailsArrearsPreview.monthsOwed} months
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <span className="text-orange-700 dark:text-orange-300">Old Gross:</span>
+                      <div className="font-semibold text-orange-900 dark:text-orange-200">
+                        {formatCurrency(detailsArrearsPreview.oldGrossSalary)}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-orange-700 dark:text-orange-300">New Gross:</span>
+                      <div className="font-semibold text-orange-900 dark:text-orange-200">
+                        {formatCurrency(detailsArrearsPreview.newGrossSalary)}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-orange-700 dark:text-orange-300">Old Deductions:</span>
+                      <div className="font-semibold text-orange-900 dark:text-orange-200">
+                        {formatCurrency(detailsArrearsPreview.oldDeductions.total)}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-orange-700 dark:text-orange-300">New Deductions:</span>
+                      <div className="font-semibold text-orange-900 dark:text-orange-200">
+                        {formatCurrency(detailsArrearsPreview.newDeductions.total)}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-xs text-orange-700 dark:text-orange-300">
+                    Prorated first month: {formatCurrency(detailsArrearsPreview.proratedFirstMonth)} · Full months after: {detailsArrearsPreview.fullMonthsAfter}
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="rounded-lg border border-orange-200 dark:border-orange-900 bg-white/60 dark:bg-orange-950/40 p-3">
+                      <div className="text-xs text-orange-800 dark:text-orange-300 mb-2">Old Allowances</div>
+                      <div className="space-y-1 text-sm">
+                        {detailsArrearsPreview.oldAllowances.items.map((item, idx) => (
+                          <div key={`${item.code}-${idx}`} className="flex items-center justify-between">
+                            <span className="text-orange-900 dark:text-orange-100">{item.name}</span>
+                            <span className="text-orange-900 dark:text-orange-100">{formatCurrency(item.amount)}</span>
+                          </div>
+                        ))}
+                        {detailsArrearsPreview.oldAllowances.items.length === 0 && (
+                          <div className="text-orange-700 dark:text-orange-300">No allowances</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-orange-200 dark:border-orange-900 bg-white/60 dark:bg-orange-950/40 p-3">
+                      <div className="text-xs text-orange-800 dark:text-orange-300 mb-2">New Allowances</div>
+                      <div className="space-y-1 text-sm">
+                        {detailsArrearsPreview.newAllowances.items.map((item, idx) => (
+                          <div key={`${item.code}-${idx}`} className="flex items-center justify-between">
+                            <span className="text-orange-900 dark:text-orange-100">{item.name}</span>
+                            <span className="text-orange-900 dark:text-orange-100">{formatCurrency(item.amount)}</span>
+                          </div>
+                        ))}
+                        {detailsArrearsPreview.newAllowances.items.length === 0 && (
+                          <div className="text-orange-700 dark:text-orange-300">No allowances</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-orange-200 dark:border-orange-900 bg-white/60 dark:bg-orange-950/40 p-3">
+                      <div className="text-xs text-orange-800 dark:text-orange-300 mb-2">Old Deductions</div>
+                      <div className="space-y-1 text-sm">
+                        {detailsArrearsPreview.oldDeductions.items.map((item, idx) => (
+                          <div key={`${item.code}-${idx}`} className="flex items-center justify-between">
+                            <span className="text-orange-900 dark:text-orange-100">{item.name}</span>
+                            <span className="text-orange-900 dark:text-orange-100">{formatCurrency(item.amount)}</span>
+                          </div>
+                        ))}
+                        {detailsArrearsPreview.oldDeductions.items.length === 0 && (
+                          <div className="text-orange-700 dark:text-orange-300">No deductions</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-orange-200 dark:border-orange-900 bg-white/60 dark:bg-orange-950/40 p-3">
+                      <div className="text-xs text-orange-800 dark:text-orange-300 mb-2">New Deductions</div>
+                      <div className="space-y-1 text-sm">
+                        {detailsArrearsPreview.newDeductions.items.map((item, idx) => (
+                          <div key={`${item.code}-${idx}`} className="flex items-center justify-between">
+                            <span className="text-orange-900 dark:text-orange-100">{item.name}</span>
+                            <span className="text-orange-900 dark:text-orange-100">{formatCurrency(item.amount)}</span>
+                          </div>
+                        ))}
+                        {detailsArrearsPreview.newDeductions.items.length === 0 && (
+                          <div className="text-orange-700 dark:text-orange-300">No deductions</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="pt-2 border-t border-orange-200 dark:border-orange-900">
+                    <span className="text-orange-700 dark:text-orange-300">Total Arrears:</span>
+                    <div className="text-lg font-bold text-orange-900 dark:text-orange-100">
+                      {formatCurrency(detailsArrearsPreview.totalArrears)}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-sm text-orange-700 dark:text-orange-300">No preview available</div>
+              )}
+            </div>
 
             {/* Created Info */}
             <div className="text-xs text-muted-foreground">
