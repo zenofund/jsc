@@ -35,6 +35,11 @@ interface NavigationItem {
   roles: string[];
 }
 
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
+};
+
 export function Layout({ children }: LayoutProps) {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
@@ -43,6 +48,10 @@ export function Layout({ children }: LayoutProps) {
   const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
   const [appVersion, setAppVersion] = useState<string>('JSCM v.1.0.1');
   const [approvalRoles, setApprovalRoles] = useState<string[]>(['approver', 'reviewer', 'auditor']); // Default fallback
+  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [showInstallPrompt, setShowInstallPrompt] = useState(false);
+  const [isInstalled, setIsInstalled] = useState(false);
+  const installReminderMs = 8 * 60 * 60 * 1000;
 
   React.useEffect(() => {
     const fetchSettings = async () => {
@@ -71,6 +80,69 @@ export function Layout({ children }: LayoutProps) {
     };
     fetchSettings();
   }, []);
+
+  React.useEffect(() => {
+    const storedInstalled = localStorage.getItem('pwaInstalled') === 'true';
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone === true;
+    if (storedInstalled || isStandalone) {
+      setIsInstalled(true);
+    }
+
+    const canShowPrompt = () => {
+      const lastPrompt = Number(localStorage.getItem('pwaInstallPromptLastShown') || '0');
+      return !isInstalled && !!deferredPrompt && Date.now() - lastPrompt >= installReminderMs;
+    };
+
+    const handleBeforeInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      const promptEvent = event as BeforeInstallPromptEvent;
+      setDeferredPrompt(promptEvent);
+      const lastPrompt = Number(localStorage.getItem('pwaInstallPromptLastShown') || '0');
+      if (!isInstalled && Date.now() - lastPrompt >= installReminderMs) {
+        setShowInstallPrompt(true);
+      }
+    };
+
+    const handleAppInstalled = () => {
+      setIsInstalled(true);
+      setShowInstallPrompt(false);
+      setDeferredPrompt(null);
+      localStorage.setItem('pwaInstalled', 'true');
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('appinstalled', handleAppInstalled);
+
+    const intervalId = window.setInterval(() => {
+      if (canShowPrompt()) {
+        setShowInstallPrompt(true);
+      }
+    }, 30 * 60 * 1000);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+      window.clearInterval(intervalId);
+    };
+  }, [deferredPrompt, isInstalled]);
+
+  const handleInstallApp = async () => {
+    if (!deferredPrompt) return;
+    await deferredPrompt.prompt();
+    const choice = await deferredPrompt.userChoice;
+    localStorage.setItem('pwaInstallPromptLastShown', Date.now().toString());
+    if (choice.outcome === 'accepted') {
+      setIsInstalled(true);
+      localStorage.setItem('pwaInstalled', 'true');
+    }
+    setShowInstallPrompt(false);
+    setDeferredPrompt(null);
+  };
+
+  const handleDismissInstall = () => {
+    localStorage.setItem('pwaInstallPromptLastShown', Date.now().toString());
+    setShowInstallPrompt(false);
+  };
 
   const navigationGroups: NavigationGroup[] = [
     {
@@ -360,6 +432,34 @@ export function Layout({ children }: LayoutProps) {
           {children}
         </div>
       </main>
+      {showInstallPrompt && !isInstalled && (
+        <div className="fixed bottom-3 left-3 right-3 sm:left-auto sm:right-6 sm:bottom-6 sm:w-96 z-50">
+          <div className="bg-card border border-border rounded-lg shadow-lg p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-foreground">Install JSC PMS</div>
+                <div className="text-xs text-muted-foreground">
+                  Get faster access and an app-like experience.
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleDismissInstall}
+                  className="px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground"
+                >
+                  Not now
+                </button>
+                <button
+                  onClick={handleInstallApp}
+                  className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+                >
+                  Install
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

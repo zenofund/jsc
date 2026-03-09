@@ -1006,7 +1006,13 @@ export class BankService {
         COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_batches,
         COUNT(CASE WHEN status = 'processing' THEN 1 END) as processing_batches,
         COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_batches,
-        COALESCE(SUM(CASE WHEN status IN ('completed', 'processing') THEN total_amount ELSE 0 END), 0) as total_amount_processed,
+        COALESCE((
+          SELECT SUM(pt.amount)
+          FROM payment_transactions pt
+          JOIN payment_batches pb ON pb.id = pt.payment_batch_id
+          WHERE pt.status = 'completed'
+            AND pb.status IN ('completed', 'processing')
+        ), 0) as total_amount_processed,
         COUNT(CASE WHEN created_at >= date_trunc('month', CURRENT_DATE) 
                      AND created_at < (date_trunc('month', CURRENT_DATE) + interval '1 month') THEN 1 END) as this_month_batches,
         COALESCE(SUM(CASE WHEN created_at >= date_trunc('month', CURRENT_DATE) 

@@ -822,7 +822,7 @@ export function PromotionsPage() {
               >
                 Close
               </button>
-              {selectedPromotion.status === 'pending' && (user?.role === 'admin' || user?.role === 'approver') && (
+              {selectedPromotion.status === 'pending' && (user?.role === 'admin' || user?.role === 'hr_manager') && (
                 <>
                   <button
                     onClick={() => handleRejectPromotion(selectedPromotion.id)}
@@ -902,7 +902,7 @@ export function PromotionsPage() {
               </div>
             )}
 
-            {selectedPromotion.status === 'pending' && (user?.role === 'admin' || user?.role === 'approver') && (
+            {selectedPromotion.status === 'pending' && (user?.role === 'admin' || user?.role === 'hr_manager') && (
               <div className="p-4 bg-muted/30 rounded-lg">
                 <label className="block text-xs text-muted-foreground mb-2">Approval / Rejection Comment (Optional)</label>
                 <textarea
