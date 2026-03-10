@@ -231,7 +231,7 @@ export class SalaryStructuresService {
     return structure;
   }
 
-  async getSalaryForGradeAndStep(structureId: string, gradeLevel: number, step: number) {
+  async getSalaryForGradeAndStep(structureId: string, gradeLevel: string | number, step: number) {
     const structure = await this.findOne(structureId);
 
     // Parse the grade_levels JSONB
@@ -242,7 +242,7 @@ export class SalaryStructuresService {
     }
 
     // Find the grade level
-    const grade = gradeLevels.find((g: any) => g.level === gradeLevel);
+    const grade = gradeLevels.find((g: any) => String(g.level) === String(gradeLevel));
     
     if (!grade) {
       throw new NotFoundException(`Grade level ${gradeLevel} not found in structure`);

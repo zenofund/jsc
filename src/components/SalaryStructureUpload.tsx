@@ -9,7 +9,7 @@ interface SalaryStructureUploadProps {
 
 interface ParsedSalaryData {
   gradeLevels: Array<{
-    level: number;
+    level: string;
     steps: Array<{
       step: number;
       basic_salary: number;
@@ -87,22 +87,23 @@ export function SalaryStructureUpload({ onDataParsed, onClose }: SalaryStructure
       const salaryIndex = headers.indexOf('basic_salary');
 
       const validationErrors: ValidationError[] = [];
-      const dataMap = new Map<number, Map<number, number>>();
+      const dataMap = new Map<string, Map<number, number>>();
 
       // Parse data rows
       rows.slice(1).forEach((row, index) => {
         const rowNum = index + 2; // +2 for header and 0-based index
 
-        const gradeLevel = parseInt(row[gradeIndex]);
+        const gradeLevelRaw = row[gradeIndex];
+        const gradeLevel = gradeLevelRaw?.toString().trim() || '';
         const step = parseInt(row[stepIndex]);
         const salary = parseFloat(row[salaryIndex]);
 
         // Validate grade level
-        if (isNaN(gradeLevel) || gradeLevel < 1 || gradeLevel > 17) {
+        if (!gradeLevel || !/^[A-Za-z0-9]+$/.test(gradeLevel)) {
           validationErrors.push({
             row: rowNum,
             column: 'grade_level',
-            message: `Invalid grade level: ${row[gradeIndex]}. Must be between 1 and 17`,
+            message: `Invalid grade level: ${gradeLevelRaw}. Use values like 1, 2, CAT1`,
           });
         }
 
@@ -146,7 +147,7 @@ export function SalaryStructureUpload({ onDataParsed, onClose }: SalaryStructure
       } else {
         // Convert to the expected format
         const gradeLevels = Array.from(dataMap.entries())
-          .sort(([a], [b]) => a - b)
+          .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
           .map(([level, stepsMap]) => ({
             level,
             steps: Array.from(stepsMap.entries())
@@ -179,12 +180,12 @@ export function SalaryStructureUpload({ onDataParsed, onClose }: SalaryStructure
   const downloadTemplate = () => {
     const headers = 'grade_level,step,basic_salary';
     const sampleData = [
-      '1,1,189060',
-      '1,2,191865',
-      '1,3,194635',
-      '2,1,203115',
-      '2,2,206228',
-      '2,3,209433',
+      'CAT1,1,189060',
+      'CAT1,2,191865',
+      'CAT1,3,194635',
+      'CAT4,1,203115',
+      'CAT4,2,206228',
+      'CAT4,3,209433',
       '// Add all your salary structure data...',
     ];
 

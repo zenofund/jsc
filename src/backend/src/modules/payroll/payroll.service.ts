@@ -403,6 +403,11 @@ export class PayrollService {
       let nhfDeductionAmount = 0;
 
       const isContractStaff = staffMember.employment_type === 'Contract';
+      const gradeKey = String(staffMember.grade_level || '').replace(/\s+/g, '').toUpperCase();
+      const isCat1 = gradeKey === 'CAT1';
+      const isCat4 = gradeKey === 'CAT4';
+      const gradeNumber = Number(gradeKey);
+      const excludeUnionForSeniorGrades = !isNaN(gradeNumber) && gradeNumber >= 15 && gradeNumber <= 17;
 
       // Global deductions
       for (const deduction of globalDeductions) {
@@ -421,6 +426,24 @@ export class PayrollService {
               continue;
             }
         }
+        if (excludeUnionForSeniorGrades) {
+            const name = deduction.name.toUpperCase();
+            const code = deduction.code.toUpperCase();
+            if (code.includes('UNION') || name.includes('UNION')) {
+              continue;
+            }
+        }
+        if (isCat1 || isCat4) {
+            const name = deduction.name.toUpperCase();
+            const code = deduction.code.toUpperCase();
+            const isPension = code.includes('PENSION') || name.includes('PENSION');
+            const isNhf = code.includes('NHF') || name.includes('NHF') || name.includes('HOUSING FUND');
+            const isNhis = code.includes('NHIS') || name.includes('NHIS') || name.includes('HEALTH INSURANCE');
+            const isUnion = code.includes('UNION') || name.includes('UNION');
+            if ((isCat1 && (isPension || isNhf || isNhis || isUnion)) || (isCat4 && (isNhf || isNhis || isUnion))) {
+              continue;
+            }
+        }
 
         let amount = 0;
         if (deduction.type === 'fixed') {
@@ -428,7 +451,11 @@ export class PayrollService {
         } else if (deduction.type === 'percentage') {
           const code = String(deduction.code || '').toUpperCase();
           const name = String(deduction.name || '').toUpperCase();
-          if (code.includes('PENSION') || name.includes('PENSION') || code.includes('NHF') || name.includes('NHF') || name.includes('HOUSING FUND')) {
+          if (
+            code.includes('PENSION') || name.includes('PENSION') ||
+            code.includes('NHF') || name.includes('NHF') || name.includes('HOUSING FUND') ||
+            code.includes('NHIS') || name.includes('NHIS') || name.includes('NHIA') || name.includes('HEALTH INSURANCE')
+          ) {
             amount = (grossPay * parseFloat(deduction.percentage)) / 100;
           } else {
             amount = (basicSalary * parseFloat(deduction.percentage)) / 100;
@@ -465,6 +492,24 @@ export class PayrollService {
               continue;
             }
         }
+        if (excludeUnionForSeniorGrades) {
+            const name = (deduction.deduction_name || deduction.name || '').toUpperCase();
+            const code = (deduction.deduction_code || deduction.code || '').toUpperCase();
+            if (code.includes('UNION') || name.includes('UNION')) {
+              continue;
+            }
+        }
+        if (isCat1 || isCat4) {
+            const name = (deduction.deduction_name || deduction.name || '').toUpperCase();
+            const code = (deduction.deduction_code || deduction.code || '').toUpperCase();
+            const isPension = code.includes('PENSION') || name.includes('PENSION');
+            const isNhf = code.includes('NHF') || name.includes('NHF') || name.includes('HOUSING FUND');
+            const isNhis = code.includes('NHIS') || name.includes('NHIS') || name.includes('HEALTH INSURANCE');
+            const isUnion = code.includes('UNION') || name.includes('UNION');
+            if ((isCat1 && (isPension || isNhf || isNhis || isUnion)) || (isCat4 && (isNhf || isNhis || isUnion))) {
+              continue;
+            }
+        }
 
         let amount = 0;
         if (deduction.type === 'fixed') {
@@ -472,7 +517,11 @@ export class PayrollService {
         } else if (deduction.type === 'percentage') {
           const code = String(deduction.deduction_code || deduction.code || '').toUpperCase();
           const name = String(deduction.deduction_name || deduction.name || '').toUpperCase();
-          if (code.includes('PENSION') || name.includes('PENSION') || code.includes('NHF') || name.includes('NHF') || name.includes('HOUSING FUND')) {
+          if (
+            code.includes('PENSION') || name.includes('PENSION') ||
+            code.includes('NHF') || name.includes('NHF') || name.includes('HOUSING FUND') ||
+            code.includes('NHIS') || name.includes('NHIS') || name.includes('NHIA') || name.includes('HEALTH INSURANCE')
+          ) {
             amount = (grossPay * parseFloat(deduction.percentage)) / 100;
           } else {
             amount = (basicSalary * parseFloat(deduction.percentage)) / 100;
@@ -672,89 +721,95 @@ export class PayrollService {
     pensionDeduction: number = 0,
     nhfDeduction: number = 0
   ) {
-    // Calculate taxable income
-    let taxableIncome = grossPay;
-
-    // Subtract non-taxable allowances
+    const round2 = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
     const nonTaxableAllowances = allowances
       .filter((a) => !a.is_taxable)
       .reduce((sum, a) => sum + a.amount, 0);
-    taxableIncome -= nonTaxableAllowances;
+    const monthlyTaxableIncome = isContractStaff
+      ? grossPay
+      : grossPay - nonTaxableAllowances;
+    const safeMonthlyTaxableIncome = Math.max(0, monthlyTaxableIncome);
+    const annualTaxableIncome = round2(safeMonthlyTaxableIncome * 12);
 
-    // Annual taxable income
-    const annualTaxableIncome = taxableIncome * 12;
-
-    // Reliefs
     let pensionRelief = 0;
     let nhfRelief = 0;
     let rentRelief = 0;
     const cra = 0;
     let grossIncomeRelief = 0;
 
-    // Contract staff get NO tax reliefs (Pension, NHF, CRA, etc.)
     if (!isContractStaff) {
-      // 1. Pension: Use ACTUAL deduction amount (Annualized)
-      // This ensures relief matches exactly what was deducted.
-      pensionRelief = pensionDeduction * 12;
-
-      // 2. NHF: Use ACTUAL deduction amount (Annualized)
-      nhfRelief = nhfDeduction * 12;
-
-      // 3. Rent Relief (New): Percentage of Housing Allowance
-      const housingAllowance = allowances.find(a => a.code === 'HOUSING' || a.name.toLowerCase().includes('housing'))?.amount || 0;
-      rentRelief = (housingAllowance * 12 * (taxConfig.rent_relief_percentage || 0)) / 100;
-
-      // 4. CRA (Expunged) & Gross Income Relief
-      // cra = 0; // CRA is expunged
-      grossIncomeRelief = (annualTaxableIncome * (taxConfig.gross_income_relief_percentage || 0)) / 100;
-    } else {
-       // Contract Staff: Tax on Gross Pay directly? Or just no reliefs?
-       // Requirement: "They only pay tax on gross pay"
-       // Interpretation: No reliefs should be applied. Taxable Income = Gross Pay (Annualized).
-       // The logic below already handles this because totalReliefs will be 0.
-       // taxableIncomeAfterReliefs = annualTaxableIncome - 0 = annualTaxableIncome.
+      pensionRelief = round2(pensionDeduction * 12);
+      nhfRelief = round2(nhfDeduction * 12);
+      const housingAllowance = allowances.find(
+        (a) => a.code === 'HOUSING' || a.name.toLowerCase().includes('housing')
+      )?.amount || 0;
+      rentRelief = round2(
+        (housingAllowance * 12 * (taxConfig.rent_relief_percentage || 0)) / 100
+      );
+      grossIncomeRelief = round2(
+        (annualTaxableIncome * (taxConfig.gross_income_relief_percentage || 0)) / 100
+      );
     }
 
-    const totalReliefs = cra + grossIncomeRelief + pensionRelief + nhfRelief + rentRelief;
-    const taxableIncomeAfterReliefs = Math.max(0, annualTaxableIncome - totalReliefs);
+    const totalReliefs = round2(cra + grossIncomeRelief + pensionRelief + nhfRelief + rentRelief);
+    const taxableIncomeAfterReliefs = Math.max(0, round2(annualTaxableIncome - totalReliefs));
 
-    // Progressive tax calculation
-    const taxBrackets = taxConfig.tax_brackets;
-    
-    if (!taxBrackets || !Array.isArray(taxBrackets) || taxBrackets.length === 0) {
-       this.logger.error('Tax brackets configuration missing or invalid');
-       throw new BadRequestException('System tax configuration is missing or invalid. Please contact administrator.');
+    const configuredBrackets = Array.isArray(taxConfig?.tax_brackets)
+      ? taxConfig.tax_brackets
+      : [];
+    const taxBrackets = configuredBrackets.length > 0
+      ? configuredBrackets
+      : [
+          { min: 0, max: 800000, rate: 0 },
+          { min: 800000, max: 2200000, rate: 15 },
+          { min: 2200000, max: null, rate: 18 },
+        ];
+
+    if (!Array.isArray(taxBrackets) || taxBrackets.length === 0) {
+      this.logger.error('Tax brackets configuration missing or invalid');
+      throw new BadRequestException('System tax configuration is missing or invalid. Please contact administrator.');
     }
+
+    const sortedBrackets = [...taxBrackets].sort((a, b) => {
+      const aMin = typeof a.min === 'number' ? a.min : 0;
+      const bMin = typeof b.min === 'number' ? b.min : 0;
+      return aMin - bMin;
+    });
 
     let annualTax = 0;
+    let taxedSoFar = 0;
     const taxBreakdown = [];
 
-    for (const bracket of taxBrackets) {
-      if (taxableIncomeAfterReliefs > bracket.min) {
-        const maxIncome = bracket.max || taxableIncomeAfterReliefs;
-        const taxableAmount = Math.min(taxableIncomeAfterReliefs, maxIncome) - bracket.min;
-        const taxForBracket = (taxableAmount * bracket.rate) / 100;
-
-        if (taxableAmount > 0) {
-          annualTax += taxForBracket;
-          taxBreakdown.push({
-            bracket: `${bracket.min.toLocaleString()} - ${bracket.max?.toLocaleString() || 'above'}`,
-            rate: bracket.rate,
-            taxable_amount: taxableAmount,
-            tax: taxForBracket,
-          });
-        }
-
-        if (bracket.max && taxableIncomeAfterReliefs <= bracket.max) {
-          break;
-        }
+    for (const bracket of sortedBrackets) {
+      if (taxedSoFar >= taxableIncomeAfterReliefs) {
+        break;
       }
+      const bracketMax = typeof bracket.max === 'number' ? bracket.max : taxableIncomeAfterReliefs;
+      const cappedIncome = Math.min(taxableIncomeAfterReliefs, bracketMax);
+      const taxableAmount = Math.max(0, cappedIncome - taxedSoFar);
+      if (taxableAmount <= 0) {
+        continue;
+      }
+      const rate = Number(bracket.rate) || 0;
+      const taxForBracket = round2((taxableAmount * rate) / 100);
+      annualTax = round2(annualTax + taxForBracket);
+      const minLabel = typeof bracket.min === 'number' ? bracket.min : taxedSoFar;
+      const maxLabel = typeof bracket.max === 'number' ? bracket.max : null;
+      taxBreakdown.push({
+        bracket: maxLabel !== null
+          ? `${minLabel.toLocaleString()} - ${maxLabel.toLocaleString()}`
+          : `${minLabel.toLocaleString()} - above`,
+        rate,
+        taxable_amount: round2(taxableAmount),
+        tax: taxForBracket,
+      });
+      taxedSoFar += taxableAmount;
     }
 
-    const monthlyTax = annualTax / 12;
+    const monthlyTax = round2(annualTax / 12);
 
     return {
-      taxable_income: taxableIncome,
+      taxable_income: round2(safeMonthlyTaxableIncome),
       annual_taxable_income: annualTaxableIncome,
       total_reliefs: totalReliefs,
       taxable_income_after_reliefs: taxableIncomeAfterReliefs,

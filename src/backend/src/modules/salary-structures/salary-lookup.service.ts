@@ -11,7 +11,7 @@ export class SalaryLookupService {
 
   constructor(private databaseService: DatabaseService) {}
 
-  private async getAllowedGrades(): Promise<number[]> {
+  private async getAllowedGrades(): Promise<string[]> {
     const row = await this.databaseService.queryOne(
       `SELECT value->'allowed_grades' AS allowed
        FROM system_settings
@@ -19,9 +19,9 @@ export class SalaryLookupService {
     );
     const arr = row?.allowed;
     if (Array.isArray(arr)) {
-      return arr.map((n: any) => Number(n)).filter((n: number) => !isNaN(n));
+      return arr.map((n: any) => String(n)).filter((n: string) => n.length > 0);
     }
-    return [3,4,5,6,7,8,9,10,12,13,14,15,16,17];
+    return ['3', '4', '5', '6', '7', '8', '9', '10', '12', '13', '14', '15', '16', '17'];
   }
 
   /**
@@ -52,7 +52,7 @@ export class SalaryLookupService {
    * @param step - The step within the grade level (e.g., 1, 2, 3)
    * @returns The basic salary amount
    */
-  async getBasicSalary(gradeLevel: number, step: number): Promise<number> {
+  async getBasicSalary(gradeLevel: string | number, step: number): Promise<number> {
     const structure = await this.getActiveStructure();
 
     // Parse the grade_levels JSONB
@@ -64,11 +64,12 @@ export class SalaryLookupService {
     }
 
     // Find the grade level
-    const grade = gradeLevels.find((g: any) => g.level === gradeLevel);
+    const gradeKey = String(gradeLevel).trim();
+    const grade = gradeLevels.find((g: any) => String(g.level).trim().toUpperCase() === gradeKey.toUpperCase());
     
     if (!grade) {
       throw new NotFoundException(
-        `Grade level ${gradeLevel} not found in active salary structure "${structure.name}"`
+        `Grade level ${gradeKey} not found in active salary structure "${structure.name}"`
       );
     }
 
@@ -77,7 +78,7 @@ export class SalaryLookupService {
     
     if (!stepData) {
       throw new NotFoundException(
-        `Step ${step} not found in grade level ${gradeLevel} in salary structure "${structure.name}"`
+        `Step ${step} not found in grade level ${gradeKey} in salary structure "${structure.name}"`
       );
     }
 
@@ -85,7 +86,7 @@ export class SalaryLookupService {
 
     if (isNaN(basicSalary) || basicSalary <= 0) {
       this.logger.error(
-        `Invalid basic salary for Grade ${gradeLevel} Step ${step}: ${stepData.basic_salary}`
+        `Invalid basic salary for Grade ${gradeKey} Step ${step}: ${stepData.basic_salary}`
       );
       throw new Error('Invalid basic salary in salary structure');
     }
@@ -101,7 +102,7 @@ export class SalaryLookupService {
    * @returns Map of "gradeLevel-step" to basic salary
    */
   async getBasicSalariesBatch(
-    staffList: Array<{ gradeLevel: number; step: number }>
+    staffList: Array<{ gradeLevel: string | number; step: number }>
   ): Promise<Map<string, number>> {
     const structure = await this.getActiveStructure();
     const gradeLevels = structure.grade_levels;
@@ -113,7 +114,7 @@ export class SalaryLookupService {
     const salaryMap = new Map<string, number>();
 
     for (const staff of staffList) {
-      const key = `${staff.gradeLevel}-${staff.step}`;
+      const key = `${String(staff.gradeLevel)}-${staff.step}`;
       
       // Skip if already calculated
       if (salaryMap.has(key)) {
@@ -121,7 +122,7 @@ export class SalaryLookupService {
       }
 
       // Find the grade level
-      const grade = gradeLevels.find((g: any) => g.level === staff.gradeLevel);
+      const grade = gradeLevels.find((g: any) => String(g.level).trim().toUpperCase() === String(staff.gradeLevel).trim().toUpperCase());
       
       if (!grade) {
         this.logger.warn(
@@ -135,7 +136,7 @@ export class SalaryLookupService {
       
       if (!stepData) {
         this.logger.warn(
-          `Step ${staff.step} not found in grade level ${staff.gradeLevel}`
+        `Step ${staff.step} not found in grade level ${staff.gradeLevel}`
         );
         continue;
       }
@@ -157,7 +158,7 @@ export class SalaryLookupService {
    * @param step - The step
    * @returns Detailed salary information
    */
-  async getSalaryDetails(gradeLevel: number, step: number) {
+  async getSalaryDetails(gradeLevel: string | number, step: number) {
     const structure = await this.getActiveStructure();
     const basicSalary = await this.getBasicSalary(gradeLevel, step);
 
@@ -180,12 +181,14 @@ export class SalaryLookupService {
    * @param step - The step to validate
    * @returns true if valid, throws error if not
    */
-  async validateGradeAndStep(gradeLevel: number, step: number): Promise<boolean> {
+  async validateGradeAndStep(gradeLevel: string | number, step: number): Promise<boolean> {
     try {
       const allowed = await this.getAllowedGrades();
-      if (!allowed.includes(Number(gradeLevel))) {
+      const gradeKey = String(gradeLevel).trim();
+      const isNumeric = /^\d+$/.test(gradeKey);
+      if (isNumeric && allowed.length > 0 && !allowed.includes(gradeKey)) {
         throw new NotFoundException(
-          `Grade level ${gradeLevel} is not permitted. Allowed grades: ${allowed.join(', ')}.`
+          `Grade level ${gradeKey} is not permitted. Allowed grades: ${allowed.join(', ')}.`
         );
       }
       await this.getBasicSalary(gradeLevel, step);

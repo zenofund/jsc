@@ -157,8 +157,8 @@ export function PayrollSetupPage() {
     }
   };
 
-  const handleCellEdit = (level: number, step: number, value: string) => {
-    const key = `${level}-${step}`;
+  const handleCellEdit = (level: string | number, step: number, value: string) => {
+    const key = `${String(level)}-${step}`;
     const numValue = parseFloat(value) || 0;
     setEditedSalaries(prev => ({
       ...prev,
@@ -166,13 +166,13 @@ export function PayrollSetupPage() {
     }));
   };
 
-  const getSalaryValue = (level: number, step: number): number => {
-    const key = `${level}-${step}`;
+  const getSalaryValue = (level: string | number, step: number): number => {
+    const key = `${String(level)}-${step}`;
     if (editedSalaries[key] !== undefined) {
       return editedSalaries[key];
     }
     
-    const gradeLevel = selectedStructure?.grade_levels.find((gl: any) => gl.level === level);
+    const gradeLevel = selectedStructure?.grade_levels.find((gl: any) => String(gl.level) === String(level));
     const stepData = gradeLevel?.steps.find((s: any) => s.step === step);
     return stepData?.basic_salary || 0;
   };
@@ -234,7 +234,7 @@ export function PayrollSetupPage() {
         name: structureForm.name,
         effective_date: structureForm.effective_date,
         grade_levels: uploadedData?.gradeLevels || Object.entries(CONMESS_2024_STRUCTURE).map(([level, steps]) => ({
-          level: parseInt(level),
+          level,
           steps: steps.map((salary, index) => ({
             step: index + 1,
             basic_salary: salary,

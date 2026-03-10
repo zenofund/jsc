@@ -72,7 +72,7 @@ export class SalaryStructuresController {
   ) {
     return this.salaryStructuresService.getSalaryForGradeAndStep(
       id,
-      parseInt(gradeLevel),
+      gradeLevel,
       parseInt(step),
     );
   }

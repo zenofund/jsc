@@ -788,7 +788,7 @@ export const salaryStructureAPI = {
     });
   },
 
-  async getSalaryForGradeAndStep(structureId: string, gradeLevel: number, step: number) {
+  async getSalaryForGradeAndStep(structureId: string, gradeLevel: string | number, step: number) {
     return makeApiRequest(`/salary-structures/${structureId}/salary/${gradeLevel}/${step}`, {
       method: 'GET',
     });
