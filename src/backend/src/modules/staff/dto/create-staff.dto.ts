@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, IsEmail, IsOptional, IsDate, IsNumber, IsEnum, IsUUID } from 'class-validator';
+import { IsNotEmpty, IsString, IsEmail, IsOptional, IsDate, IsNumber, IsEnum, IsUUID, Matches } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional, OmitType } from '@nestjs/swagger';
 
@@ -140,9 +140,10 @@ export class CreateStaffDto {
   retirementDate?: Date;
 
   @ApiProperty()
-  @IsNumber()
+  @IsString()
+  @Matches(/^(?:\d+|[A-Za-z]+\d+)$/)
   @IsNotEmpty()
-  gradeLevel: number;
+  gradeLevel: string;
 
   @ApiProperty()
   @IsNumber()

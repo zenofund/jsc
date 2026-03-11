@@ -10,6 +10,7 @@ interface AuditLog {
   user_id: string;
   user_name?: string;
   user_email?: string;
+  user_role?: string;
   action: string;
   entity: string;
   entity_id: string;
@@ -92,9 +93,35 @@ export function AuditLogPage() {
         </div>
       )
     },
-    { header: 'Action', accessor: (log: AuditLog) => formatEntity(log.action) },
+    { 
+      header: 'Action', 
+      accessor: (log: AuditLog) => {
+        const desc = String(log.description || '');
+        if (String(log.entity || '').toLowerCase() === 'payroll' && desc.toLowerCase().startsWith('approval stage')) {
+          const first = desc.split('|')[0]?.trim();
+          return first || formatEntity(log.action);
+        }
+        return formatEntity(log.action);
+      } 
+    },
     { header: 'Entity', accessor: (log: AuditLog) => formatEntity(log.entity) },
-    { header: 'User', accessor: (log: AuditLog) => log.user_name || log.user_email || log.user_id },
+    { 
+      header: 'User', 
+      accessor: (log: AuditLog) => {
+        const role = String(log.user_role || '').trim().toLowerCase();
+        const roleLabel =
+          role === 'auditor' ? 'Audit Office' :
+          role === 'checking' ? 'Checking' :
+          role === 'cpo' ? 'CPO' :
+          role ? formatEntity(role) :
+          '';
+        const nameOrEmail = log.user_name || log.user_email || log.user_id;
+        if (!roleLabel) return nameOrEmail;
+        const same = String(nameOrEmail || '').trim().toLowerCase() === roleLabel.trim().toLowerCase();
+        const inner = same ? (log.user_email || log.user_id) : nameOrEmail;
+        return `${roleLabel} (${inner})`;
+      } 
+    },
   ];
 
   if (loading) return <PageSkeleton />;

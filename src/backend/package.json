@@ -27,6 +27,7 @@
     "db:migrate-coops": "ts-node -r tsconfig-paths/register src/database/seeds/add-auto-deduct.ts",
     "db:migrate-roles": "ts-node -r tsconfig-paths/register src/database/seeds/add-payroll-loader-role.ts",
     "db:migrate-rename-roles": "node scripts/run-migration-052-rename-roles.js",
+    "db:migrate-grade-levels": "node scripts/run-migration-053-alphanumeric-grade-levels.js",
     "test:salary-api": "node scripts/test-salary-api.js"
   },
   "dependencies": {

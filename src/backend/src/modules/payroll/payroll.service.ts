@@ -987,6 +987,20 @@ export class PayrollService {
       this.logger.error(`Failed to send notifications: ${error.message}`);
     }
 
+    const submitter = await this.databaseService.queryOne(
+      'SELECT full_name, role FROM users WHERE id = $1',
+      [userId],
+    );
+    await this.auditService.log({
+      userId,
+      action: AuditAction.UPDATE,
+      entity: 'payroll',
+      entityId: batchId,
+      description: `Approval Stage 1/${workflow.length} | Payroll | Submitted for approval | ${submitter?.full_name || 'Unknown user'}`,
+      oldValues: { status: batch.status },
+      newValues: { status: 'pending_review', current_approval_stage: 1 },
+    });
+
     this.logger.log(`Batch ${batchId} submitted for approval by user ${userId}`);
 
     return { message: 'Batch submitted for approval successfully' };
@@ -1047,7 +1061,7 @@ export class PayrollService {
 
     // Get user role
     const user = await this.databaseService.queryOne(
-      'SELECT role FROM users WHERE id = $1',
+      'SELECT role, full_name FROM users WHERE id = $1',
       [userId],
     );
 
@@ -1055,6 +1069,11 @@ export class PayrollService {
         throw new BadRequestException('User not found');
     }
     this.logger.log(`User role: ${user.role}`);
+    const stagesCountRow = await this.databaseService.queryOne<{ count: string }>(
+      'SELECT COUNT(*)::text as count FROM workflow_approvals WHERE payroll_batch_id = $1',
+      [batchId],
+    );
+    const totalStages = Math.max(1, parseInt(stagesCountRow?.count || '1', 10));
 
     // Normalize roles for comparison
     // Some roles might be stored as 'payroll_officer' but user has 'Payroll Officer' etc.
@@ -1141,6 +1160,24 @@ export class PayrollService {
 
     this.logger.log(`Batch ${batchId} ${action} by user ${userId}`);
 
+    const stageLabel = currentApproval?.stage_name ? ` (${currentApproval.stage_name})` : '';
+    const updatedBatchForAudit = await this.databaseService.queryOne(
+      'SELECT status, current_approval_stage FROM payroll_batches WHERE id = $1',
+      [batchId],
+    );
+    await this.auditService.log({
+      userId,
+      action: action === 'approved' ? AuditAction.APPROVE : AuditAction.REJECT,
+      entity: 'payroll',
+      entityId: batchId,
+      description: `Approval Stage ${currentStage}/${totalStages}${stageLabel} | Payroll | ${action === 'approved' ? 'Approved' : 'Rejected'} | ${user?.full_name || 'Unknown user'}`,
+      oldValues: { status: batch.status, current_approval_stage: currentStage },
+      newValues: {
+        status: updatedBatchForAudit?.status,
+        current_approval_stage: updatedBatchForAudit?.current_approval_stage,
+      },
+    });
+
     // Send notifications
     try {
       if (action === 'rejected') {
@@ -1156,7 +1193,7 @@ export class PayrollService {
         });
       } else if (action === 'approved') {
         // Get updated batch status to decide notification
-        const updatedBatch = await this.databaseService.queryOne('SELECT status, current_approval_stage FROM payroll_batches WHERE id = $1', [batchId]);
+        const updatedBatch = updatedBatchForAudit || await this.databaseService.queryOne('SELECT status, current_approval_stage FROM payroll_batches WHERE id = $1', [batchId]);
 
         if (updatedBatch.status === 'ready_for_payment') {
           // Notify creator and Cashiers

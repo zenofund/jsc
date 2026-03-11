@@ -89,7 +89,7 @@ export interface Staff {
     previous_basic_salary?: number; // Basic salary before promotion
   };
   salary_info: {
-    grade_level: number;
+    grade_level: number | string;
     step: number;
     bank_name: string;
     account_number: string;
@@ -427,7 +427,7 @@ export interface SystemSettings {
   payday_day?: number;
   payroll_cutoff_day: number;
   approval_workflow: { stage: number; name: string; role: string }[];
-  allowed_grades?: number[];
+  allowed_grades?: Array<number | string>;
   arrears_auto_detect: boolean;
   tax_zones: { zone: string; rate: number }[];
   pension_rate: number;

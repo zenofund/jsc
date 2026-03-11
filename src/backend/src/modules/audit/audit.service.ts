@@ -101,7 +101,8 @@ export class AuditService {
       SELECT 
         at.*,
         u.email as user_email,
-        u.full_name as user_name
+        u.full_name as user_name,
+        u.role as user_role
       FROM audit_trail at
       LEFT JOIN users u ON at.user_id = u.id
       ${whereClause}
@@ -129,7 +130,8 @@ export class AuditService {
       `SELECT 
         at.*,
         u.email as user_email,
-        u.full_name as user_name
+        u.full_name as user_name,
+        u.role as user_role
       FROM audit_trail at
       LEFT JOIN users u ON at.user_id = u.id
       WHERE at.entity = $1 AND at.entity_id = $2

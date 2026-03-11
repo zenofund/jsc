@@ -341,7 +341,7 @@ export class StaffService {
     if (updateStaffDto.gradeLevel !== undefined || updateStaffDto.step !== undefined) {
       const newGrade = updateStaffDto.gradeLevel ?? existing.grade_level;
       const newStep = updateStaffDto.step ?? existing.step;
-      await this.salaryLookupService.validateGradeAndStep(newGrade as number, newStep as number);
+      await this.salaryLookupService.validateGradeAndStep(newGrade as any, newStep as any);
     }
 
     const updates = [];

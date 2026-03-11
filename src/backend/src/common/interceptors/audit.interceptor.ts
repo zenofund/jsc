@@ -15,6 +15,14 @@ export class AuditInterceptor implements NestInterceptor {
       return next.handle();
     }
     const url: string = req?.originalUrl || req?.url || '';
+    const lowerUrl = (url || '').toLowerCase();
+    if (
+      method === 'POST' &&
+      lowerUrl.includes('/payroll/batches/') &&
+      (lowerUrl.endsWith('/approve') || lowerUrl.endsWith('/submit'))
+    ) {
+      return next.handle();
+    }
     const parts = url.replace(/^\/+/, '').split('/');
     let entity = parts[0] || '';
     if (entity === 'api' && parts[1] && parts[2]) {
@@ -24,7 +32,6 @@ export class AuditInterceptor implements NestInterceptor {
     const ipAddress = req?.ip || null;
     const params = req?.params || {};
     const body = req?.body || null;
-    const lowerUrl = (url || '').toLowerCase();
     let action: AuditAction;
     if (method === 'POST' && lowerUrl.includes('/auth/login')) {
       action = AuditAction.LOGIN;

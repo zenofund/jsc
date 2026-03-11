@@ -217,21 +217,60 @@ export function AdminPage() {
     setIsSubmitting(true);
     try {
       // Parse allowed grades from input
-      const parsed = allowedGradesInput
+      const tokens = allowedGradesInput
         .split(',')
-        .map((s) => Number(s.trim()))
-        .filter((n) => !isNaN(n) && n > 0 && n <= 50);
-      const uniqueSorted = Array.from(new Set(parsed)).sort((a, b) => a - b);
-      if (uniqueSorted.length === 0) {
-        setAllowedGradesError('Please enter at least one valid grade level (e.g., 3, 4, 5)');
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      const validNumericGrades: number[] = [];
+      const validAlphaNumericGrades: string[] = [];
+      const invalidTokens: string[] = [];
+
+      for (const token of tokens) {
+        const normalized = token.toUpperCase().replace(/[\s-]+/g, '');
+        const isNumeric = /^\d+$/.test(normalized);
+        const isAlphaNumeric = /^[A-Z]+\d+$/.test(normalized);
+        if (isNumeric) {
+          const n = Number(normalized);
+          if (n >= 1 && n <= 17) {
+            validNumericGrades.push(n);
+          } else {
+            invalidTokens.push(token);
+          }
+          continue;
+        }
+        if (isAlphaNumeric) {
+          validAlphaNumericGrades.push(normalized);
+          continue;
+        }
+        invalidTokens.push(token);
+      }
+
+      const uniqueNumeric = Array.from(new Set(validNumericGrades)).sort((a, b) => a - b);
+      const uniqueAlpha = Array.from(new Set(validAlphaNumericGrades)).sort((a, b) =>
+        a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }),
+      );
+
+      const allowedGrades = [...uniqueNumeric, ...uniqueAlpha];
+
+      if (allowedGrades.length === 0) {
+        setAllowedGradesError('Please enter at least one valid grade level (e.g., 3, 4, CAT1, CAT4)');
+        setIsSubmitting(false);
+        return;
+      }
+      if (invalidTokens.length > 0) {
+        setAllowedGradesError(`Invalid grade level(s): ${invalidTokens.join(', ')}`);
         setIsSubmitting(false);
         return;
       }
       setAllowedGradesError('');
 
-      const updated = { ...settings, allowed_grades: uniqueSorted } as any;
-      await settingsAPI.updateSettings(updated, user!.id, user!.email);
-      setSettings(updated);
+      const updated = { ...settings, allowed_grades: allowedGrades } as any;
+      const saved = await settingsAPI.updateSettings(updated, user!.id, user!.email);
+      setSettings(saved);
+      if (Array.isArray(saved?.allowed_grades)) {
+        setAllowedGradesInput(saved.allowed_grades.join(', '));
+      }
       showToast.success('Settings updated successfully');
     } catch (error) {
       showToast.error('Failed to update settings');
@@ -584,11 +623,11 @@ export function AdminPage() {
                   value={allowedGradesInput}
                   onChange={(e) => setAllowedGradesInput(e.target.value)}
                   className={`w-full px-3 py-2 border ${allowedGradesError ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
-                  placeholder="e.g., 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 17"
+                  placeholder="e.g., 3, 4, 5, CAT1, CAT4"
                 />
                 {allowedGradesError && <p className="text-xs text-red-600 mt-1">{allowedGradesError}</p>}
                 <p className="text-xs text-muted-foreground mt-1">
-                  Comma-separated list; UI and validations will use this list. Ensure corresponding salary structure rows exist.
+                  Comma-separated list; supports numeric (1–17) and alphanumeric (e.g., CAT1, CAT4).
                 </p>
               </div>
             </div>

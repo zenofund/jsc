@@ -124,7 +124,7 @@ export function PromotionsPage() {
       setFormData({
         ...formData,
         staff_id: staffId,
-        old_grade_level: selectedStaff.salary_info.grade_level,
+        old_grade_level: Number(selectedStaff.salary_info.grade_level) || 0,
         old_step: selectedStaff.salary_info.step,
       });
     }

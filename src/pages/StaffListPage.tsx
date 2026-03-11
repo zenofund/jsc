@@ -31,7 +31,7 @@ export function StaffListPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [availableLGAs, setAvailableLGAs] = useState<string[]>([]);
   const [supportedBanks, setSupportedBanks] = useState<{ name: string; code: string }[]>([]);
-  const [allowedGrades, setAllowedGrades] = useState<number[]>([3,4,5,6,7,8,9,10,12,13,14,15,16,17]);
+  const [allowedGrades, setAllowedGrades] = useState<string[]>(['3','4','5','6','7','8','9','10','12','13','14','15','16','17']);
   const [idempotencyKey, setIdempotencyKey] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -45,6 +45,9 @@ export function StaffListPage() {
   const canManageStaff = user?.role === 'admin' || user?.role === 'hr_manager';
 
   // Form state
+  const normalizeGrade = (value: any) => String(value || '').trim().toUpperCase().replace(/[\s-]+/g, '');
+  const isNumericGrade = (value: any) => /^\d+$/.test(normalizeGrade(value));
+
   const [formData, setFormData] = useState({
     first_name: '',
     middle_name: '',
@@ -73,7 +76,7 @@ export function StaffListPage() {
     unit: '',
     designation: '',
     cadre: '',
-    grade_level: 7,
+    grade_level: '7',
     step: 1,
     bank_name: '',
     account_number: '',
@@ -119,7 +122,7 @@ export function StaffListPage() {
     }
 
     if (name === 'grade_level') {
-      const gl = Number(value);
+      const gl = normalizeGrade(value);
       if (!allowedGrades.includes(gl)) {
         error = 'Selected Grade Level is not permitted by system settings';
       }
@@ -155,7 +158,13 @@ export function StaffListPage() {
       try {
         const settings = await settingsAPI.getSettings();
         if (Array.isArray(settings?.allowed_grades)) {
-          setAllowedGrades(settings.allowed_grades.map((n: any) => Number(n)).filter((n: number) => !isNaN(n)));
+          const parsed = settings.allowed_grades
+            .map((n: any) => normalizeGrade(n))
+            .filter((n: string) => n.length > 0);
+          const unique = Array.from(new Set<string>(parsed));
+          const numeric = unique.filter((g) => /^\d+$/.test(g)).sort((a, b) => Number(a) - Number(b));
+          const alpha = unique.filter((g) => !/^\d+$/.test(g)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+          setAllowedGrades([...numeric, ...alpha]);
         }
       } catch (e) {
         // Ignore, fallback to default
@@ -247,8 +256,15 @@ export function StaffListPage() {
 
       // Sort by Grade Level desc, then Step desc
       staffData.sort((a: Staff, b: Staff) => {
-        const glDiff = (b.salary_info.grade_level || 0) - (a.salary_info.grade_level || 0);
-        if (glDiff !== 0) return glDiff;
+        const aGrade = normalizeGrade(a.salary_info.grade_level);
+        const bGrade = normalizeGrade(b.salary_info.grade_level);
+        const aNum = /^\d+$/.test(aGrade) ? Number(aGrade) : null;
+        const bNum = /^\d+$/.test(bGrade) ? Number(bGrade) : null;
+        if (aNum !== null && bNum !== null) return bNum - aNum;
+        if (aNum !== null) return -1;
+        if (bNum !== null) return 1;
+        const alphaCmp = bGrade.localeCompare(aGrade, undefined, { numeric: true, sensitivity: 'base' });
+        if (alphaCmp !== 0) return alphaCmp;
         return (b.salary_info.step || 0) - (a.salary_info.step || 0);
       });
 
@@ -327,7 +343,7 @@ export function StaffListPage() {
             retirementDate: r.retirement_date || undefined,
             exitDate: r.exit_date || undefined,
             exitReason: r.exit_reason || undefined,
-            gradeLevel: num(r.grade_level),
+            gradeLevel: normalizeGrade(r.grade_level),
             step: num(r.step),
             bankName: r.bank_name || undefined,
             accountNumber: r.account_number || undefined,
@@ -342,7 +358,7 @@ export function StaffListPage() {
         });
         const invalidRows: number[] = [];
         const filtered = mapped.filter((rec, idx) => {
-          const gl = Number((rec as any).gradeLevel);
+          const gl = normalizeGrade((rec as any).gradeLevel);
           if (!allowedGrades.includes(gl)) {
             invalidRows.push(idx + 1);
             return false;
@@ -351,7 +367,7 @@ export function StaffListPage() {
         });
         setCsvPreviewCount(filtered.length);
         if (invalidRows.length > 0) {
-          showToast('error', `Removed ${invalidRows.length} row(s) with invalid Grade Level (1, 2, 11). Rows: ${invalidRows.join(', ')}`);
+          showToast('error', `Removed ${invalidRows.length} row(s) with invalid Grade Level. Rows: ${invalidRows.join(', ')}`);
         }
         setParsedRecords(filtered);
         setIsParsing(false);
@@ -429,7 +445,7 @@ export function StaffListPage() {
       unit: staffMember.appointment.unit || '',
       designation: staffMember.appointment.designation || '',
       cadre: staffMember.appointment.cadre || '',
-      grade_level: staffMember.salary_info.grade_level || 7,
+      grade_level: normalizeGrade(staffMember.salary_info.grade_level) || '7',
       step: staffMember.salary_info.step || 1,
       bank_name: staffMember.salary_info.bank_name || '',
       account_number: staffMember.salary_info.account_number || '',
@@ -656,7 +672,7 @@ export function StaffListPage() {
         exitDate: formData.exit_date || undefined,
         exitReason: formData.exit_reason || undefined,
         
-        gradeLevel: Number(formData.grade_level),
+        gradeLevel: normalizeGrade(formData.grade_level),
         step: Number(formData.step),
         bankName: formData.bank_name,
         accountNumber: formData.account_number,
@@ -761,7 +777,7 @@ export function StaffListPage() {
         exitDate: formData.exit_date || undefined,
         exitReason: formData.exit_reason || undefined,
         
-        gradeLevel: Number(formData.grade_level),
+        gradeLevel: normalizeGrade(formData.grade_level),
         step: Number(formData.step),
         bankName: formData.bank_name,
         accountNumber: formData.account_number,
@@ -820,7 +836,7 @@ export function StaffListPage() {
       unit: '',
       designation: '',
       cadre: '',
-      grade_level: 7,
+      grade_level: '7',
       step: 1,
       bank_name: '',
       account_number: '',
@@ -1498,7 +1514,7 @@ export function StaffListPage() {
                   >
                     {allowedGrades.map((level) => (
                       <option key={level} value={level}>
-                        GL {level}
+                        {isNumericGrade(level) ? `GL ${level}` : level}
                       </option>
                     ))}
                   </select>
