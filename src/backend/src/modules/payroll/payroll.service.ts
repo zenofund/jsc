@@ -760,9 +760,9 @@ export class PayrollService {
     const taxBrackets = configuredBrackets.length > 0
       ? configuredBrackets
       : [
-          { min: 0, max: 800000, rate: 0 },
-          { min: 800000, max: 2200000, rate: 15 },
-          { min: 2200000, max: null, rate: 18 },
+          { max: 800000, rate: 0 },
+          { max: 2200000, rate: 15 },
+          { max: null, rate: 18 },
         ];
 
     if (!Array.isArray(taxBrackets) || taxBrackets.length === 0) {
@@ -770,40 +770,57 @@ export class PayrollService {
       throw new BadRequestException('System tax configuration is missing or invalid. Please contact administrator.');
     }
 
-    const sortedBrackets = [...taxBrackets].sort((a, b) => {
-      const aMin = typeof a.min === 'number' ? a.min : 0;
-      const bMin = typeof b.min === 'number' ? b.min : 0;
-      return aMin - bMin;
+    const normalizedBrackets = taxBrackets.map((bracket: any) => {
+      const limit = typeof bracket.limit === 'number'
+        ? bracket.limit
+        : typeof bracket.max === 'number'
+          ? bracket.max
+          : typeof bracket.upper_limit === 'number'
+            ? bracket.upper_limit
+            : null;
+      return {
+        limit,
+        rate: Number(bracket.rate) || 0,
+        min: typeof bracket.min === 'number' ? bracket.min : undefined,
+      };
+    });
+
+    const orderedBrackets = [...normalizedBrackets].sort((a, b) => {
+      const aLimit = a.limit ?? Number.POSITIVE_INFINITY;
+      const bLimit = b.limit ?? Number.POSITIVE_INFINITY;
+      return aLimit - bLimit;
     });
 
     let annualTax = 0;
-    let taxedSoFar = 0;
+    let remainingIncome = taxableIncomeAfterReliefs;
+    let consumedIncome = 0;
     const taxBreakdown = [];
 
-    for (const bracket of sortedBrackets) {
-      if (taxedSoFar >= taxableIncomeAfterReliefs) {
+    for (const bracket of orderedBrackets) {
+      if (remainingIncome <= 0) {
         break;
       }
-      const bracketMax = typeof bracket.max === 'number' ? bracket.max : taxableIncomeAfterReliefs;
-      const cappedIncome = Math.min(taxableIncomeAfterReliefs, bracketMax);
-      const taxableAmount = Math.max(0, cappedIncome - taxedSoFar);
-      if (taxableAmount <= 0) {
+      const bandLimit = typeof bracket.limit === 'number' ? bracket.limit : remainingIncome;
+      const bandConsumption = Math.min(remainingIncome, bandLimit);
+      if (bandConsumption <= 0) {
         continue;
       }
-      const rate = Number(bracket.rate) || 0;
-      const taxForBracket = round2((taxableAmount * rate) / 100);
+      const taxForBracket = round2((bandConsumption * bracket.rate) / 100);
       annualTax = round2(annualTax + taxForBracket);
-      const minLabel = typeof bracket.min === 'number' ? bracket.min : taxedSoFar;
-      const maxLabel = typeof bracket.max === 'number' ? bracket.max : null;
+      const bandStart = round2(consumedIncome);
+      const bandEnd = typeof bracket.limit === 'number'
+        ? bracket.limit
+        : null;
       taxBreakdown.push({
-        bracket: maxLabel !== null
-          ? `${minLabel.toLocaleString()} - ${maxLabel.toLocaleString()}`
-          : `${minLabel.toLocaleString()} - above`,
-        rate,
-        taxable_amount: round2(taxableAmount),
+        bracket: bandEnd !== null
+          ? `${bandStart.toLocaleString()} - ${bandEnd.toLocaleString()}`
+          : `${bandStart.toLocaleString()} - above`,
+        rate: bracket.rate,
+        taxable_amount: round2(bandConsumption),
         tax: taxForBracket,
       });
-      taxedSoFar += taxableAmount;
+      remainingIncome = round2(remainingIncome - bandConsumption);
+      consumedIncome = round2(consumedIncome + bandConsumption);
     }
 
     const monthlyTax = round2(annualTax / 12);
