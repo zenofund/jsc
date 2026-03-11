@@ -1555,8 +1555,8 @@ export function StaffListPage() {
                     placeholder="Select or type bank name"
                   />
                   <datalist id="bank-list">
-                    {Array.isArray(supportedBanks) && supportedBanks.map((bank) => (
-                      <option key={bank.code} value={bank.name} />
+                    {Array.isArray(supportedBanks) && supportedBanks.map((bank, index) => (
+                      <option key={`${bank.code}-${bank.name}-${index}`} value={bank.name} />
                     ))}
                   </datalist>
                   {formErrors.bank_name && <p className="text-red-500 text-xs mt-1">{formErrors.bank_name}</p>}
