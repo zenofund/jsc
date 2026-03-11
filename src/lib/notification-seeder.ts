@@ -74,7 +74,8 @@ export async function seedDemoNotifications(userId: string, userRole: string) {
       } as any);
     }
 
-    if (userRole === 'approver' || userRole === 'reviewer') {
+    const normalizedRole = userRole === 'reviewer' ? 'checking' : userRole === 'approver' ? 'cpo' : userRole;
+    if (normalizedRole === 'cpo' || normalizedRole === 'checking') {
       // Approval notifications
       await notificationAPI.createNotification({
         recipient_id: userId,

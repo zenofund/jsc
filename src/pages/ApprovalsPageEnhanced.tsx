@@ -90,7 +90,14 @@ export function ApprovalsPageEnhanced() {
     loadAllApprovals();
   }, [user]);
 
-  const isPayrollOnlyApproverRole = ['reviewer', 'approver', 'auditor', 'audit'].includes(user?.role || '');
+  const normalizeRole = (role: any) => {
+    const r = String(role || '').trim().toLowerCase();
+    if (r === 'reviewer') return 'checking';
+    if (r === 'approver') return 'cpo';
+    return r;
+  };
+
+  const isPayrollOnlyApproverRole = ['checking', 'cpo', 'auditor', 'audit'].includes(normalizeRole(user?.role || ''));
 
   useEffect(() => {
     if (!isPayrollOnlyApproverRole) return;
@@ -123,7 +130,7 @@ export function ApprovalsPageEnhanced() {
         // Check if user can approve
         const currentStage = p.current_approval_stage || 1;
         const stageConfig = workflow.find((w: any) => w.stage === currentStage);
-        const requiredRole = stageConfig?.role;
+        const requiredRole = normalizeRole(stageConfig?.role);
         
         // Admin can always approve. Specific roles must match the stage.
         // If workflow is not configured, fallback to standard roles? 
@@ -131,8 +138,8 @@ export function ApprovalsPageEnhanced() {
         // But if workflow is empty, maybe we shouldn't show anything or show all to admin?
         // Assuming admin is always safe.
         const canApprove = 
-          user?.role === 'admin' || 
-          (requiredRole && (user?.role === requiredRole || user?.role?.toLowerCase() === requiredRole?.toLowerCase()));
+          normalizeRole(user?.role) === 'admin' || 
+          (requiredRole && normalizeRole(user?.role) === requiredRole);
 
         if (canApprove) {
           items.push({

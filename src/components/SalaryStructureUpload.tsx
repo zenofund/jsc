@@ -94,16 +94,24 @@ export function SalaryStructureUpload({ onDataParsed, onClose }: SalaryStructure
         const rowNum = index + 2; // +2 for header and 0-based index
 
         const gradeLevelRaw = row[gradeIndex];
-        const gradeLevel = gradeLevelRaw?.toString().trim() || '';
+        const gradeLevel = (gradeLevelRaw ?? '').toString().trim();
+        const normalizedGradeLevel = gradeLevel.toUpperCase().replace(/[\s-]+/g, '');
         const step = parseInt(row[stepIndex]);
         const salary = parseFloat(row[salaryIndex]);
 
         // Validate grade level
-        if (!gradeLevel || !/^[A-Za-z0-9]+$/.test(gradeLevel)) {
+        const isNumericGrade = /^\d+$/.test(normalizedGradeLevel);
+        const isAlphaNumericGrade = /^[A-Z]+\d+$/.test(normalizedGradeLevel);
+        if (
+          !normalizedGradeLevel ||
+          !/^[A-Z0-9]+$/.test(normalizedGradeLevel) ||
+          (!isNumericGrade && !isAlphaNumericGrade) ||
+          (isNumericGrade && (Number(normalizedGradeLevel) < 1 || Number(normalizedGradeLevel) > 17))
+        ) {
           validationErrors.push({
             row: rowNum,
             column: 'grade_level',
-            message: `Invalid grade level: ${gradeLevelRaw}. Use values like 1, 2, CAT1`,
+            message: `Invalid grade level: ${gradeLevelRaw}. Use values like 1, 2, CAT1, CAT4`,
           });
         }
 
@@ -126,15 +134,15 @@ export function SalaryStructureUpload({ onDataParsed, onClose }: SalaryStructure
         }
 
         // Check for duplicates
-        if (!dataMap.has(gradeLevel)) {
-          dataMap.set(gradeLevel, new Map());
+        if (!dataMap.has(normalizedGradeLevel)) {
+          dataMap.set(normalizedGradeLevel, new Map());
         }
-        const gradeMap = dataMap.get(gradeLevel)!;
+        const gradeMap = dataMap.get(normalizedGradeLevel)!;
         if (gradeMap.has(step)) {
           validationErrors.push({
             row: rowNum,
             column: 'grade_level/step',
-            message: `Duplicate entry for Grade ${gradeLevel}, Step ${step}`,
+            message: `Duplicate entry for Grade ${normalizedGradeLevel}, Step ${step}`,
           });
         } else {
           gradeMap.set(step, salary);

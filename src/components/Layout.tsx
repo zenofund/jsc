@@ -47,7 +47,7 @@ export function Layout({ children }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
   const [appVersion, setAppVersion] = useState<string>('JSCM v.1.0.1');
-  const [approvalRoles, setApprovalRoles] = useState<string[]>(['approver', 'reviewer', 'auditor']); // Default fallback
+  const [approvalRoles, setApprovalRoles] = useState<string[]>(['cpo', 'checking', 'auditor']); // Default fallback
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
@@ -62,7 +62,13 @@ export function Layout({ children }: LayoutProps) {
             setAppVersion(`JSCM v.${settings.app_version}`);
           }
           if (settings.approval_workflow && Array.isArray(settings.approval_workflow)) {
-            const roles = settings.approval_workflow.map((stage: any) => stage.role);
+            const normalizeRole = (role: any) => {
+              const r = String(role || '').trim().toLowerCase();
+              if (r === 'reviewer') return 'checking';
+              if (r === 'approver') return 'cpo';
+              return r;
+            };
+            const roles = settings.approval_workflow.map((stage: any) => normalizeRole(stage.role));
             // Always include admin/auditor for oversight? Maybe not admin if they are not in workflow.
             // But let's stick to what's in the workflow as requested + maybe 'auditor' for viewing?
             // The request says: "Approval dashboard visibility exposed based on user roles defined in the approval workflow by the admin."
@@ -158,9 +164,9 @@ export function Layout({ children }: LayoutProps) {
     },
     {
       group: 'Payroll Operations',
-      roles: ['admin', 'payroll_officer', 'approver', 'reviewer', 'auditor', 'payroll_loader'],
+      roles: ['admin', 'payroll_officer', 'cpo', 'checking', 'auditor', 'payroll_loader'],
       items: [
-        { name: 'Payroll Processing', icon: DollarSign, view: 'payroll', roles: ['admin', 'payroll_officer', 'approver', 'reviewer', 'auditor', 'payroll_loader'] },
+        { name: 'Payroll Processing', icon: DollarSign, view: 'payroll', roles: ['admin', 'payroll_officer', 'cpo', 'checking', 'auditor', 'payroll_loader'] },
         { name: 'Staff Adjustments', icon: TrendingUp, view: 'staff-allowances', roles: ['admin', 'payroll_officer', 'payroll_loader'] },
         { name: 'Adjustment Approvals', icon: CheckSquare, view: 'staff-adjustment-approvals', roles: ['admin', 'payroll_officer'] },
         { name: 'Arrears & Adjustments', icon: TrendingUp, view: 'arrears', roles: ['admin', 'payroll_officer', 'payroll_loader'] },
@@ -200,7 +206,7 @@ export function Layout({ children }: LayoutProps) {
   ];
 
   const standaloneNavigation = [
-    { name: 'Dashboard', icon: LayoutDashboard, view: 'dashboard', roles: ['admin', 'payroll_officer', 'hr_manager', 'approver', 'reviewer', 'auditor', 'cashier', 'payroll_loader'] },
+    { name: 'Dashboard', icon: LayoutDashboard, view: 'dashboard', roles: ['admin', 'payroll_officer', 'hr_manager', 'cpo', 'checking', 'auditor', 'cashier', 'payroll_loader'] },
     { name: 'Staff Portal', icon: UserCircle, view: 'staff-portal', roles: ['staff'] },
     { name: 'My Requests', icon: FileText, view: 'staff-request-status', roles: ['staff'] },
     { name: 'Approvals', icon: CheckSquare, view: 'approvals', roles: approvalRoles },
@@ -208,7 +214,14 @@ export function Layout({ children }: LayoutProps) {
 
   const hasAccess = (allowedRoles: string[]) => {
     if (allowedRoles.includes('*')) return true;
-    return user && allowedRoles.includes(user.role);
+    const normalizeRole = (role: any) => {
+      const r = String(role || '').trim().toLowerCase();
+      if (r === 'reviewer') return 'checking';
+      if (r === 'approver') return 'cpo';
+      return r;
+    };
+    const userRole = normalizeRole(user?.role);
+    return user && allowedRoles.map(normalizeRole).includes(userRole);
   };
 
   const hasGroupAccess = (group: NavigationGroup) => {

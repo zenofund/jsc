@@ -49,13 +49,15 @@ function AppContent() {
   // Set initial view based on user role
   useEffect(() => {
     if (user) {
+      const role = String(user.role || '').trim().toLowerCase();
+      const normalizedRole = role === 'reviewer' ? 'checking' : role === 'approver' ? 'cpo' : role;
       if (user.role === 'staff') {
         setCurrentView('staff-portal');
       } else if (user.role === 'hr_manager') {
         setCurrentView('hr-dashboard');
       } else if (user.role === 'cashier') {
         setCurrentView('cashier-dashboard');
-      } else if (['reviewer', 'approver', 'auditor', 'audit'].includes(user.role)) {
+      } else if (['checking', 'cpo', 'auditor', 'audit'].includes(normalizedRole)) {
         setCurrentView('approvals');
       }
     }

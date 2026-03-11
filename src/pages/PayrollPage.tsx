@@ -43,7 +43,9 @@ export function PayrollPage() {
   // Only Admin can lock payroll
   const canLockPayroll = user?.role === 'admin';
   // Reviewer, Approver, Audit can only view and download
-  const isReadOnlyRole = ['reviewer', 'approver', 'auditor', 'audit'].includes(user?.role || '');
+  const role = String(user?.role || '').trim().toLowerCase();
+  const normalizedRole = role === 'reviewer' ? 'checking' : role === 'approver' ? 'cpo' : role;
+  const isReadOnlyRole = ['checking', 'cpo', 'auditor', 'audit'].includes(normalizedRole);
 
   useEffect(() => {
     // Restrict cashier access

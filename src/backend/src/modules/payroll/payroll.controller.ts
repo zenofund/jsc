@@ -53,7 +53,7 @@ export class PayrollController {
   }
 
   @Post('batches/:id/approve')
-  @Roles('admin', 'payroll_officer', 'approver', 'reviewer', 'auditor', 'hr_manager', 'payroll_loader')
+  @Roles('admin', 'payroll_officer', 'cpo', 'checking', 'auditor', 'hr_manager', 'payroll_loader')
   @ApiOperation({ summary: 'Approve or reject payroll batch' })
   @ApiResponse({ status: 200, description: 'Batch approval action completed' })
   approveOrReject(@Param('id') id: string, @Body() approveDto: ApprovePayrollDto, @Request() req) {

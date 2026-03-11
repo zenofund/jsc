@@ -47,8 +47,25 @@ export function AdminPage() {
   const [isEditingWorkflow, setIsEditingWorkflow] = useState(false);
   const [workflowStages, setWorkflowStages] = useState<SystemSettings['approval_workflow']>([]);
 
+  const normalizeRole = (role: any) => {
+    const r = String(role || '').trim().toLowerCase();
+    if (r === 'reviewer') return 'checking';
+    if (r === 'approver') return 'cpo';
+    return r;
+  };
+
+  const formatRoleLabel = (role: any) => {
+    const r = normalizeRole(role);
+    if (r === 'cpo') return 'CPO';
+    if (r === 'checking') return 'Checking';
+    return String(r || '').replace(/_/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase());
+  };
+
   const handleEditWorkflow = () => {
-    setWorkflowStages([...(settings?.approval_workflow || [])]);
+    setWorkflowStages([...(settings?.approval_workflow || [])].map((s: any) => ({
+      ...s,
+      role: normalizeRole(s.role),
+    })));
     setIsEditingWorkflow(true);
   };
 
@@ -295,7 +312,9 @@ export function AdminPage() {
       payroll_officer: ['payroll.create', 'payroll.edit', 'staff.view', 'staff.create', 'staff.edit'],
       hr_manager: ['staff.create', 'staff.edit', 'staff.view', 'department.manage'],
       reviewer: ['payroll.review', 'payroll.view', 'staff.view'],
+      checking: ['payroll.review', 'payroll.view', 'staff.view'],
       approver: ['payroll.approve', 'payroll.view', 'staff.view'],
+      cpo: ['payroll.approve', 'payroll.view', 'staff.view'],
       auditor: ['payroll.view', 'staff.view', 'audit.view'],
       cashier: ['payment.execute', 'payroll.view'],
       staff: ['payslip.view', 'profile.view'],
@@ -318,7 +337,7 @@ export function AdminPage() {
     {
       header: 'Role',
       accessor: (row: User) => (
-        <span className="capitalize">{row.role.replace('_', ' ')}</span>
+        <span>{formatRoleLabel(row.role)}</span>
       ),
     },
     {
@@ -345,7 +364,7 @@ export function AdminPage() {
                 email: row.email,
                 password: '',
                 full_name: row.full_name,
-                role: row.role,
+                role: normalizeRole(row.role) as User['role'],
                 department: row.department || '',
                 status: row.status,
               });
@@ -641,8 +660,8 @@ export function AdminPage() {
                           >
                             <option value="hr_manager">HR Manager</option>
                             <option value="payroll_officer">Payroll Officer</option>
-                            <option value="reviewer">Reviewer</option>
-                            <option value="approver">Approver</option>
+                            <option value="checking">Checking</option>
+                            <option value="cpo">CPO</option>
                             <option value="auditor">Auditor</option>
                             <option value="admin">Administrator</option>
                             <option value="cashier">Cashier</option>
@@ -832,8 +851,8 @@ export function AdminPage() {
             >
               <option value="staff">Staff</option>
               <option value="payroll_officer">Payroll Officer</option>
-              <option value="reviewer">Reviewer</option>
-              <option value="approver">Approver</option>
+              <option value="checking">Checking</option>
+              <option value="cpo">CPO</option>
               <option value="auditor">Auditor</option>
               <option value="admin">Administrator</option>
               <option value="hr_manager">HR Manager</option>

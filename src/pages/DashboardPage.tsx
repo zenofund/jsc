@@ -22,6 +22,8 @@ export function DashboardPage() {
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
 
   useEffect(() => {
+    const role = String(user?.role || '').trim().toLowerCase();
+    const normalizedRole = role === 'reviewer' ? 'checking' : role === 'approver' ? 'cpo' : role;
     // Redirect HR Managers to their dedicated dashboard
     if (user?.role === 'hr_manager') {
       (window as any).navigateTo?.('hr-dashboard');
@@ -33,7 +35,7 @@ export function DashboardPage() {
       return;
     }
     // Redirect Reviewers, Approvers, and Auditors to their dedicated dashboard
-    if (['reviewer', 'approver', 'auditor', 'audit'].includes(user?.role || '')) {
+    if (['checking', 'cpo', 'auditor', 'audit'].includes(normalizedRole)) {
       (window as any).navigateTo?.('approvals');
       return;
     }
@@ -169,7 +171,7 @@ export function DashboardPage() {
         <div className="bg-card border border-border rounded-lg p-4 sm:p-6">
           <h3 className="font-semibold text-card-foreground mb-3 sm:mb-4 text-base sm:text-lg">Quick Actions</h3>
           <div className="space-y-2 sm:space-y-3">
-            {['admin', 'payroll_officer', 'approver', 'reviewer', 'payroll_loader'].includes(user?.role || '') && (
+            {['admin', 'payroll_officer', 'cpo', 'checking', 'payroll_loader'].includes((String(user?.role || '').trim().toLowerCase() === 'reviewer' ? 'checking' : String(user?.role || '').trim().toLowerCase() === 'approver' ? 'cpo' : String(user?.role || '').trim().toLowerCase())) && (
               <button 
                 onClick={() => (window as any).navigateTo?.('payroll')}
                 className="w-full flex items-center gap-3 p-3 sm:p-4 bg-green-50 dark:bg-green-950/30 hover:bg-green-100 dark:hover:bg-green-950/50 active:bg-green-200 dark:active:bg-green-950/70 rounded-lg transition-colors">

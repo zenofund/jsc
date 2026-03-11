@@ -381,7 +381,7 @@ export function PromotionsPage() {
           >
             <Eye className="w-4 h-4 text-blue-600" />
           </button>
-          {row.status === 'pending' && (user?.role === 'admin' || user?.role === 'approver' || user?.role === 'hr_manager') && (
+          {row.status === 'pending' && (String(user?.role || '').trim().toLowerCase() === 'admin' || ['cpo', 'approver'].includes(String(user?.role || '').trim().toLowerCase()) || user?.role === 'hr_manager') && (
             <>
               <button
                 onClick={(e) => {

@@ -22,9 +22,16 @@ export class RolesGuard implements CanActivate {
     if (user.role && (user.role.toLowerCase() === 'admin' || user.role.toLowerCase() === 'super_admin')) {
       return true;
     }
+
+    const normalizeRole = (role: any) => {
+      const r = String(role || '').toLowerCase();
+      if (r === 'reviewer') return 'checking';
+      if (r === 'approver') return 'cpo';
+      return r;
+    };
     
     const hasRole = requiredRoles.some((role) => 
-      user.role?.toLowerCase() === role.toLowerCase()
+      normalizeRole(user.role) === normalizeRole(role)
     );
     
     if (!hasRole) {

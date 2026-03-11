@@ -32,6 +32,18 @@ export class WorkflowService {
   }
 
   async getApprovalsForUser(userId: string, userRole: string) {
+    const normalizeRole = (role: any) => {
+      const r = String(role || '').trim().toLowerCase();
+      if (r === 'reviewer') return 'checking';
+      if (r === 'approver') return 'cpo';
+      return r;
+    };
+    const roleAliases = (role: any) => {
+      const normalized = normalizeRole(role);
+      if (normalized === 'checking') return ['checking', 'reviewer'];
+      if (normalized === 'cpo') return ['cpo', 'approver'];
+      return [normalized];
+    };
     // Find requests where the user is an approver based on role or specific ID
     const sql = `
       SELECT r.*, w.name as workflow_name, s.label as step_label,
@@ -43,12 +55,12 @@ export class WorkflowService {
       WHERE r.status = 'pending'
       AND (
         s.specific_user_id = $1
-        OR s.role_required = $2
+        OR LOWER(s.role_required) = ANY($2)
       )
       ORDER BY r.created_at DESC
     `;
     
-    return this.db.query(sql, [userId, userRole]);
+    return this.db.query(sql, [userId, roleAliases(userRole)]);
   }
 
   async processApproval(requestId: string, approverId: string, action: 'approve' | 'reject' | 'return', comments?: string) {
@@ -65,11 +77,17 @@ export class WorkflowService {
 
     // 2. Validate permission
     const approver = await this.db.queryOne('SELECT role FROM users WHERE id = $1', [approverId]);
+    const normalizeRole = (role: any) => {
+      const r = String(role || '').trim().toLowerCase();
+      if (r === 'reviewer') return 'checking';
+      if (r === 'approver') return 'cpo';
+      return r;
+    };
     
     // Check if user is authorized to approve
     const isSpecificUser = request.specific_user_id === approverId;
-    const hasRole = request.role_required === approver.role;
-    const isAdmin = approver.role === 'admin' || approver.role === 'super_admin';
+    const hasRole = normalizeRole(request.role_required) === normalizeRole(approver.role);
+    const isAdmin = normalizeRole(approver.role) === 'admin' || normalizeRole(approver.role) === 'super_admin';
 
     if (!isSpecificUser && !hasRole && !isAdmin) {
          // Allow admin override for now

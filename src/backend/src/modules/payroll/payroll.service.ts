@@ -874,6 +874,19 @@ export class PayrollService {
    * Submit batch for approval
    */
   async submitForApproval(batchId: string, userId: string) {
+    const normalizeApprovalRole = (role: any) => {
+      const r = String(role || '').trim().toLowerCase();
+      if (r === 'reviewer') return 'checking';
+      if (r === 'approver') return 'cpo';
+      return r;
+    };
+    const approvalRoleAliases = (role: any) => {
+      const normalized = normalizeApprovalRole(role);
+      if (normalized === 'checking') return ['checking', 'reviewer'];
+      if (normalized === 'cpo') return ['cpo', 'approver'];
+      return [normalized];
+    };
+
     const batch = await this.findOne(batchId);
 
     if (batch.status !== 'draft') {
@@ -907,7 +920,7 @@ export class PayrollService {
 
     workflow = (workflow || []).map((s: any) => ({
       stage: typeof s?.stage === 'number' ? s.stage : parseInt(String(s?.stage || 0), 10),
-      role: String(s?.role || '').trim(),
+      role: normalizeApprovalRole(s?.role),
       name: String(s?.name || '').trim(),
     })).filter((s: any) => s.stage > 0 && s.role && s.name)
       .sort((a, b) => a.stage - b.stage); // Sort by stage to ensure order
@@ -930,7 +943,7 @@ export class PayrollService {
             `INSERT INTO workflow_approvals (
               id, payroll_batch_id, stage, stage_name, approver_role, status
             ) VALUES ($1, $2, $3, $4, $5, 'pending')`,
-            [uuidv4(), batchId, stage.stage, stage.name, stage.role],
+            [uuidv4(), batchId, stage.stage, stage.name, normalizeApprovalRole(stage.role)],
           );
         }
   
@@ -951,9 +964,10 @@ export class PayrollService {
     try {
       const firstStage = workflow.find((s) => s.stage === 1);
       if (firstStage) {
+        const roleAliases = approvalRoleAliases(firstStage.role);
         const approvers = await this.databaseService.query(
-          'SELECT id FROM users WHERE role = $1',
-          [firstStage.role],
+          'SELECT id FROM users WHERE LOWER(role) = ANY($1)',
+          [roleAliases],
         );
 
         for (const approver of approvers) {
@@ -983,6 +997,19 @@ export class PayrollService {
    * Approve/Reject payroll batch
    */
   async approveOrReject(batchId: string, approveDto: ApprovePayrollDto, userId: string) {
+    const normalizeApprovalRole = (role: any) => {
+      const r = String(role || '').trim().toLowerCase();
+      if (r === 'reviewer') return 'checking';
+      if (r === 'approver') return 'cpo';
+      return r;
+    };
+    const approvalRoleAliases = (role: any) => {
+      const normalized = normalizeApprovalRole(role);
+      if (normalized === 'checking') return ['checking', 'reviewer'];
+      if (normalized === 'cpo') return ['cpo', 'approver'];
+      return [normalized];
+    };
+
     this.logger.log(`approveOrReject called for batch ${batchId} by user ${userId} with action ${approveDto.action}`);
     const batch = await this.findOne(batchId);
     const { action, comments } = approveDto;
@@ -1034,12 +1061,13 @@ export class PayrollService {
     // Ideally we should use slugs everywhere. Assuming slugs are used.
     
     // Allow admin/super_admin to override any stage
-    if (user.role.toLowerCase() !== 'admin' && user.role.toLowerCase() !== 'super_admin' && user.role !== currentApproval.approver_role) {
-       // Check if the user role matches loosely (case insensitive)
-       if (user.role.toLowerCase() !== currentApproval.approver_role.toLowerCase()) {
-          this.logger.warn(`Role mismatch: Required ${currentApproval.approver_role}, User has ${user.role}`);
-          throw new BadRequestException(`You do not have permission to approve this stage. Required: ${currentApproval.approver_role}, Current: ${user.role}`);
-       }
+    if (user.role.toLowerCase() !== 'admin' && user.role.toLowerCase() !== 'super_admin') {
+      const requiredRole = normalizeApprovalRole(currentApproval.approver_role);
+      const userRole = normalizeApprovalRole(user.role);
+      if (userRole !== requiredRole) {
+        this.logger.warn(`Role mismatch: Required ${currentApproval.approver_role}, User has ${user.role}`);
+        throw new BadRequestException(`You do not have permission to approve this stage. Required: ${currentApproval.approver_role}, Current: ${user.role}`);
+      }
     }
 
     try {
@@ -1167,7 +1195,8 @@ export class PayrollService {
           );
 
           if (nextStageInfo) {
-             const approvers = await this.databaseService.query('SELECT id FROM users WHERE role = $1', [nextStageInfo.approver_role]);
+             const roleAliases = approvalRoleAliases(nextStageInfo.approver_role);
+             const approvers = await this.databaseService.query('SELECT id FROM users WHERE LOWER(role) = ANY($1)', [roleAliases]);
              if (approvers.length === 0) {
                this.logger.warn(`No users found for role ${nextStageInfo.approver_role} for stage ${updatedBatch.current_approval_stage}`);
              }

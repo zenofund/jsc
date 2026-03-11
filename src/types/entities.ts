@@ -14,7 +14,7 @@ export interface User {
   email: string;
   password_hash?: string;
   full_name: string;
-  role: 'admin' | 'payroll_officer' | 'hr_manager' | 'reviewer' | 'approver' | 'auditor' | 'cashier' | 'staff' | 'payroll_loader';
+  role: 'admin' | 'payroll_officer' | 'hr_manager' | 'reviewer' | 'checking' | 'approver' | 'cpo' | 'auditor' | 'cashier' | 'staff' | 'payroll_loader';
   permissions: string[];
   department?: string;
   staff_id?: string;
