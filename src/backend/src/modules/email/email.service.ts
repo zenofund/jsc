@@ -18,6 +18,9 @@ export interface EmailOptions {
 export class EmailService implements OnModuleInit {
   private readonly logger = new Logger(EmailService.name);
   private readonly encryptionKey = process.env.SMTP_ENCRYPTION_KEY || 'jsc-payroll-smtp-key-32-chars!';
+  private readonly smtpConnectionTimeoutMs = 10_000;
+  private readonly smtpGreetingTimeoutMs = 10_000;
+  private readonly smtpSocketTimeoutMs = 20_000;
 
   constructor(private databaseService: DatabaseService) {}
 
@@ -88,6 +91,9 @@ export class EmailService implements OnModuleInit {
         port: smtpConfig.port,
         secure: smtpConfig.secure,
         auth: smtpConfig.auth,
+        connectionTimeout: this.smtpConnectionTimeoutMs,
+        greetingTimeout: this.smtpGreetingTimeoutMs,
+        socketTimeout: this.smtpSocketTimeoutMs,
       });
 
       // Send email
@@ -104,8 +110,10 @@ export class EmailService implements OnModuleInit {
 
       return true;
     } catch (error) {
-      this.logger.error(`Failed to send email to ${options.to}: ${error.message}`);
-      await this.logEmail(options, 'failed', error.message);
+      const message = String((error as any)?.message || error);
+      const code = String((error as any)?.code || '');
+      this.logger.error(`Failed to send email to ${options.to}: ${code ? `${code} ` : ''}${message}`);
+      await this.logEmail(options, 'failed', code ? `${code}: ${message}` : message);
       return false;
     }
   }
@@ -216,6 +224,9 @@ export class EmailService implements OnModuleInit {
           user: username,
           pass: password,
         },
+        connectionTimeout: this.smtpConnectionTimeoutMs,
+        greetingTimeout: this.smtpGreetingTimeoutMs,
+        socketTimeout: this.smtpSocketTimeoutMs,
       });
 
       await transporter.verify();
@@ -225,9 +236,18 @@ export class EmailService implements OnModuleInit {
         message: 'SMTP connection successful',
       };
     } catch (error) {
+      const message = String((error as any)?.message || error);
+      const code = String((error as any)?.code || '');
+      const lower = message.toLowerCase();
+      if (code === 'ETIMEDOUT' || lower.includes('timeout')) {
+        return {
+          success: false,
+          message: `SMTP connection timeout to ${host}:${port}. This usually means the server running the backend cannot reach the SMTP host (firewall/VPC rules, blocked outbound SMTP ports, wrong host/port).`,
+        };
+      }
       return {
         success: false,
-        message: error.message,
+        message: code ? `${code}: ${message}` : message,
       };
     }
   }
