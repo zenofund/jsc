@@ -401,6 +401,7 @@ export class PayrollService {
       let totalDeductionsAmount = 0;
       let pensionDeductionAmount = 0;
       let nhfDeductionAmount = 0;
+      let nhisDeductionAmount = 0;
 
       const isContractStaff = staffMember.employment_type === 'Contract';
       const gradeKey = String(staffMember.grade_level || '').replace(/\s+/g, '').toUpperCase();
@@ -463,8 +464,19 @@ export class PayrollService {
         }
 
         // Track specific deductions for tax relief
-        if (deduction.code === 'PENSION') pensionDeductionAmount += amount;
-        if (deduction.code === 'NHF') nhfDeductionAmount += amount;
+        const reliefCode = String(deduction.code || '').toUpperCase();
+        const reliefName = String(deduction.name || '').toUpperCase();
+        if (reliefCode === 'PENSION' || reliefName.includes('PENSION')) pensionDeductionAmount += amount;
+        if (reliefCode === 'NHF' || reliefName.includes('NHF') || reliefName.includes('HOUSING FUND')) nhfDeductionAmount += amount;
+        if (
+          reliefCode === 'NHIS' ||
+          reliefCode === 'NHIA' ||
+          reliefName.includes('NHIS') ||
+          reliefName.includes('NHIA') ||
+          reliefName.includes('HEALTH INSURANCE')
+        ) {
+          nhisDeductionAmount += amount;
+        }
 
         deductionsArray.push({
           code: deduction.code,
@@ -529,8 +541,19 @@ export class PayrollService {
         }
 
         // Track specific deductions for tax relief (if manually assigned)
-        if (deduction.deduction_code === 'PENSION') pensionDeductionAmount += amount;
-        if (deduction.deduction_code === 'NHF') nhfDeductionAmount += amount;
+        const reliefCode = String(deduction.deduction_code || deduction.code || '').toUpperCase();
+        const reliefName = String(deduction.deduction_name || deduction.name || '').toUpperCase();
+        if (reliefCode === 'PENSION' || reliefName.includes('PENSION')) pensionDeductionAmount += amount;
+        if (reliefCode === 'NHF' || reliefName.includes('NHF') || reliefName.includes('HOUSING FUND')) nhfDeductionAmount += amount;
+        if (
+          reliefCode === 'NHIS' ||
+          reliefCode === 'NHIA' ||
+          reliefName.includes('NHIS') ||
+          reliefName.includes('NHIA') ||
+          reliefName.includes('HEALTH INSURANCE')
+        ) {
+          nhisDeductionAmount += amount;
+        }
 
         deductionsArray.push({
           code: deduction.deduction_code || deduction.code,
@@ -576,7 +599,8 @@ export class PayrollService {
         taxConfig, 
         isContractStaff,
         pensionDeductionAmount,
-        nhfDeductionAmount
+        nhfDeductionAmount,
+        nhisDeductionAmount
       );
 
       // Add Tax deduction
@@ -719,7 +743,8 @@ export class PayrollService {
     taxConfig: any, 
     isContractStaff: boolean = false,
     pensionDeduction: number = 0,
-    nhfDeduction: number = 0
+    nhfDeduction: number = 0,
+    nhisDeduction: number = 0
   ) {
     const round2 = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
     const nonTaxableAllowances = allowances
@@ -733,6 +758,7 @@ export class PayrollService {
 
     let pensionRelief = 0;
     let nhfRelief = 0;
+    let nhisRelief = 0;
     let rentRelief = 0;
     const cra = 0;
     let grossIncomeRelief = 0;
@@ -740,6 +766,13 @@ export class PayrollService {
     if (!isContractStaff) {
       pensionRelief = round2(pensionDeduction * 12);
       nhfRelief = round2(nhfDeduction * 12);
+      const nhisReliefEnabled =
+        taxConfig?.include_nhis_relief ??
+        taxConfig?.apply_nhis_relief ??
+        taxConfig?.nhis_relief_enabled ??
+        taxConfig?.nhia_relief_enabled ??
+        true;
+      nhisRelief = nhisReliefEnabled ? round2(nhisDeduction * 12) : 0;
       const housingAllowance = allowances.find(
         (a) => a.code === 'HOUSING' || a.name.toLowerCase().includes('housing')
       )?.amount || 0;
@@ -751,19 +784,13 @@ export class PayrollService {
       );
     }
 
-    const totalReliefs = round2(cra + grossIncomeRelief + pensionRelief + nhfRelief + rentRelief);
+    const totalReliefs = round2(cra + grossIncomeRelief + pensionRelief + nhfRelief + nhisRelief + rentRelief);
     const taxableIncomeAfterReliefs = Math.max(0, round2(annualTaxableIncome - totalReliefs));
 
     const configuredBrackets = Array.isArray(taxConfig?.tax_brackets)
       ? taxConfig.tax_brackets
       : [];
-    const taxBrackets = configuredBrackets.length > 0
-      ? configuredBrackets
-      : [
-          { max: 800000, rate: 0 },
-          { max: 2200000, rate: 15 },
-          { max: null, rate: 18 },
-        ];
+    const taxBrackets = configuredBrackets;
 
     if (!Array.isArray(taxBrackets) || taxBrackets.length === 0) {
       this.logger.error('Tax brackets configuration missing or invalid');
@@ -781,7 +808,16 @@ export class PayrollService {
       return {
         limit,
         rate: Number(bracket.rate) || 0,
-        min: typeof bracket.min === 'number' ? bracket.min : undefined,
+        min: typeof bracket.min === 'number'
+          ? bracket.min
+          : typeof bracket.lower_limit === 'number'
+            ? bracket.lower_limit
+            : undefined,
+        max: typeof bracket.max === 'number'
+          ? bracket.max
+          : typeof bracket.upper_limit === 'number'
+            ? bracket.upper_limit
+            : undefined,
       };
     });
 
@@ -800,21 +836,19 @@ export class PayrollService {
       if (remainingIncome <= 0) {
         break;
       }
-      const bandLimit = typeof bracket.limit === 'number' ? bracket.limit : remainingIncome;
-      const bandConsumption = Math.min(remainingIncome, bandLimit);
+      const bandLimit = typeof bracket.limit === 'number' ? bracket.limit : null;
+      const bandConsumption = Math.min(remainingIncome, bandLimit ?? remainingIncome);
       if (bandConsumption <= 0) {
         continue;
       }
       const taxForBracket = round2((bandConsumption * bracket.rate) / 100);
       annualTax = round2(annualTax + taxForBracket);
-      const bandStart = round2(consumedIncome);
-      const bandEnd = typeof bracket.limit === 'number'
-        ? bracket.limit
-        : null;
+      const breakdownStart = round2(consumedIncome);
+      const breakdownEnd = bandLimit !== null ? round2(consumedIncome + bandConsumption) : null;
       taxBreakdown.push({
-        bracket: bandEnd !== null
-          ? `${bandStart.toLocaleString()} - ${bandEnd.toLocaleString()}`
-          : `${bandStart.toLocaleString()} - above`,
+        bracket: breakdownEnd !== null
+          ? `${breakdownStart.toLocaleString()} - ${breakdownEnd.toLocaleString()}`
+          : `${breakdownStart.toLocaleString()} - above`,
         rate: bracket.rate,
         taxable_amount: round2(bandConsumption),
         tax: taxForBracket,
