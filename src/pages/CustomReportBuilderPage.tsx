@@ -9,18 +9,7 @@ import { Badge } from '../components/ui/badge';
 import { Checkbox } from '../components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Alert, AlertDescription } from '../components/ui/alert';
-import { 
-  reportsAPI, 
-  reportHelpers,
-  DataSource, 
-  ReportField, 
-  ReportFilter, 
-  ReportJoin,
-  ReportGroupBy,
-  ReportOrderBy,
-  ReportConfig,
-  ReportTemplate
-} from '../lib/reportsAPI';
+import { reportsAPI, reportHelpers, DataSource, ReportField, ReportFilter, ReportJoin, ReportGroupBy, ReportOrderBy, ReportConfig, ReportTemplate, ApiError } from '../lib/reportsAPI';
 import { 
   Plus, 
   Trash2, 
@@ -233,7 +222,7 @@ const CustomReportBuilderPage: React.FC = () => {
       // First save as temporary template
       const config = buildReportConfig();
       const tempTemplate = await reportsAPI.createTemplate({
-        name: reportName || `Temp Report ${Date.now()}`,
+        name: reportName || `Temp Report ${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         description: reportDescription,
         category: reportCategory,
         config,
@@ -258,6 +247,12 @@ const CustomReportBuilderPage: React.FC = () => {
         await reportsAPI.deleteTemplate(tempTemplate.id);
       }
     } catch (error: any) {
+      if (error instanceof ApiError && error.status === 409) {
+        toast.error('Template name already exists', {
+          description: 'Please change the report name and try again.',
+        });
+        return;
+      }
       toast.error('Failed to execute report', {
         description: error.message,
       });
@@ -301,6 +296,12 @@ const CustomReportBuilderPage: React.FC = () => {
       // Navigate to reports page
       navigate('reports-list');
     } catch (error: any) {
+      if (error instanceof ApiError && error.status === 409) {
+        toast.error('Template name already exists', {
+          description: 'Please use a different report name (or delete/rename the existing template).',
+        });
+        return;
+      }
       toast.error('Failed to save report', {
         description: error.message,
       });

@@ -880,6 +880,12 @@ export const reportAPI = {
     });
   },
 
+  async getPayrollBankSchedule(month: string): Promise<any> {
+    return makeApiRequest(`/reports/payroll/${month}/bank-schedule`, {
+      method: 'GET',
+    });
+  },
+
   async getVarianceReport(month1: string, month2: string): Promise<any> {
     return makeApiRequest(`/reports/variance?month1=${month1}&month2=${month2}`, {
       method: 'GET',

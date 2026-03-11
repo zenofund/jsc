@@ -7,7 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { reportAPI, payrollAPI, settingsAPI } from '../lib/api-client';
 import { 
   BarChart3, TrendingUp, Users, FileText, 
-  Download, Calendar, DollarSign, PieChart 
+  Download, Calendar, DollarSign, PieChart, Building2
 } from 'lucide-react';
 import { PageSkeleton } from '../components/PageLoader';
 import { formatCurrency, formatCompactCurrency } from '../utils/format';
@@ -16,9 +16,11 @@ import { loadPdfMake } from '../utils/loadPdfMake';
 export function ReportsPage() {
   const { user } = useAuth();
   const { showToast } = useToast();
-  const [activeTab, setActiveTab] = useState<'staff' | 'payroll' | 'variance' | 'remittance'>('staff');
+  const [activeTab, setActiveTab] = useState<'staff' | 'payroll' | 'bank-schedule' | 'variance' | 'remittance'>('staff');
   const [reportData, setReportData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [selectedBank, setSelectedBank] = useState<any>(null);
+  const [showBankModal, setShowBankModal] = useState(false);
 
   // Filter states
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().substring(0, 7));
@@ -60,7 +62,7 @@ export function ReportsPage() {
   };
 
   useEffect(() => {
-    if (isCashier && (activeTab === 'staff' || activeTab === 'payroll')) {
+    if (isCashier && (activeTab === 'staff' || activeTab === 'payroll' || activeTab === 'bank-schedule')) {
       setActiveTab('variance');
       return;
     }
@@ -124,6 +126,9 @@ export function ReportsPage() {
       } else if (activeTab === 'payroll') {
         const data = await reportAPI.getPayrollReport(selectedMonth);
         setReportData(data);
+      } else if (activeTab === 'bank-schedule') {
+        const data = await reportAPI.getPayrollBankSchedule(selectedMonth);
+        setReportData(data);
       } else if (activeTab === 'variance') {
         const data = await reportAPI.getVarianceReport(month1, month2);
         setReportData(data);
@@ -160,6 +165,8 @@ export function ReportsPage() {
         const num = typeof val === 'string' ? parseFloat(val) : val;
         return isNaN(num) ? '0.00' : num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       };
+      const csvCell = (val: any) => `"${String(val ?? '').replace(/"/g, '""')}"`;
+      const csvRow = (vals: any[]) => vals.map(csvCell).join(',') + '\n';
 
       if (activeTab === 'staff') {
         // Staff Report CSV
@@ -224,6 +231,35 @@ export function ReportsPage() {
         });
         filename = `payroll_report_${selectedMonth}.csv`;
 
+      } else if (activeTab === 'bank-schedule') {
+        const reportTitle = `PAYROLL BANK PAYMENT SCHEDULE (BY BANK)\nMONTH: ${selectedMonth}\nGENERATED: ${currentDate}\n\n`;
+        const totals = reportData?.totals || {};
+        csv = commonHeader + reportTitle;
+        csv += csvRow(['TOTAL BANKS', totals.total_banks || 0]);
+        csv += csvRow(['TOTAL STAFF', totals.total_staff || 0]);
+        csv += csvRow(['TOTAL AMOUNT', formatCurrency(totals.total_amount || 0)]);
+        csv += csvRow(['MISSING BANK DETAILS', totals.missing_bank_details || 0]);
+        csv += '\n';
+
+        (reportData?.banks || []).forEach((bank: any) => {
+          csv += csvRow(['BANK', bank.bank_name]);
+          csv += csvRow(['TOTAL STAFF', bank.total_staff || 0]);
+          csv += csvRow(['TOTAL AMOUNT', formatCurrency(bank.total_amount || 0)]);
+          csv += '\n';
+          const headers = ['STAFF NUMBER', 'STAFF NAME', 'ACCOUNT NUMBER', 'NET PAY'];
+          csv += csvRow(headers);
+          (bank.lines || []).forEach((l: any) => {
+            csv += csvRow([
+              l.staff_number,
+              l.staff_name,
+              l.account_number,
+              formatCurrency(l.net_pay || 0),
+            ]);
+          });
+          csv += '\n\n';
+        });
+
+        filename = `payroll_bank_schedule_${selectedMonth}_${new Date().toISOString().split('T')[0]}.csv`;
       } else if (activeTab === 'variance') {
         // Variance Report CSV
         const reportTitle = `VARIANCE REPORT: ${month1} vs ${month2}\nGENERATED: ${currentDate}\n\n`;
@@ -283,6 +319,62 @@ export function ReportsPage() {
     } catch (error) {
       showToast('error', 'Failed to export CSV');
       console.error('CSV Export Error:', error);
+    }
+  };
+
+  const handleExportSelectedBankCSV = () => {
+    if (!selectedBank) {
+      showToast('error', 'No bank selected');
+      return;
+    }
+
+    try {
+      const currentDate = new Date().toLocaleDateString();
+      const commonHeader = `${organizationName.toUpperCase()}\n`;
+      const formatCurrency = (val: number | string | undefined | null) => {
+        if (val === undefined || val === null) return '0.00';
+        const num = typeof val === 'string' ? parseFloat(val) : val;
+        return isNaN(num) ? '0.00' : num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      };
+      const csvCell = (val: any) => `"${String(val ?? '').replace(/"/g, '""')}"`;
+      const csvRow = (vals: any[]) => vals.map(csvCell).join(',') + '\n';
+
+      let csv = '';
+      csv += commonHeader;
+      csv += `PAYROLL BANK PAYMENT SCHEDULE (BY BANK)\n`;
+      csv += `MONTH: ${selectedMonth}\n`;
+      csv += `BANK: ${selectedBank.bank_name}\n`;
+      csv += `GENERATED: ${currentDate}\n\n`;
+
+      csv += csvRow(['TOTAL STAFF', selectedBank.total_staff || 0]);
+      csv += csvRow(['TOTAL AMOUNT', formatCurrency(selectedBank.total_amount || 0)]);
+      csv += '\n';
+
+      csv += csvRow(['STAFF NUMBER', 'STAFF NAME', 'ACCOUNT NUMBER', 'NET PAY']);
+      (selectedBank.lines || []).forEach((l: any) => {
+        csv += csvRow([
+          l.staff_number,
+          l.staff_name,
+          l.account_number,
+          formatCurrency(l.net_pay || 0),
+        ]);
+      });
+
+      const filename = `payroll_bank_schedule_${String(selectedBank.bank_name || 'bank').replace(/\s+/g, '_')}_${selectedMonth}_${new Date().toISOString().split('T')[0]}.csv`;
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', filename);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      showToast('success', 'Bank CSV exported successfully');
+    } catch (error) {
+      showToast('error', 'Failed to export bank CSV');
+      console.error('Bank CSV Export Error:', error);
     }
   };
 
@@ -442,6 +534,66 @@ export function ReportsPage() {
 
         filename = `payroll_report_${selectedMonth}.pdf`;
 
+      } else if (activeTab === 'bank-schedule') {
+        docDefinition.content.push(
+          { text: `Payroll Bank Payment Schedule (By Bank) - ${selectedMonth}`, style: 'subheader' },
+          { text: `Generated: ${new Date().toLocaleDateString()}`, style: 'generated' }
+        );
+
+        const totals = reportData?.totals || {};
+        docDefinition.content.push(
+          { text: 'Summary', style: 'subheader', alignment: 'left', margin: [0, 10, 0, 5] },
+          {
+            columns: [
+              { text: `Total Banks: ${totals.total_banks || 0}`, width: '*' },
+              { text: `Total Staff: ${totals.total_staff || 0}`, width: '*' },
+              { text: `Total Amount: ${formatPDFCurrency(totals.total_amount || 0)}`, width: '*' },
+              { text: `Missing Details: ${totals.missing_bank_details || 0}`, width: '*' },
+            ],
+            margin: [0, 0, 0, 10],
+          },
+        );
+
+        (reportData?.banks || []).forEach((bank: any, idx: number) => {
+          docDefinition.content.push(
+            {
+              text: `Bank: ${bank.bank_name}  |  Staff: ${bank.total_staff || 0}  |  Total: ${formatPDFCurrency(bank.total_amount || 0)}`,
+              style: 'subheader',
+              alignment: 'left',
+              margin: [0, idx === 0 ? 5 : 12, 0, 5],
+            },
+          );
+
+          const tableBody = [
+            [
+              { text: 'Staff #', style: 'tableHeader' },
+              { text: 'Name', style: 'tableHeader' },
+              { text: 'Account Number', style: 'tableHeader' },
+              { text: 'Net Pay', style: 'tableHeader', alignment: 'right' },
+            ],
+          ];
+
+          (bank.lines || []).forEach((line: any) => {
+            tableBody.push([
+              { text: line.staff_number || 'N/A', style: 'tableCell' },
+              { text: line.staff_name || 'N/A', style: 'tableCell' },
+              { text: line.account_number || 'N/A', style: 'tableCell' },
+              { text: formatPDFCurrency(line.net_pay || 0), style: 'tableCell', alignment: 'right' },
+            ]);
+          });
+
+          docDefinition.content.push({
+            table: {
+              headerRows: 1,
+              widths: ['auto', '*', 'auto', 'auto'],
+              body: tableBody,
+            },
+            layout: tableLayout,
+          });
+        });
+
+        filename = `payroll_bank_schedule_${selectedMonth}.pdf`;
+
       } else if (activeTab === 'variance') {
         // Variance Report PDF
         docDefinition.content.push(
@@ -544,6 +696,113 @@ export function ReportsPage() {
     }
   };
 
+  const handleExportSelectedBankPDF = async () => {
+    if (!selectedBank) {
+      showToast('error', 'No bank selected');
+      return;
+    }
+
+    try {
+      const formatPDFCurrency = (amount: any) => {
+        const val = typeof amount === 'string' ? parseFloat(amount) : amount;
+        if (val === undefined || val === null || isNaN(val)) return '₦0.00';
+        return '₦' + val.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      };
+
+      const tableLayout = {
+        hLineWidth: function () { return 0; },
+        vLineWidth: function () { return 0; },
+        paddingLeft: function () { return 10; },
+        paddingRight: function () { return 10; },
+        paddingTop: function () { return 8; },
+        paddingBottom: function () { return 8; },
+        fillColor: function (i: number) {
+          if (i === 0) return '#008000';
+          return (i % 2 === 0) ? '#F9FAFB' : null;
+        }
+      };
+
+      const baseDocDefinition: any = {
+        pageSize: 'A4',
+        pageMargins: [20, 20, 20, 20],
+        styles: {
+          header: { fontSize: 16, bold: true, color: '#008000', alignment: 'center', margin: [0, 0, 0, 5] },
+          subheader: { fontSize: 12, alignment: 'center', margin: [0, 0, 0, 2] },
+          generated: { fontSize: 10, alignment: 'center', margin: [0, 0, 0, 10], color: '#666666' },
+          tableHeader: { bold: true, color: 'white', fontSize: 10 },
+          tableCell: { fontSize: 9 }
+        },
+        defaultStyle: { fontSize: 10, font: 'Roboto' }
+      };
+
+      const docDefinition: any = { ...baseDocDefinition, content: [] };
+
+      if (organizationLogo) {
+        docDefinition.content.push({
+          columns: [
+            { width: 80, image: organizationLogo, fit: [75, 75] },
+            { width: '*', text: organizationName, style: 'header', margin: [0, 20, 0, 0] },
+            { width: 80, text: '' }
+          ]
+        });
+      } else {
+        docDefinition.content.push({ text: organizationName, style: 'header' });
+      }
+
+      docDefinition.content.push(
+        { text: `Payroll Bank Payment Schedule (By Bank) - ${selectedMonth}`, style: 'subheader' },
+        { text: `Bank: ${selectedBank.bank_name}`, style: 'generated' },
+        { text: `Generated: ${new Date().toLocaleDateString()}`, style: 'generated' }
+      );
+
+      docDefinition.content.push(
+        {
+          columns: [
+            { text: `Staff: ${selectedBank.total_staff || 0}`, width: '*' },
+            { text: `Total: ${formatPDFCurrency(selectedBank.total_amount || 0)}`, width: '*' },
+          ],
+          margin: [0, 0, 0, 10],
+        }
+      );
+
+      const tableBody = [
+        [
+          { text: 'Staff #', style: 'tableHeader' },
+          { text: 'Name', style: 'tableHeader' },
+          { text: 'Account Number', style: 'tableHeader' },
+          { text: 'Net Pay', style: 'tableHeader', alignment: 'right' },
+        ],
+      ];
+
+      (selectedBank.lines || []).forEach((line: any) => {
+        tableBody.push([
+          { text: line.staff_number || 'N/A', style: 'tableCell' },
+          { text: line.staff_name || 'N/A', style: 'tableCell' },
+          { text: line.account_number || 'N/A', style: 'tableCell' },
+          { text: formatPDFCurrency(line.net_pay || 0), style: 'tableCell', alignment: 'right' },
+        ]);
+      });
+
+      docDefinition.content.push({
+        table: {
+          headerRows: 1,
+          widths: ['auto', '*', 'auto', 'auto'],
+          body: tableBody,
+        },
+        layout: tableLayout,
+      });
+
+      const filename = `payroll_bank_schedule_${String(selectedBank.bank_name || 'bank').replace(/\s+/g, '_')}_${selectedMonth}.pdf`;
+      const pdfMake = await loadPdfMake();
+      pdfMake.createPdf(docDefinition).download(filename);
+
+      showToast('success', 'Bank PDF exported successfully');
+    } catch (error) {
+      showToast('error', 'Failed to export bank PDF');
+      console.error('Bank PDF Export Error:', error);
+    }
+  };
+
   const tabs = isCashier
     ? [
         { id: 'variance', label: 'Variance Report', icon: TrendingUp },
@@ -552,6 +811,7 @@ export function ReportsPage() {
     : [
         { id: 'staff', label: 'Staff Report', icon: Users },
         { id: 'payroll', label: 'Payroll Report', icon: DollarSign },
+        { id: 'bank-schedule', label: 'Bank Payment Schedule', icon: Building2 },
         { id: 'variance', label: 'Variance Report', icon: TrendingUp },
         { id: 'remittance', label: 'Remittance Report', icon: FileText },
       ];
@@ -829,6 +1089,77 @@ export function ReportsPage() {
         </div>
       )}
 
+      {/* Bank Payment Schedule */}
+      {activeTab === 'bank-schedule' && (
+        <div className="space-y-6">
+          <div className="bg-card rounded-lg border border-border p-4">
+            <div className="flex items-center gap-4">
+              <Calendar className="w-5 h-5 text-muted-foreground" />
+              <div className="flex-1">
+                <label className="block text-sm mb-1 text-card-foreground">
+                  Select Month
+                </label>
+                <input
+                  type="month"
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                  className="w-full max-w-xs px-3 py-2 border border-border rounded-lg bg-input-background dark:bg-gray-800 text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+              </div>
+            </div>
+          </div>
+
+          {reportData && reportData.banks ? (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <div className="bg-card rounded-lg border border-border p-6">
+                  <div className="text-sm text-muted-foreground mb-1">Total Banks</div>
+                  <div className="text-2xl font-semibold text-foreground">{reportData.totals?.total_banks || 0}</div>
+                </div>
+                <div className="bg-card rounded-lg border border-border p-6">
+                  <div className="text-sm text-muted-foreground mb-1">Total Staff</div>
+                  <div className="text-2xl font-semibold text-foreground">{reportData.totals?.total_staff || 0}</div>
+                </div>
+                <div className="bg-card rounded-lg border border-border p-6">
+                  <div className="text-sm text-muted-foreground mb-1">Total Amount</div>
+                  <div className="flex flex-col">
+                    <span className="text-2xl font-bold text-green-700 dark:text-green-500">{formatCompactCurrency(reportData.totals?.total_amount).short}</span>
+                    <span className="text-xs text-green-600/70 dark:text-green-400/70 font-mono">{formatCompactCurrency(reportData.totals?.total_amount).full}</span>
+                  </div>
+                </div>
+                <div className="bg-card rounded-lg border border-border p-6">
+                  <div className="text-sm text-muted-foreground mb-1">Missing Bank Details</div>
+                  <div className="text-2xl font-semibold text-foreground">{reportData.totals?.missing_bank_details || 0}</div>
+                </div>
+              </div>
+
+              <div className="bg-card rounded-lg border border-border p-6">
+                <h3 className="font-semibold text-card-foreground mb-4">Banks - {selectedMonth}</h3>
+                <DataTable
+                  data={reportData.banks || []}
+                  columns={[
+                    { header: 'Bank', accessor: (row: any) => row.bank_name || 'Unknown', sortable: true },
+                    { header: 'Staff Count', accessor: (row: any) => row.total_staff || 0, sortable: true },
+                    { header: 'Total Amount', accessor: (row: any) => formatCurrency(row.total_amount || 0), sortable: true },
+                  ]}
+                  onRowClick={(row: any) => {
+                    setSelectedBank(row);
+                    setShowBankModal(true);
+                  }}
+                  searchable
+                  searchPlaceholder="Search banks..."
+                />
+              </div>
+            </>
+          ) : (
+            <div className="bg-card rounded-lg border border-border p-12 text-center">
+              <Building2 className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+              <p className="text-muted-foreground">No payroll bank schedule for selected month</p>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Variance Report */}
       {activeTab === 'variance' && (
         <div className="space-y-6">
@@ -926,6 +1257,63 @@ export function ReportsPage() {
           )}
         </div>
       )}
+
+      <Modal
+        isOpen={showBankModal}
+        onClose={() => {
+          setShowBankModal(false);
+          setSelectedBank(null);
+        }}
+        title={`${selectedBank?.bank_name || 'Bank'} - ${selectedMonth}`}
+        size="xl"
+        footer={
+          <div className="flex items-center justify-end gap-2">
+            <button
+              onClick={handleExportSelectedBankCSV}
+              className="flex items-center gap-2 px-4 py-2 border border-border text-foreground rounded-lg hover:bg-accent"
+            >
+              <Download className="w-4 h-4" />
+              Export Bank CSV
+            </button>
+            <button
+              onClick={handleExportSelectedBankPDF}
+              className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
+            >
+              <FileText className="w-4 h-4" />
+              Export Bank PDF
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-muted/30 border border-border rounded-lg p-4">
+              <div className="text-xs text-muted-foreground mb-1">Staff Count</div>
+              <div className="text-lg font-semibold text-foreground">{selectedBank?.total_staff || 0}</div>
+            </div>
+            <div className="bg-muted/30 border border-border rounded-lg p-4">
+              <div className="text-xs text-muted-foreground mb-1">Total Amount</div>
+              <div className="text-lg font-semibold text-foreground">{formatCurrency(selectedBank?.total_amount || 0)}</div>
+            </div>
+            <div className="bg-muted/30 border border-border rounded-lg p-4">
+              <div className="text-xs text-muted-foreground mb-1">Month</div>
+              <div className="text-lg font-semibold text-foreground">{selectedMonth}</div>
+            </div>
+          </div>
+
+          <DataTable
+            data={selectedBank?.lines || []}
+            columns={[
+              { header: 'Staff Number', accessor: 'staff_number' as keyof any, sortable: true },
+              { header: 'Staff Name', accessor: 'staff_name' as keyof any, sortable: true },
+              { header: 'Account Number', accessor: 'account_number' as keyof any, sortable: true },
+              { header: 'Net Pay', accessor: (row: any) => formatCurrency(row.net_pay || 0), sortable: true },
+            ]}
+            searchable
+            searchPlaceholder="Search staff..."
+          />
+        </div>
+      </Modal>
 
       {/* Remittance Report */}
       {activeTab === 'remittance' && (

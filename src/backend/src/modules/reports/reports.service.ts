@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, Logger } from '@nestjs/common';
 import { DatabaseService } from '@common/database/database.service';
 import {
   CreateReportTemplateDto,
@@ -16,6 +16,18 @@ import {
 @Injectable()
 export class ReportsService {
   private readonly logger = new Logger(ReportsService.name);
+  private isTemplateNameUniqueViolation(error: any): boolean {
+    const code = String(error?.code || '');
+    const constraint = String(error?.constraint || '');
+    const message = String(error?.message || '');
+    return (
+      code === '23505' &&
+      (constraint.toLowerCase().includes('unique_template_name') ||
+        message.toLowerCase().includes('unique_template_name') ||
+        message.toLowerCase().includes('report_templates') ||
+        message.toLowerCase().includes('duplicate key value'))
+    );
+  }
   private readonly dataSources: DataSource[] = [
     {
       table: 'staff',
@@ -63,8 +75,12 @@ export class ReportsService {
       table: 'payroll_lines',
       label: 'Payroll Details',
       fields: [
-        { field: 'staff_number', type: 'string', label: 'Staff Number', isSearchable: true, isFilterable: true, isAggregatable: false },
-        { field: 'staff_name', type: 'string', label: 'Staff Name', isSearchable: true, isFilterable: true, isAggregatable: false },
+        { field: 'payroll_batch_id', type: 'string', label: 'Payroll Batch ID', isSearchable: false, isFilterable: true, isAggregatable: false },
+        { field: 'staff_id', type: 'string', label: 'Staff ID', isSearchable: false, isFilterable: true, isAggregatable: false },
+        { field: 'bank_name', type: 'string', label: 'Bank Name', isSearchable: true, isFilterable: true, isAggregatable: false },
+        { field: 'account_number', type: 'string', label: 'Account Number', isSearchable: true, isFilterable: true, isAggregatable: false },
+        { field: 'grade_level', type: 'string', label: 'Grade Level', isSearchable: false, isFilterable: true, isAggregatable: false },
+        { field: 'step', type: 'number', label: 'Step', isSearchable: false, isFilterable: true, isAggregatable: false },
         { field: 'basic_salary', type: 'number', label: 'Basic Salary', isSearchable: false, isFilterable: true, isAggregatable: true },
         { field: 'gross_pay', type: 'number', label: 'Gross Pay', isSearchable: false, isFilterable: true, isAggregatable: true },
         { field: 'total_deductions', type: 'number', label: 'Total Deductions', isSearchable: false, isFilterable: true, isAggregatable: true },
@@ -257,6 +273,86 @@ export class ReportsService {
     }
   }
 
+  async getPayrollBankSchedule(month: string) {
+    const batch = await this.databaseService.queryOne(
+      `SELECT * FROM payroll_batches WHERE payroll_month = $1 LIMIT 1`,
+      [month],
+    );
+
+    if (!batch) {
+      return null;
+    }
+
+    const rawLines = await this.databaseService.query(
+      `SELECT 
+        pl.bank_name,
+        pl.account_number,
+        pl.net_pay,
+        s.staff_number,
+        s.first_name,
+        s.last_name
+      FROM payroll_lines pl
+      JOIN staff s ON pl.staff_id = s.id
+      WHERE pl.payroll_batch_id = $1
+      ORDER BY pl.bank_name NULLS LAST, s.staff_number ASC`,
+      [batch.id],
+    );
+
+    const lines = (rawLines || []).map((l: any) => {
+      const bankName = String(l.bank_name || '').trim() || 'Unknown Bank';
+      const accountNumber = String(l.account_number || '').trim() || '';
+      const amount = typeof l.net_pay === 'number' ? l.net_pay : parseFloat(l.net_pay || '0');
+      return {
+        bank_name: bankName,
+        staff_number: l.staff_number,
+        staff_name: `${l.first_name} ${l.last_name}`.trim(),
+        account_number: accountNumber,
+        net_pay: Number.isFinite(amount) ? amount : 0,
+        has_bank_details: Boolean(bankName && accountNumber),
+      };
+    });
+
+    const bankMap = new Map<string, any>();
+    for (const line of lines) {
+      const key = line.bank_name;
+      if (!bankMap.has(key)) {
+        bankMap.set(key, {
+          bank_name: key,
+          total_staff: 0,
+          total_amount: 0,
+          lines: [],
+        });
+      }
+      const entry = bankMap.get(key);
+      entry.total_staff += 1;
+      entry.total_amount += line.net_pay;
+      entry.lines.push(line);
+    }
+
+    const banks = Array.from(bankMap.values()).sort((a, b) =>
+      String(a.bank_name).localeCompare(String(b.bank_name), undefined, { sensitivity: 'base' }),
+    );
+
+    const totals = {
+      total_banks: banks.length,
+      total_staff: lines.length,
+      total_amount: banks.reduce((sum, b) => sum + (b.total_amount || 0), 0),
+      missing_bank_details: lines.filter((l) => !l.account_number || l.bank_name === 'Unknown Bank').length,
+    };
+
+    return {
+      month,
+      batch: {
+        id: batch.id,
+        batch_number: batch.batch_number,
+        payroll_month: batch.payroll_month,
+        status: batch.status,
+      },
+      totals,
+      banks,
+    };
+  }
+
   /**
    * Get Variance Report
    */
@@ -380,6 +476,9 @@ export class ReportsService {
       this.logger.log(`Report template "${dto.name}" created by user ${userId}`);
       return template;
     } catch (error) {
+      if (this.isTemplateNameUniqueViolation(error)) {
+        throw new ConflictException('A report template with this name already exists. Please use a different name.');
+      }
       this.logger.error(`Error creating template: ${error.message}`);
       throw new BadRequestException(`Failed to create template: ${error.message}`);
     }
@@ -507,13 +606,21 @@ export class ReportsService {
     params.push(userId);
     params.push(id);
 
-    const updated = await this.databaseService.queryOne(
-      `UPDATE report_templates SET ${updates.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
-      params,
-    );
+    try {
+      const updated = await this.databaseService.queryOne(
+        `UPDATE report_templates SET ${updates.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
+        params,
+      );
 
-    this.logger.log(`Report template ${id} updated by user ${userId}`);
-    return updated;
+      this.logger.log(`Report template ${id} updated by user ${userId}`);
+      return updated;
+    } catch (error) {
+      if (this.isTemplateNameUniqueViolation(error)) {
+        throw new ConflictException('A report template with this name already exists. Please use a different name.');
+      }
+      this.logger.error(`Error updating template: ${error.message}`);
+      throw new BadRequestException(`Failed to update template: ${error.message}`);
+    }
   }
 
   /**

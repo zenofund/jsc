@@ -145,6 +145,17 @@ function getAuthToken(): string {
 }
 
 // Helper function to make authenticated requests
+export class ApiError extends Error {
+  status: number;
+  data: any;
+  constructor(message: string, status: number, data: any) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.data = data;
+  }
+}
+
 async function apiRequest<T>(
   endpoint: string,
   options: RequestInit = {}
@@ -162,7 +173,7 @@ async function apiRequest<T>(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: response.statusText }));
-    throw new Error(error.message || `API Error: ${response.status}`);
+    throw new ApiError(error.message || `API Error: ${response.status}`, response.status, error);
   }
 
   return response.json();
