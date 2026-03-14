@@ -543,10 +543,10 @@ export const promotionAPI = {
 
   async previewArrears(
     staffId: string,
-    newGradeLevel: number,
+    newGradeLevel: number | string,
     newStep: number,
     effectiveDate: string,
-    oldGradeLevel?: number,
+    oldGradeLevel?: number | string,
     oldStep?: number,
   ) {
     return makeApiRequest('/promotions/preview-arrears', {

@@ -1588,7 +1588,16 @@ export class PayrollService {
     const dataQuery = `
       SELECT *, (COALESCE(gross_pay, 0)::numeric - COALESCE(basic_salary, 0)::numeric) as total_allowances FROM payroll_lines
       ${whereClause}
-      ORDER BY grade_level ${sortOrder}, step ${sortOrder}, staff_number ASC
+      ORDER BY
+        CASE WHEN TRIM(grade_level::text) ~ '^[0-9]+$' THEN 1 ELSE 0 END DESC,
+        CASE
+          WHEN TRIM(grade_level::text) ~ '^[0-9]+$' THEN TRIM(grade_level::text)::int
+          ELSE NULLIF(regexp_replace(TRIM(grade_level::text), '\\D', '', 'g'), '')::int
+        END ${sortOrder} NULLS LAST,
+        regexp_replace(upper(TRIM(grade_level::text)), '\\d', '', 'g') ${sortOrder} NULLS LAST,
+        upper(TRIM(grade_level::text)) ${sortOrder},
+        step ${sortOrder},
+        staff_number ASC
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
     `;
     const data = await this.databaseService.query(dataQuery, [...params, limit, offset]);

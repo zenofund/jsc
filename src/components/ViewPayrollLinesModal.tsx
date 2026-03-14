@@ -37,14 +37,85 @@ export function ViewPayrollLinesModal({
 }: ViewPayrollLinesModalProps) {
   const [isExporting, setIsExporting] = React.useState(false);
 
+  const getGradeKey = (gradeLevel: unknown) => {
+    const raw = String(gradeLevel ?? '').trim().toUpperCase();
+    const isNumeric = /^\d+$/.test(raw);
+    const digits = raw.match(/\d+/g)?.join('') ?? '';
+    const num = digits ? Number(digits) : null;
+    const prefix = raw.replace(/\d+/g, '').trim();
+    return { isNumeric, num: Number.isFinite(num as number) ? (num as number) : null, prefix, raw };
+  };
+
+  const compareLines = (a: PayrollLine, b: PayrollLine, direction: 'asc' | 'desc') => {
+    const dir = direction === 'asc' ? 1 : -1;
+    const aGrade = getGradeKey(a.grade_level);
+    const bGrade = getGradeKey(b.grade_level);
+
+    if (aGrade.isNumeric !== bGrade.isNumeric) return aGrade.isNumeric ? -1 : 1;
+
+    if (aGrade.num !== null && bGrade.num !== null && aGrade.num !== bGrade.num) {
+      return (aGrade.num - bGrade.num) * dir;
+    }
+
+    if (aGrade.prefix !== bGrade.prefix) return aGrade.prefix.localeCompare(bGrade.prefix) * dir;
+    if (aGrade.raw !== bGrade.raw) return aGrade.raw.localeCompare(bGrade.raw) * dir;
+
+    const aStep = Number(a.step ?? 0);
+    const bStep = Number(b.step ?? 0);
+    if (aStep !== bStep) return (aStep - bStep) * dir;
+
+    return String(a.staff_number ?? '').localeCompare(String(b.staff_number ?? ''));
+  };
+
+  const displayLines = React.useMemo(() => {
+    const sorted = [...lines];
+    sorted.sort((a, b) => compareLines(a, b, sortDirection));
+    return sorted;
+  }, [lines, sortDirection]);
+
+  const csvCell = (value: unknown) => {
+    const str = value === null || value === undefined ? '' : String(value);
+    return /[",\n\r]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+  };
+
+  const toNumber = (value: unknown) => {
+    const n = typeof value === 'number' ? value : Number(value);
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  const lineTotalAllowances = (line: PayrollLine) => {
+    const hasExplicit = (line as any).total_allowances !== undefined && (line as any).total_allowances !== null;
+    if (hasExplicit) return toNumber((line as any).total_allowances);
+    const gross = toNumber(line.gross_pay);
+    const basic = toNumber(line.basic_salary);
+    const derived = gross - basic;
+    return Number.isFinite(derived) ? derived : 0;
+  };
+
+  const formatBreakdown = (items: unknown) => {
+    if (!Array.isArray(items)) return '';
+    const parts = items
+      .map((i: any) => {
+        const code = String(i?.code ?? '').trim();
+        const name = String(i?.name ?? '').trim();
+        const amount = toNumber(i?.amount);
+        const label = [code, name].filter(Boolean).join(' - ');
+        if (!label) return '';
+        return `${label}: ${amount}`;
+      })
+      .filter(Boolean);
+    return parts.join('; ');
+  };
+
   if (!batch) return null;
 
   const handleExportCSV = async () => {
     try {
       setIsExporting(true);
       // Fetch all lines for export
-      const response = await payrollAPI.getPayrollLines(batch.id, { limit: 100000 });
-      const allLines = Array.isArray(response) ? response : (response.data || []);
+      const response = await payrollAPI.getPayrollLines(batch.id, { limit: 100000, sort: sortDirection });
+      const allLinesRaw = Array.isArray(response) ? response : (response.data || []);
+      const allLines = [...allLinesRaw].sort((a, b) => compareLines(a, b, sortDirection));
 
       if (allLines.length === 0) {
         setIsExporting(false);
@@ -63,38 +134,51 @@ export function ViewPayrollLinesModal({
         'Total Deductions',
         'Net Pay',
         'Bank Name',
-        'Account Number'
+        'Account Number',
+        'Allowances Breakdown',
+        'Deductions Breakdown',
       ];
 
       // Format Rows
-      const rows = allLines.map((line: PayrollLine) => [
-        line.staff_number,
-        `"${line.staff_name}"`, // Quote name to handle commas
-        line.grade_level,
-        line.step,
-        line.basic_salary,
-        line.total_allowances || (line.gross_pay - line.basic_salary),
-        line.gross_pay,
-        line.total_deductions,
-        line.net_pay,
-        line.bank_name || '',
-        line.account_number || '',
-      ].join(','));
+      const rows = allLines.map((line: PayrollLine) => {
+        const row = [
+          line.staff_number,
+          line.staff_name,
+          line.grade_level,
+          line.step,
+          toNumber(line.basic_salary),
+          lineTotalAllowances(line),
+          toNumber(line.gross_pay),
+          toNumber(line.total_deductions),
+          toNumber(line.net_pay),
+          line.bank_name || '',
+          line.account_number || '',
+          formatBreakdown((line as any).allowances),
+          formatBreakdown((line as any).deductions),
+        ];
+        return row.map(csvCell).join(',');
+      });
 
-      // Add Total Row
+      const totalBasic = allLines.reduce((sum, l) => sum + toNumber(l.basic_salary), 0);
+      const totalAllowances = allLines.reduce((sum, l) => sum + lineTotalAllowances(l), 0);
+
       const totalRow = [
         'TOTAL',
         '',
         '',
         '',
-        batch.total_gross - (batch.total_gross - batch.total_deductions - batch.total_net), // Approximation or use batch totals
-        // Better to use batch totals directly
-        formatCurrency(allLines.reduce((sum: number, l: PayrollLine) => sum + l.basic_salary, 0)).replace(/[^0-9.-]+/g,""),
-        formatCurrency(allLines.reduce((sum: number, l: PayrollLine) => sum + (l.total_allowances || 0), 0)).replace(/[^0-9.-]+/g,""),
-        formatCurrency(batch.total_gross).replace(/[^0-9.-]+/g,""),
-        formatCurrency(batch.total_deductions).replace(/[^0-9.-]+/g,""),
-        formatCurrency(batch.total_net).replace(/[^0-9.-]+/g,""),
-      ].join(',');
+        totalBasic,
+        totalAllowances,
+        toNumber(batch.total_gross),
+        toNumber(batch.total_deductions),
+        toNumber(batch.total_net),
+        '',
+        '',
+        '',
+        '',
+      ]
+        .map(csvCell)
+        .join(',');
 
       const csvContent = [
         headers.join(','),
@@ -203,7 +287,7 @@ export function ViewPayrollLinesModal({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border bg-card">
-                  {lines.map((line) => (
+                  {displayLines.map((line) => (
                     <tr key={line.id} className="hover:bg-muted/50">
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">

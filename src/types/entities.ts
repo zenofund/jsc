@@ -253,7 +253,7 @@ export interface PayrollLine {
   staff_id: string;
   staff_number: string;
   staff_name: string;
-  grade_level: number;
+  grade_level: number | string;
   step: number;
   basic_salary: number;
   total_allowances?: number;
@@ -353,9 +353,9 @@ export type Arrear = Arrears;
 export interface Promotion {
   id: string;
   staff_id: string;
-  old_grade_level: number;
+  old_grade_level: number | string;
   old_step: number;
-  new_grade_level: number;
+  new_grade_level: number | string;
   new_step: number;
   effective_date: string;
   status: 'pending' | 'approved' | 'rejected';
