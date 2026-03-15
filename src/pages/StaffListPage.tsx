@@ -43,12 +43,14 @@ export function StaffListPage() {
 
   // Check if user can manage staff
   const canManageStaff = user?.role === 'admin' || user?.role === 'hr_manager';
+  const canEditStaffNumber = user?.role === 'admin' || user?.role === 'hr_manager';
 
   // Form state
   const normalizeGrade = (value: any) => String(value || '').trim().toUpperCase().replace(/[\s-]+/g, '');
   const isNumericGrade = (value: any) => /^\d+$/.test(normalizeGrade(value));
 
   const [formData, setFormData] = useState({
+    staff_number: '',
     first_name: '',
     middle_name: '',
     last_name: '',
@@ -58,6 +60,8 @@ export function StaffListPage() {
     nationality: 'Nigerian',
     state_of_origin: '',
     lga: '',
+    zone: '',
+    qualification: '',
     phone: '',
     email: '',
     address: '',
@@ -65,6 +69,7 @@ export function StaffListPage() {
     nok_relationship: '',
     nok_phone: '',
     nok_address: '',
+    post_on_first_appointment: '',
     appointment_date: '',
     appointment_type: 'Permanent',
     employment_date: '', // Resumption date
@@ -72,12 +77,15 @@ export function StaffListPage() {
     retirement_date: '', // Expected retirement date
     exit_date: '', // Exit/Resignation date (optional)
     exit_reason: '', // Reason for exit (optional)
+    present_appointment: '',
+    date_of_present_appointment: '',
     department: '',
     unit: '',
     designation: '',
     cadre: '',
     grade_level: '7',
     step: 1,
+    bank_code: '',
     bank_name: '',
     account_number: '',
     account_name: '',
@@ -90,20 +98,63 @@ export function StaffListPage() {
 
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
+  const dateFields = [
+    'date_of_birth',
+    'appointment_date',
+    'confirmation_date',
+    'date_of_present_appointment',
+    'employment_date',
+    'retirement_date',
+    'exit_date',
+  ];
+
+  const isDateField = (name: string) => dateFields.includes(name);
+
   const validateField = (name: string, value: any) => {
     let error = '';
     
     // Required fields check
     const requiredFields = [
-      'first_name', 'last_name', 'date_of_birth', 'gender', 'marital_status',
-      'state_of_origin', 'lga', 'phone', 'email', 'address',
-      'nok_name', 'nok_relationship', 'nok_phone', 'nok_address',
-      'appointment_date', 'employment_date', 'department', 'unit',
-      'designation', 'cadre', 'bank_name', 'account_number'
+      'staff_number',
+      'first_name',
+      'last_name',
+      'gender',
+      'date_of_birth',
+      'state_of_origin',
+      'lga',
+      'zone',
+      'qualification',
+      'post_on_first_appointment',
+      'appointment_date',
+      'confirmation_date',
+      'present_appointment',
+      'date_of_present_appointment',
+      'grade_level',
+      'step',
+      'bank_code',
+      'bank_name',
+      'account_name',
+      'account_number',
+      'exit_date',
     ];
 
     if (requiredFields.includes(name) && !value) {
       error = 'This field is required';
+    }
+
+    const isValidDdMmYyyy = (dateValue: string) => {
+      const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(dateValue);
+      if (!match) return false;
+      const day = Number(match[1]);
+      const month = Number(match[2]);
+      const year = Number(match[3]);
+      if (!day || !month || !year) return false;
+      const date = new Date(year, month - 1, day);
+      return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
+    };
+
+    if (isDateField(name) && value && !isValidDdMmYyyy(String(value))) {
+      error = 'Use dd/mm/yyyy format';
     }
 
     // Email validation
@@ -134,13 +185,46 @@ export function StaffListPage() {
 
   const formatDateForInput = (dateString: string) => {
     if (!dateString) return '';
-    return new Date(dateString).toISOString().split('T')[0];
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateString)) return dateString;
+    const isoMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateString);
+    if (isoMatch) return `${isoMatch[3]}/${isoMatch[2]}/${isoMatch[1]}`;
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return dateString;
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    return `${day}/${month}/${year}`;
+  };
+
+  const normalizeDateInput = (value: string) => {
+    const isoMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (isoMatch) return `${isoMatch[3]}/${isoMatch[2]}/${isoMatch[1]}`;
+    return value;
+  };
+
+  const toApiDate = (value: string | undefined) => {
+    if (!value) return undefined;
+    const ddmmyyyy = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value);
+    if (ddmmyyyy) return `${ddmmyyyy[3]}-${ddmmyyyy[2]}-${ddmmyyyy[1]}`;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+    const date = new Date(value);
+    if (isNaN(date.getTime())) return value;
+    return date.toISOString().split('T')[0];
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-    validateField(name, value);
+    if (name === 'bank_code') {
+      const selected = supportedBanks.find((b) => String(b.code) === String(value));
+      const bankName = selected?.name || '';
+      setFormData((prev) => ({ ...prev, bank_code: value, bank_name: bankName }));
+      validateField('bank_code', value);
+      validateField('bank_name', bankName);
+    } else {
+      const nextValue = isDateField(name) ? normalizeDateInput(value) : value;
+      setFormData(prev => ({ ...prev, [name]: nextValue }));
+      validateField(name, nextValue);
+    }
     
     // Special handling for state of origin
     if (name === 'state_of_origin') {
@@ -213,6 +297,8 @@ export function StaffListPage() {
           address: item.address,
           state_of_origin: item.state_of_origin,
           lga_of_origin: item.lga_of_origin,
+          zone: item.zone,
+          qualification: item.qualification,
           marital_status: item.marital_status,
           nationality: item.nationality
         },
@@ -223,7 +309,10 @@ export function StaffListPage() {
           address: item.nok_address
         },
         appointment: {
-          date_of_first_appointment: item.employment_date,
+          date_of_first_appointment: item.date_of_first_appointment || item.employment_date,
+          post_on_first_appointment: item.post_on_first_appointment,
+          present_appointment: item.present_appointment,
+          date_of_present_appointment: item.date_of_present_appointment,
           current_posting: item.department_name,
           department: item.department_name,
           department_id: item.department_id,
@@ -241,6 +330,7 @@ export function StaffListPage() {
           grade_level: item.grade_level,
           step: item.step,
           bank_name: item.bank_name,
+          bank_code: item.bank_code,
           account_number: item.account_number,
           account_name: item.account_name,
           bvn: item.bvn,
@@ -314,7 +404,17 @@ export function StaffListPage() {
           const lower = (s: string) => (s ? String(s).toLowerCase().trim() : undefined);
           const cap = (s: string) => (s ? String(s).charAt(0).toUpperCase() + String(s).slice(1).toLowerCase() : undefined);
           const num = (v: any) => (v === '' || v === undefined || v === null ? undefined : Number(v));
+          const bankByCode = (code: any) =>
+            supportedBanks.find((b) => String(b.code) === String(code))?.name;
+          const bankByName = (name: any) =>
+            supportedBanks.find((b) => String(b.name).toLowerCase() === String(name).toLowerCase())?.code;
+          const rawBankCode = r.bank_code || undefined;
+          const rawBankName = r.bank_name || undefined;
+          const resolvedBankCode = rawBankCode || (rawBankName ? bankByName(rawBankName) : undefined);
+          const resolvedBankName = rawBankName || (rawBankCode ? bankByCode(rawBankCode) : undefined);
+
           const rec = {
+            staffNumber: r.staff_number || r.file_no || undefined,
             firstName: r.first_name || undefined,
             middleName: r.middle_name || undefined,
             lastName: r.last_name || undefined,
@@ -323,7 +423,9 @@ export function StaffListPage() {
             maritalStatus: lower(r.marital_status),
             nationality: r.nationality || 'Nigerian',
             stateOfOrigin: r.state_of_origin || undefined,
-            lgaOfOrigin: r.lga || undefined,
+            lgaOfOrigin: r.lga || r.lga_of_origin || undefined,
+            zone: r.zone || undefined,
+            qualification: r.qualification || undefined,
             phone: r.phone || undefined,
             email: r.email || undefined,
             address: r.address || undefined,
@@ -338,14 +440,18 @@ export function StaffListPage() {
             unit: r.unit || undefined,
             cadre: r.cadre || undefined,
             employmentType: cap(r.appointment_type) || undefined,
-            employmentDate: r.employment_date || undefined,
+            employmentDate: r.date_of_first_appointment || r.employment_date || undefined,
+            postOnFirstAppointment: r.post_on_first_appointment || undefined,
+            presentAppointment: r.present_appointment || undefined,
+            dateOfPresentAppointment: r.date_of_present_appointment || undefined,
             confirmationDate: r.confirmation_date || undefined,
             retirementDate: r.retirement_date || undefined,
             exitDate: r.exit_date || undefined,
             exitReason: r.exit_reason || undefined,
             gradeLevel: normalizeGrade(r.grade_level),
             step: num(r.step),
-            bankName: r.bank_name || undefined,
+            bankName: resolvedBankName,
+            bankCode: resolvedBankCode,
             accountNumber: r.account_number || undefined,
             accountName: r.account_name || undefined,
             pensionPin: r.pension_pin || undefined,
@@ -418,6 +524,7 @@ export function StaffListPage() {
 
   const populateFormWithStaff = (staffMember: Staff) => {
     setFormData({
+      staff_number: staffMember.staff_number || '',
       first_name: staffMember.bio_data.first_name || '',
       middle_name: staffMember.bio_data.middle_name || '',
       last_name: staffMember.bio_data.last_name || '',
@@ -427,6 +534,8 @@ export function StaffListPage() {
       nationality: staffMember.bio_data.nationality || 'Nigerian',
       state_of_origin: staffMember.bio_data.state_of_origin || '',
       lga: staffMember.bio_data.lga_of_origin || '',
+      zone: staffMember.bio_data.zone || '',
+      qualification: staffMember.bio_data.qualification || '',
       phone: staffMember.bio_data.phone || '',
       email: staffMember.bio_data.email || '',
       address: staffMember.bio_data.address || '',
@@ -434,6 +543,7 @@ export function StaffListPage() {
       nok_relationship: staffMember.next_of_kin.relationship || '',
       nok_phone: staffMember.next_of_kin.phone || '',
       nok_address: staffMember.next_of_kin.address || '',
+      post_on_first_appointment: staffMember.appointment.post_on_first_appointment || '',
       appointment_date: formatDateForInput(staffMember.appointment.date_of_first_appointment || ''),
       appointment_type: staffMember.appointment.appointment_type || 'Permanent',
       employment_date: formatDateForInput(staffMember.appointment.employment_date || ''),
@@ -441,12 +551,15 @@ export function StaffListPage() {
       retirement_date: formatDateForInput(staffMember.appointment.retirement_date || ''),
       exit_date: formatDateForInput(staffMember.appointment.exit_date || ''),
       exit_reason: staffMember.appointment.exit_reason || '',
+      present_appointment: staffMember.appointment.present_appointment || '',
+      date_of_present_appointment: formatDateForInput(staffMember.appointment.date_of_present_appointment || ''),
       department: staffMember.appointment.department_id || '',
       unit: staffMember.appointment.unit || '',
       designation: staffMember.appointment.designation || '',
       cadre: staffMember.appointment.cadre || '',
       grade_level: normalizeGrade(staffMember.salary_info.grade_level) || '7',
       step: staffMember.salary_info.step || 1,
+      bank_code: staffMember.salary_info.bank_code || '',
       bank_name: staffMember.salary_info.bank_name || '',
       account_number: staffMember.salary_info.account_number || '',
       account_name: staffMember.salary_info.account_name || '',
@@ -608,27 +721,26 @@ export function StaffListPage() {
   const handleCreateStaff = async () => {
     // Validate required fields
     if (
+      !formData.staff_number ||
       !formData.first_name ||
       !formData.last_name ||
       !formData.date_of_birth ||
       !formData.gender ||
-      !formData.marital_status ||
       !formData.state_of_origin ||
       !formData.lga ||
-      !formData.phone ||
-      !formData.email ||
-      !formData.address ||
-      !formData.nok_name ||
-      !formData.nok_relationship ||
-      !formData.nok_phone ||
-      !formData.nok_address ||
+      !formData.zone ||
+      !formData.qualification ||
+      !formData.post_on_first_appointment ||
       !formData.appointment_date ||
-      !formData.employment_date ||
-      !formData.department ||
-      !formData.unit ||
-      !formData.designation ||
-      !formData.cadre ||
+      !formData.confirmation_date ||
+      !formData.present_appointment ||
+      !formData.date_of_present_appointment ||
+      !formData.exit_date ||
+      !formData.grade_level ||
+      !formData.step ||
+      !formData.bank_code ||
       !formData.bank_name ||
+      !formData.account_name ||
       !formData.account_number
     ) {
       showToast('error', 'Please fill in all required fields');
@@ -643,40 +755,47 @@ export function StaffListPage() {
 
       // Create flat DTO structure expected by backend
       const createStaffDto = {
+        staffNumber: formData.staff_number,
         firstName: formData.first_name,
         middleName: formData.middle_name || undefined,
         lastName: formData.last_name,
-        dateOfBirth: formData.date_of_birth, // string is fine, backend transforms or expects ISO string
+        dateOfBirth: toApiDate(formData.date_of_birth),
         gender: lowerCase(formData.gender),
-        maritalStatus: lowerCase(formData.marital_status),
-        nationality: formData.nationality,
+        maritalStatus: formData.marital_status ? lowerCase(formData.marital_status) : undefined,
+        nationality: formData.nationality || undefined,
         stateOfOrigin: formData.state_of_origin,
-        lgaOfOrigin: formData.lga || undefined,
-        phone: formData.phone,
-        email: formData.email,
-        address: formData.address,
+        lgaOfOrigin: formData.lga,
+        zone: formData.zone,
+        qualification: formData.qualification,
+        phone: formData.phone || undefined,
+        email: formData.email || undefined,
+        address: formData.address || undefined,
         
-        nokName: formData.nok_name,
-        nokRelationship: formData.nok_relationship,
-        nokPhone: formData.nok_phone,
-        nokAddress: formData.nok_address,
+        nokName: formData.nok_name || undefined,
+        nokRelationship: formData.nok_relationship || undefined,
+        nokPhone: formData.nok_phone || undefined,
+        nokAddress: formData.nok_address || undefined,
         
-        departmentId: formData.department, // This now holds the ID
-        designation: formData.designation,
-        unit: formData.unit,
-        cadre: formData.cadre,
-        employmentType: capitalize(formData.appointment_type),
-        employmentDate: formData.employment_date || formData.appointment_date,
-        confirmationDate: formData.confirmation_date || undefined,
-        retirementDate: formData.retirement_date || undefined,
-        exitDate: formData.exit_date || undefined,
+        departmentId: formData.department || undefined, // This now holds the ID
+        designation: formData.designation || undefined,
+        unit: formData.unit || undefined,
+        cadre: formData.cadre || undefined,
+        employmentType: formData.appointment_type ? capitalize(formData.appointment_type) : undefined,
+        employmentDate: toApiDate(formData.appointment_date),
+        postOnFirstAppointment: formData.post_on_first_appointment,
+        presentAppointment: formData.present_appointment,
+        dateOfPresentAppointment: toApiDate(formData.date_of_present_appointment),
+        confirmationDate: toApiDate(formData.confirmation_date),
+        retirementDate: toApiDate(formData.retirement_date) || undefined,
+        exitDate: toApiDate(formData.exit_date),
         exitReason: formData.exit_reason || undefined,
         
         gradeLevel: normalizeGrade(formData.grade_level),
         step: Number(formData.step),
         bankName: formData.bank_name,
+        bankCode: formData.bank_code,
         accountNumber: formData.account_number,
-        accountName: formData.account_name || undefined,
+        accountName: formData.account_name,
         pensionPin: formData.pension_pin || undefined,
         taxId: formData.tax_id || undefined,
         bvn: formData.bvn || undefined,
@@ -711,27 +830,26 @@ export function StaffListPage() {
 
     // Validate required fields
     if (
+      !formData.staff_number ||
       !formData.first_name ||
       !formData.last_name ||
       !formData.date_of_birth ||
       !formData.gender ||
-      !formData.marital_status ||
       !formData.state_of_origin ||
       !formData.lga ||
-      !formData.phone ||
-      !formData.email ||
-      !formData.address ||
-      !formData.nok_name ||
-      !formData.nok_relationship ||
-      !formData.nok_phone ||
-      !formData.nok_address ||
+      !formData.zone ||
+      !formData.qualification ||
+      !formData.post_on_first_appointment ||
       !formData.appointment_date ||
-      !formData.employment_date ||
-      !formData.department ||
-      !formData.unit ||
-      !formData.designation ||
-      !formData.cadre ||
+      !formData.confirmation_date ||
+      !formData.present_appointment ||
+      !formData.date_of_present_appointment ||
+      !formData.exit_date ||
+      !formData.grade_level ||
+      !formData.step ||
+      !formData.bank_code ||
       !formData.bank_name ||
+      !formData.account_name ||
       !formData.account_number
     ) {
       showToast('error', 'Please fill in all required fields');
@@ -746,48 +864,55 @@ export function StaffListPage() {
 
       // Create flat DTO structure expected by backend
       const updateStaffDto = {
+        staffNumber: formData.staff_number,
         firstName: formData.first_name,
         middleName: formData.middle_name || undefined,
         lastName: formData.last_name,
-        dateOfBirth: formData.date_of_birth,
+        dateOfBirth: toApiDate(formData.date_of_birth),
         gender: lowerCase(formData.gender),
-        maritalStatus: lowerCase(formData.marital_status),
-        nationality: formData.nationality,
+        maritalStatus: formData.marital_status ? lowerCase(formData.marital_status) : undefined,
+        nationality: formData.nationality || undefined,
         stateOfOrigin: formData.state_of_origin,
-        lgaOfOrigin: formData.lga || undefined,
-        phone: formData.phone,
-        email: formData.email,
-        address: formData.address,
+        lgaOfOrigin: formData.lga,
+        zone: formData.zone,
+        qualification: formData.qualification,
+        phone: formData.phone || undefined,
+        email: formData.email || undefined,
+        address: formData.address || undefined,
         
-        nokName: formData.nok_name,
-        nokRelationship: formData.nok_relationship,
-        nokPhone: formData.nok_phone,
-        nokAddress: formData.nok_address,
+        nokName: formData.nok_name || undefined,
+        nokRelationship: formData.nok_relationship || undefined,
+        nokPhone: formData.nok_phone || undefined,
+        nokAddress: formData.nok_address || undefined,
         
-        departmentId: formData.department,
-        designation: formData.designation,
-        unit: formData.unit,
-        cadre: formData.cadre,
-        employmentType: capitalize(formData.appointment_type),
+        departmentId: formData.department || undefined,
+        designation: formData.designation || undefined,
+        unit: formData.unit || undefined,
+        cadre: formData.cadre || undefined,
+        employmentType: formData.appointment_type ? capitalize(formData.appointment_type) : undefined,
         // employmentDate: formData.employment_date, // Usually shouldn't change, but if needed
         // Only include if changed or just include it? Backend handles it.
-        employmentDate: formData.employment_date,
-        confirmationDate: formData.confirmation_date || undefined,
-        retirementDate: formData.retirement_date || undefined,
-        exitDate: formData.exit_date || undefined,
+        employmentDate: toApiDate(formData.appointment_date),
+        postOnFirstAppointment: formData.post_on_first_appointment,
+        presentAppointment: formData.present_appointment,
+        dateOfPresentAppointment: toApiDate(formData.date_of_present_appointment),
+        confirmationDate: toApiDate(formData.confirmation_date),
+        retirementDate: toApiDate(formData.retirement_date) || undefined,
+        exitDate: toApiDate(formData.exit_date),
         exitReason: formData.exit_reason || undefined,
         
         gradeLevel: normalizeGrade(formData.grade_level),
         step: Number(formData.step),
         bankName: formData.bank_name,
+        bankCode: formData.bank_code,
         accountNumber: formData.account_number,
-        accountName: formData.account_name || undefined,
+        accountName: formData.account_name,
         pensionPin: formData.pension_pin || undefined,
         taxId: formData.tax_id || undefined,
         bvn: formData.bvn || undefined,
         nhfNumber: formData.nhf_number || undefined,
         
-        status: formData.status as 'active' | 'suspended' | 'on_leave' | 'retired' | 'terminated',
+        status: formData.status as 'active' | 'suspended' | 'on_leave' | 'retired' | 'terminated' | 'resigned' | 'secondment' | 'interdiction',
       };
 
       await staffAPI.updateStaff(
@@ -811,6 +936,7 @@ export function StaffListPage() {
 
   const resetForm = () => {
     setFormData({
+      staff_number: '',
       first_name: '',
       middle_name: '',
       last_name: '',
@@ -820,6 +946,8 @@ export function StaffListPage() {
       nationality: 'Nigerian',
       state_of_origin: '',
       lga: '',
+      zone: '',
+      qualification: '',
       phone: '',
       email: '',
       address: '',
@@ -827,17 +955,23 @@ export function StaffListPage() {
       nok_relationship: '',
       nok_phone: '',
       nok_address: '',
+      post_on_first_appointment: '',
       appointment_date: '',
       appointment_type: 'Permanent',
       employment_date: '',
       confirmation_date: '',
       retirement_date: '',
+      exit_date: '',
+      exit_reason: '',
+      present_appointment: '',
+      date_of_present_appointment: '',
       department: '',
       unit: '',
       designation: '',
       cadre: '',
       grade_level: '7',
       step: 1,
+      bank_code: '',
       bank_name: '',
       account_number: '',
       account_name: '',
@@ -1013,6 +1147,38 @@ export function StaffListPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">
+                    File No (Staff Number) *
+                  </label>
+                  <input
+                    type="text"
+                    name="staff_number"
+                    value={formData.staff_number}
+                    onChange={handleInputChange}
+                    className={`w-full px-3 py-2 border ${formErrors.staff_number ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
+                    required
+                    disabled={!!editingStaff && !canEditStaffNumber}
+                  />
+                  {formErrors.staff_number && <p className="text-red-500 text-xs mt-1">{formErrors.staff_number}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">
+                    Surname *
+                  </label>
+                  <input
+                    type="text"
+                    name="last_name"
+                    value={formData.last_name}
+                    onChange={handleInputChange}
+                    className={`w-full px-3 py-2 border ${formErrors.last_name ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
+                    required
+                  />
+                  {formErrors.last_name && <p className="text-red-500 text-xs mt-1">{formErrors.last_name}</p>}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">
                     First Name *
                   </label>
                   <input
@@ -1034,46 +1200,16 @@ export function StaffListPage() {
                     name="middle_name"
                     value={formData.middle_name}
                     onChange={handleInputChange}
-                    className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                    className={`w-full px-3 py-2 border ${formErrors.middle_name ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
                   />
+                  {formErrors.middle_name && <p className="text-red-500 text-xs mt-1">{formErrors.middle_name}</p>}
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">
-                    Last Name *
-                  </label>
-                  <input
-                    type="text"
-                    name="last_name"
-                    value={formData.last_name}
-                    onChange={handleInputChange}
-                    className={`w-full px-3 py-2 border ${formErrors.last_name ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
-                    required
-                  />
-                  {formErrors.last_name && <p className="text-red-500 text-xs mt-1">{formErrors.last_name}</p>}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-foreground mb-1">
-                    Date of Birth *
-                  </label>
-                  <input
-                    type="date"
-                    name="date_of_birth"
-                    value={formData.date_of_birth}
-                    onChange={handleInputChange}
-                    className={`w-full px-3 py-2 border ${formErrors.date_of_birth ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
-                    required
-                  />
-                  {formErrors.date_of_birth && <p className="text-red-500 text-xs mt-1">{formErrors.date_of_birth}</p>}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-foreground mb-1">
-                    Gender *
+                    Sex *
                   </label>
                   <select
                     name="gender"
@@ -1090,22 +1226,19 @@ export function StaffListPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">
-                    Marital Status *
+                    Date of Birth *
                   </label>
-                  <select
-                    name="marital_status"
-                    value={formData.marital_status}
+                  <input
+                    type="text"
+                    name="date_of_birth"
+                    value={formData.date_of_birth}
                     onChange={handleInputChange}
-                    className={`w-full px-3 py-2 border ${formErrors.marital_status ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
+                    className={`w-full px-3 py-2 border ${formErrors.date_of_birth ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
+                    placeholder="dd/mm/yyyy"
+                    inputMode="numeric"
                     required
-                  >
-                    <option value="">Select Status</option>
-                    <option value="single">Single</option>
-                    <option value="married">Married</option>
-                    <option value="divorced">Divorced</option>
-                    <option value="widowed">Widowed</option>
-                  </select>
-                  {formErrors.marital_status && <p className="text-red-500 text-xs mt-1">{formErrors.marital_status}</p>}
+                  />
+                  {formErrors.date_of_birth && <p className="text-red-500 text-xs mt-1">{formErrors.date_of_birth}</p>}
                 </div>
               </div>
 
@@ -1156,7 +1289,63 @@ export function StaffListPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">
-                    Phone Number *
+                    Zone (NC, NE, NW, SS, SW, SE) *
+                  </label>
+                  <select
+                    name="zone"
+                    value={formData.zone}
+                    onChange={handleInputChange}
+                    className={`w-full px-3 py-2 border ${formErrors.zone ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
+                    required
+                  >
+                    <option value="">Select Zone</option>
+                    <option value="NC">NC</option>
+                    <option value="NE">NE</option>
+                    <option value="NW">NW</option>
+                    <option value="SS">SS</option>
+                    <option value="SW">SW</option>
+                    <option value="SE">SE</option>
+                  </select>
+                  {formErrors.zone && <p className="text-red-500 text-xs mt-1">{formErrors.zone}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">
+                    Qualification *
+                  </label>
+                  <input
+                    type="text"
+                    name="qualification"
+                    value={formData.qualification}
+                    onChange={handleInputChange}
+                    className={`w-full px-3 py-2 border ${formErrors.qualification ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
+                    required
+                  />
+                  {formErrors.qualification && <p className="text-red-500 text-xs mt-1">{formErrors.qualification}</p>}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">
+                    Marital Status
+                  </label>
+                  <select
+                    name="marital_status"
+                    value={formData.marital_status}
+                    onChange={handleInputChange}
+                    className={`w-full px-3 py-2 border ${formErrors.marital_status ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
+                  >
+                    <option value="">Select Status</option>
+                    <option value="single">Single</option>
+                    <option value="married">Married</option>
+                    <option value="divorced">Divorced</option>
+                    <option value="widowed">Widowed</option>
+                  </select>
+                  {formErrors.marital_status && <p className="text-red-500 text-xs mt-1">{formErrors.marital_status}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">
+                    Phone Number
                   </label>
                   <input
                     type="tel"
@@ -1164,13 +1353,15 @@ export function StaffListPage() {
                     value={formData.phone}
                     onChange={handleInputChange}
                     className={`w-full px-3 py-2 border ${formErrors.phone ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
-                    required
                   />
                   {formErrors.phone && <p className="text-red-500 text-xs mt-1">{formErrors.phone}</p>}
                 </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">
-                    Email Address *
+                    Email Address
                   </label>
                   <input
                     type="email"
@@ -1178,15 +1369,26 @@ export function StaffListPage() {
                     value={formData.email}
                     onChange={handleInputChange}
                     className={`w-full px-3 py-2 border ${formErrors.email ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
-                    required
                   />
                   {formErrors.email && <p className="text-red-500 text-xs mt-1">{formErrors.email}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">
+                    Nationality
+                  </label>
+                  <input
+                    type="text"
+                    name="nationality"
+                    value={formData.nationality}
+                    onChange={handleInputChange}
+                    className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                  />
                 </div>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-foreground mb-1">
-                  Residential Address *
+                  Residential Address
                 </label>
                 <textarea
                   name="address"
@@ -1194,7 +1396,6 @@ export function StaffListPage() {
                   onChange={handleInputChange}
                   rows={3}
                   className={`w-full px-3 py-2 border ${formErrors.address ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
-                  required
                 />
                 {formErrors.address && <p className="text-red-500 text-xs mt-1">{formErrors.address}</p>}
               </div>
@@ -1214,6 +1415,9 @@ export function StaffListPage() {
                     <option value="active">Active</option>
                     <option value="suspended">Suspended</option>
                     <option value="on_leave">On Leave</option>
+                    <option value="resigned">Resigned</option>
+                    <option value="secondment">Secondment</option>
+                    <option value="interdiction">Interdiction (Half Pay)</option>
                     <option value="retired">Retired</option>
                     <option value="terminated">Terminated</option>
                   </select>
@@ -1228,7 +1432,7 @@ export function StaffListPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">
-                    Full Name *
+                    Full Name
                   </label>
                   <input
                     type="text"
@@ -1236,13 +1440,12 @@ export function StaffListPage() {
                     value={formData.nok_name}
                     onChange={handleInputChange}
                     className={`w-full px-3 py-2 border ${formErrors.nok_name ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
-                    required
                   />
                   {formErrors.nok_name && <p className="text-red-500 text-xs mt-1">{formErrors.nok_name}</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">
-                    Relationship *
+                    Relationship
                   </label>
                   <input
                     type="text"
@@ -1251,7 +1454,6 @@ export function StaffListPage() {
                     onChange={handleInputChange}
                     className={`w-full px-3 py-2 border ${formErrors.nok_relationship ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
                     placeholder="e.g., Spouse, Parent, Sibling"
-                    required
                   />
                   {formErrors.nok_relationship && <p className="text-red-500 text-xs mt-1">{formErrors.nok_relationship}</p>}
                 </div>
@@ -1259,7 +1461,7 @@ export function StaffListPage() {
 
               <div>
                 <label className="block text-sm font-medium text-foreground mb-1">
-                  Phone Number *
+                  Phone Number
                 </label>
                 <input
                   type="tel"
@@ -1267,14 +1469,13 @@ export function StaffListPage() {
                   value={formData.nok_phone}
                   onChange={handleInputChange}
                   className={`w-full px-3 py-2 border ${formErrors.nok_phone ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
-                  required
                 />
                 {formErrors.nok_phone && <p className="text-red-500 text-xs mt-1">{formErrors.nok_phone}</p>}
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-foreground mb-1">
-                  Address *
+                  Address
                 </label>
                 <textarea
                   name="nok_address"
@@ -1282,7 +1483,6 @@ export function StaffListPage() {
                   onChange={handleInputChange}
                   rows={3}
                   className={`w-full px-3 py-2 border ${formErrors.nok_address ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
-                  required
                 />
                 {formErrors.nok_address && <p className="text-red-500 text-xs mt-1">{formErrors.nok_address}</p>}
               </div>
@@ -1295,29 +1495,133 @@ export function StaffListPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">
-                    Appointment Date *
+                    Post on 1st Appointment *
                   </label>
                   <input
-                    type="date"
+                    type="text"
+                    name="post_on_first_appointment"
+                    value={formData.post_on_first_appointment}
+                    onChange={handleInputChange}
+                    className={`w-full px-3 py-2 border ${formErrors.post_on_first_appointment ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
+                    required
+                  />
+                  {formErrors.post_on_first_appointment && <p className="text-red-500 text-xs mt-1">{formErrors.post_on_first_appointment}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">
+                    Date of 1st Appointment *
+                  </label>
+                  <input
+                    type="text"
                     name="appointment_date"
                     value={formData.appointment_date}
                     onChange={handleInputChange}
                     className={`w-full px-3 py-2 border ${formErrors.appointment_date ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
+                    placeholder="dd/mm/yyyy"
+                    inputMode="numeric"
                     required
                     disabled={!!editingStaff && user?.role !== 'admin'}
                   />
                   {formErrors.appointment_date && <p className="text-red-500 text-xs mt-1">{formErrors.appointment_date}</p>}
                 </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">
-                    Appointment Type *
+                    Date of Confirmation *
+                  </label>
+                  <input
+                    type="text"
+                    name="confirmation_date"
+                    value={formData.confirmation_date}
+                    onChange={handleInputChange}
+                    className={`w-full px-3 py-2 border ${formErrors.confirmation_date ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
+                    placeholder="dd/mm/yyyy"
+                    inputMode="numeric"
+                    required
+                  />
+                  {formErrors.confirmation_date && <p className="text-red-500 text-xs mt-1">{formErrors.confirmation_date}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">
+                    Present Appointment *
+                  </label>
+                  <input
+                    type="text"
+                    name="present_appointment"
+                    value={formData.present_appointment}
+                    onChange={handleInputChange}
+                    className={`w-full px-3 py-2 border ${formErrors.present_appointment ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
+                    required
+                  />
+                  {formErrors.present_appointment && <p className="text-red-500 text-xs mt-1">{formErrors.present_appointment}</p>}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">
+                    Date of Present Appointment *
+                  </label>
+                  <input
+                    type="text"
+                    name="date_of_present_appointment"
+                    value={formData.date_of_present_appointment}
+                    onChange={handleInputChange}
+                    className={`w-full px-3 py-2 border ${formErrors.date_of_present_appointment ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
+                    placeholder="dd/mm/yyyy"
+                    inputMode="numeric"
+                    required
+                  />
+                  {formErrors.date_of_present_appointment && <p className="text-red-500 text-xs mt-1">{formErrors.date_of_present_appointment}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">
+                    Date of Exit (Age or Service) *
+                  </label>
+                  <input
+                    type="text"
+                    name="exit_date"
+                    value={formData.exit_date}
+                    onChange={handleInputChange}
+                    className={`w-full px-3 py-2 border ${formErrors.exit_date ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
+                    placeholder="dd/mm/yyyy"
+                    inputMode="numeric"
+                    required
+                  />
+                  {formErrors.exit_date && <p className="text-red-500 text-xs mt-1">{formErrors.exit_date}</p>}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1">
+                  Exit Reason
+                </label>
+                <select
+                  name="exit_reason"
+                  value={formData.exit_reason}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                >
+                  <option value="">Select Reason</option>
+                  <option value="resignation">Resignation</option>
+                  <option value="termination">Termination</option>
+                  <option value="retirement">Retirement</option>
+                  <option value="death">Death</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">
+                    Appointment Type
                   </label>
                   <select
                     name="appointment_type"
                     value={formData.appointment_type}
                     onChange={handleInputChange}
                     className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-                    required
                   >
                     <option value="Permanent">Permanent</option>
                     <option value="Contract">Contract</option>
@@ -1325,36 +1629,18 @@ export function StaffListPage() {
                     <option value="Temporary">Temporary</option>
                   </select>
                 </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">
-                    Employment/Resumption Date *
+                    Employment/Resumption Date
                   </label>
                   <input
-                    type="date"
+                    type="text"
                     name="employment_date"
                     value={formData.employment_date}
                     onChange={handleInputChange}
-                    className={`w-full px-3 py-2 border ${formErrors.employment_date ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
-                    required
-                  />
-                  {formErrors.employment_date && <p className="text-red-500 text-xs mt-1">{formErrors.employment_date}</p>}
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Actual date staff resumed duty (for prorated salary calculation)
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-foreground mb-1">
-                    Confirmation Date
-                  </label>
-                  <input
-                    type="date"
-                    name="confirmation_date"
-                    value={formData.confirmation_date}
-                    onChange={handleInputChange}
                     className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                    placeholder="dd/mm/yyyy"
+                    inputMode="numeric"
                   />
                 </div>
               </div>
@@ -1365,61 +1651,24 @@ export function StaffListPage() {
                     Retirement Date
                   </label>
                   <input
-                    type="date"
+                    type="text"
                     name="retirement_date"
                     value={formData.retirement_date}
                     onChange={handleInputChange}
                     className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                    placeholder="dd/mm/yyyy"
+                    inputMode="numeric"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">
-                    Exit Date (Optional)
-                  </label>
-                  <input
-                    type="date"
-                    name="exit_date"
-                    value={formData.exit_date}
-                    onChange={handleInputChange}
-                    className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Last working day (for staff leaving mid-month)
-                  </p>
-                </div>
-              </div>
-
-              {formData.exit_date && (
-                <div>
-                  <label className="block text-sm font-medium text-foreground mb-1">
-                    Exit Reason
-                  </label>
-                  <select
-                    name="exit_reason"
-                    value={formData.exit_reason}
-                    onChange={handleInputChange}
-                    className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-                  >
-                    <option value="">Select Reason</option>
-                    <option value="resignation">Resignation</option>
-                    <option value="termination">Termination</option>
-                    <option value="retirement">Retirement</option>
-                    <option value="death">Death</option>
-                  </select>
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-foreground mb-1">
-                    Department *
+                    Department
                   </label>
                   <select
                     name="department"
                     value={formData.department}
                     onChange={handleInputChange}
-                    className={`w-full px-3 py-2 border ${formErrors.department ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
-                    required
+                    className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
                   >
                     <option value="">Select Department</option>
                     {departments.map((dept) => (
@@ -1428,11 +1677,13 @@ export function StaffListPage() {
                       </option>
                     ))}
                   </select>
-                  {formErrors.department && <p className="text-red-500 text-xs mt-1">{formErrors.department}</p>}
                 </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">
-                    Unit *
+                    Unit
                   </label>
                   <input
                     type="text"
@@ -1440,30 +1691,12 @@ export function StaffListPage() {
                     value={formData.unit}
                     onChange={handleInputChange}
                     className={`w-full px-3 py-2 border ${formErrors.unit ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
-                    required
                   />
                   {formErrors.unit && <p className="text-red-500 text-xs mt-1">{formErrors.unit}</p>}
                 </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">
-                    Designation *
-                  </label>
-                  <input
-                    type="text"
-                    name="designation"
-                    value={formData.designation}
-                    onChange={handleInputChange}
-                    className={`w-full px-3 py-2 border ${formErrors.designation ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
-                    required
-                  />
-                  {formErrors.designation && <p className="text-red-500 text-xs mt-1">{formErrors.designation}</p>}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-foreground mb-1">
-                    Cadre *
+                    Cadre
                   </label>
                   <input
                     type="text"
@@ -1472,10 +1705,26 @@ export function StaffListPage() {
                     onChange={handleInputChange}
                     className={`w-full px-3 py-2 border ${formErrors.cadre ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
                     placeholder="e.g., Administrative, Legal, Technical"
-                    required
                   />
                   {formErrors.cadre && <p className="text-red-500 text-xs mt-1">{formErrors.cadre}</p>}
                 </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">
+                    Designation
+                  </label>
+                  <input
+                    type="text"
+                    name="designation"
+                    value={formData.designation}
+                    onChange={handleInputChange}
+                    className={`w-full px-3 py-2 border ${formErrors.designation ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
+                  />
+                  {formErrors.designation && <p className="text-red-500 text-xs mt-1">{formErrors.designation}</p>}
+                </div>
+                <div />
               </div>
             </div>
           )}
@@ -1544,22 +1793,21 @@ export function StaffListPage() {
                   <label className="block text-sm font-medium text-foreground mb-1">
                     Bank Name *
                   </label>
-                  <input
-                    type="text"
-                    name="bank_name"
-                    value={formData.bank_name}
+                  <select
+                    name="bank_code"
+                    value={formData.bank_code}
                     onChange={handleInputChange}
-                    list="bank-list"
-                    className={`w-full px-3 py-2 border ${formErrors.bank_name ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
+                    className={`w-full px-3 py-2 border ${formErrors.bank_code ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
                     required
-                    placeholder="Select or type bank name"
-                  />
-                  <datalist id="bank-list">
+                  >
+                    <option value="">Select Bank</option>
                     {Array.isArray(supportedBanks) && supportedBanks.map((bank, index) => (
-                      <option key={`${bank.code}-${bank.name}-${index}`} value={bank.name} />
+                      <option key={`${bank.code}-${bank.name}-${index}`} value={bank.code}>
+                        {bank.name} ({bank.code})
+                      </option>
                     ))}
-                  </datalist>
-                  {formErrors.bank_name && <p className="text-red-500 text-xs mt-1">{formErrors.bank_name}</p>}
+                  </select>
+                  {formErrors.bank_code && <p className="text-red-500 text-xs mt-1">{formErrors.bank_code}</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">
@@ -1579,15 +1827,17 @@ export function StaffListPage() {
 
               <div>
                 <label className="block text-sm font-medium text-foreground mb-1">
-                  Account Name
+                  Account Name *
                 </label>
                 <input
                   type="text"
                   name="account_name"
                   value={formData.account_name}
                   onChange={handleInputChange}
-                  className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                  className={`w-full px-3 py-2 border ${formErrors.account_name ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
+                  required
                 />
+                {formErrors.account_name && <p className="text-red-500 text-xs mt-1">{formErrors.account_name}</p>}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -1667,10 +1917,9 @@ export function StaffListPage() {
               onClick={() => {
                 const csv =
                   [
-                    'first_name,middle_name,last_name,date_of_birth,gender,marital_status,nationality,state_of_origin,lga,phone,email,address,nok_name,nok_relationship,nok_phone,nok_address,department_name,department_id,designation,unit,cadre,appointment_type,employment_date,confirmation_date,retirement_date,exit_date,exit_reason,grade_level,step,bank_name,account_number,account_name,pension_pin,tax_id,bvn,nhf_number,status',
-                    'Ada,,Okafor,1988-06-12,female,married,Nigerian,Anambra,Awka,08012345678,ada.okafor@example.com,"12 Court Rd, GRA, Awka",Chinedu Okafor,Spouse,08087654321,"12 Court Rd, GRA, Awka",Legal Department,,Senior Legal Officer,Prosecution,Legal,Permanent,2024-04-15,2025-04-15,2053-06-12,,,10,3,Zenith Bank,0123456789,Ada Okafor,PN12345678,TAX-00921,22334455667,NHF-00231,active',
-                    'Bello,M.,Yusuf,1990-11-03,male,single,Nigerian,Kano,Nasarawa,08123456789,bello.yusuf@example.com,"21 Civic Ave, Kano",Hauwa Yusuf,Parent,08198765432,"21 Civic Ave, Kano",,00000000-0000-0000-0000-000000000001,Accounts Officer,Payments,Administrative,Contract,2024-09-01,,,,,8,2,Access Bank,0987654321,Bello M Yusuf,PN87654321,TAX-00456,33445566778,NHF-00987,on_leave',
-                    'Ngozi,,Eze,1970-02-20,female,widowed,Nigerian,Imo,Owerri,08099887766,ngozi.eze@example.com,"5 Secretariat Rd, Owerri",Ifeanyi Eze,Sibling,08066778899,"5 Secretariat Rd, Owerri",Human Resources,,HR Manager,Recruitment,Administrative,Permanent,2005-01-10,2006-01-10,2035-02-20,2034-12-31,retirement,12,5,UBA,1234509876,Ngozi Eze,PN56781234,TAX-00123,44556677889,NHF-00112,retired',
+                    'staff_number,first_name,middle_name,last_name,date_of_birth,gender,marital_status,nationality,state_of_origin,lga,zone,qualification,phone,email,address,nok_name,nok_relationship,nok_phone,nok_address,post_on_first_appointment,date_of_first_appointment,confirmation_date,present_appointment,date_of_present_appointment,exit_date,exit_reason,department_name,department_id,designation,unit,cadre,appointment_type,employment_date,retirement_date,grade_level,step,bank_code,bank_name,account_name,account_number,pension_pin,tax_id,bvn,nhf_number,status',
+                    'JSC/2026/0001,Ada,Chioma,Okafor,1988-06-12,female,married,Nigerian,Anambra,Awka,SE,LLB,08012345678,ada.okafor@example.com,"12 Court Rd, GRA, Awka",Chinedu Okafor,Spouse,08087654321,"12 Court Rd, GRA, Awka",Legal Department,2024-04-15,2025-04-15,Senior Legal Officer,2026-01-10,2053-06-12,,Legal Department,,Senior Legal Officer,Prosecution,Legal,Permanent,,,10,3,057,Zenith Bank,Ada Okafor,0123456789,PN12345678,TAX-00921,22334455667,NHF-00231,active',
+                    'JSC/2026/0002,Bello,Musa,Yusuf,1990-11-03,male,single,Nigerian,Kano,Nasarawa,NW,BSc,08123456789,bello.yusuf@example.com,"21 Civic Ave, Kano",Hauwa Yusuf,Parent,08198765432,"21 Civic Ave, Kano",Accounts Department,2024-09-01,2025-09-01,Accounts Officer,2026-02-01,2050-11-03,,Accounts Department,,Accounts Officer,Payments,Administrative,Contract,,,8,2,044,Access Bank,Bello Musa Yusuf,0987654321,PN87654321,TAX-00456,33445566778,NHF-00987,on_leave',
                   ].join('\n');
                 const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
                 const url = URL.createObjectURL(blob);
@@ -1705,11 +1954,10 @@ export function StaffListPage() {
         <div className="space-y-4">
           <div className="bg-muted/30 rounded-lg p-3">
             <p className="text-sm text-muted-foreground">
-              Upload a CSV file with headers like: first_name, last_name, date_of_birth, gender, marital_status,
-              state_of_origin, lga, phone, email, address, nok_name, nok_relationship, nok_phone, nok_address,
-              department_name, designation, unit, cadre, appointment_type, employment_date, confirmation_date,
-              retirement_date, exit_date, exit_reason, grade_level, step, bank_name, account_number, account_name,
-              pension_pin, tax_id, bvn, nhf_number, status.
+              Upload a CSV file with headers like: staff_number, first_name, middle_name, last_name, date_of_birth,
+              gender, state_of_origin, lga, zone, qualification, post_on_first_appointment, date_of_first_appointment,
+              confirmation_date, present_appointment, date_of_present_appointment, exit_date, grade_level, step,
+              bank_code, bank_name, account_name, account_number. Other existing headers can also be included.
             </p>
           </div>
           <div className="space-y-2">

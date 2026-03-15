@@ -228,17 +228,17 @@ export class PayrollService {
       throw new BadRequestException('Can only generate lines for draft batches');
     }
 
-    // Get all active staff with department info
+    // Get all payroll-eligible staff with department info
     const staff = await this.databaseService.query<any>(
       `SELECT s.*, d.name as department_name
        FROM staff s
        LEFT JOIN departments d ON s.department_id = d.id
-       WHERE s.status = 'active'
+       WHERE s.status IN ('active', 'interdiction')
        ORDER BY s.staff_number`,
     );
 
     if (staff.length === 0) {
-      throw new BadRequestException('No active staff found');
+      throw new BadRequestException('No payroll-eligible staff found');
     }
 
     // Get global allowances
@@ -333,6 +333,9 @@ export class PayrollService {
         continue; // Skip this staff member
       }
 
+      const payMultiplier = staffMember.status === 'interdiction' ? 0.5 : 1;
+      const adjustedBasicSalary = basicSalary * payMultiplier;
+
       // Calculate allowances
       const allowancesArray = [];
       let totalAllowances = 0;
@@ -343,7 +346,7 @@ export class PayrollService {
         if (allowance.type === 'fixed') {
           amount = parseFloat(allowance.amount);
         } else if (allowance.type === 'percentage') {
-          amount = (basicSalary * parseFloat(allowance.percentage)) / 100;
+          amount = (adjustedBasicSalary * parseFloat(allowance.percentage)) / 100;
         }
 
         if (amount > 0) {
@@ -366,7 +369,7 @@ export class PayrollService {
         if (allowance.type === 'fixed') {
           amount = parseFloat(allowance.amount);
         } else if (allowance.type === 'percentage') {
-          amount = (basicSalary * parseFloat(allowance.percentage)) / 100;
+          amount = (adjustedBasicSalary * parseFloat(allowance.percentage)) / 100;
         }
 
         if (amount > 0) {
@@ -394,7 +397,7 @@ export class PayrollService {
       }
 
       // Calculate gross pay
-      const grossPay = basicSalary + totalAllowances;
+      const grossPay = adjustedBasicSalary + totalAllowances;
 
       // Calculate deductions FIRST to determine reliefs
       const deductionsArray = [];
@@ -459,7 +462,7 @@ export class PayrollService {
           ) {
             amount = (grossPay * parseFloat(deduction.percentage)) / 100;
           } else {
-            amount = (basicSalary * parseFloat(deduction.percentage)) / 100;
+            amount = (adjustedBasicSalary * parseFloat(deduction.percentage)) / 100;
           }
         }
 
@@ -536,7 +539,7 @@ export class PayrollService {
           ) {
             amount = (grossPay * parseFloat(deduction.percentage)) / 100;
           } else {
-            amount = (basicSalary * parseFloat(deduction.percentage)) / 100;
+            amount = (adjustedBasicSalary * parseFloat(deduction.percentage)) / 100;
           }
         }
 
@@ -625,7 +628,7 @@ export class PayrollService {
         staff_name: `${staffMember.first_name} ${staffMember.last_name}`,
         grade_level: staffMember.grade_level,
         step: staffMember.step,
-        basic_salary: basicSalary,
+        basic_salary: adjustedBasicSalary,
         allowances: JSON.stringify(allowancesArray),
         deductions: JSON.stringify(deductionsArray),
         gross_pay: grossPay,

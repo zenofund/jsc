@@ -65,6 +65,9 @@ export function HRDashboardPage() {
         suspended: allStaff.filter((s: any) => s.status === 'suspended').length,
         retired: allStaff.filter((s: any) => s.status === 'retired').length,
         terminated: allStaff.filter((s: any) => s.status === 'terminated').length,
+        resigned: allStaff.filter((s: any) => s.status === 'resigned').length,
+        secondment: allStaff.filter((s: any) => s.status === 'secondment').length,
+        interdiction: allStaff.filter((s: any) => s.status === 'interdiction').length,
       };
 
       // Calculate leave type breakdown

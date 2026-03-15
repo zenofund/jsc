@@ -18,6 +18,9 @@ type BadgeStatus =
   | 'on_leave'
   | 'retired'
   | 'terminated'
+  | 'resigned'
+  | 'secondment'
+  | 'interdiction'
   | 'cancelled'
   | 'expired'
   | 'open'
@@ -48,6 +51,9 @@ export function StatusBadge({ status }: StatusBadgeProps) {
     on_leave: { label: 'On Leave', className: 'bg-blue-100 dark:bg-blue-950/30 text-blue-800 dark:text-blue-400 border-blue-200 dark:border-blue-900' },
     retired: { label: 'Retired', className: 'bg-gray-100 dark:bg-gray-950/30 text-gray-800 dark:text-gray-400 border-gray-200 dark:border-gray-900' },
     terminated: { label: 'Terminated', className: 'bg-red-100 dark:bg-red-950/30 text-red-800 dark:text-red-400 border-red-200 dark:border-red-900' },
+    resigned: { label: 'Resigned', className: 'bg-gray-100 dark:bg-gray-950/30 text-gray-800 dark:text-gray-400 border-gray-200 dark:border-gray-900' },
+    secondment: { label: 'Secondment', className: 'bg-indigo-100 dark:bg-indigo-950/30 text-indigo-800 dark:text-indigo-400 border-indigo-200 dark:border-indigo-900' },
+    interdiction: { label: 'Interdiction', className: 'bg-orange-100 dark:bg-orange-950/30 text-orange-800 dark:text-orange-400 border-orange-200 dark:border-orange-900' },
     cancelled: { label: 'Cancelled', className: 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-400 border-gray-200 dark:border-gray-700' },
     expired: { label: 'Expired', className: 'bg-orange-100 dark:bg-orange-950/30 text-orange-800 dark:text-orange-400 border-orange-200 dark:border-orange-900' },
     open: { label: 'Open', className: 'bg-blue-100 dark:bg-blue-950/30 text-blue-800 dark:text-blue-400 border-blue-200 dark:border-blue-900' },

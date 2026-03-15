@@ -3,6 +3,11 @@ import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional, OmitType } from '@nestjs/swagger';
 
 export class CreateStaffDto {
+  @ApiProperty({ description: 'FILE NO / Staff Number' })
+  @IsString()
+  @IsNotEmpty()
+  staffNumber: string;
+
   @ApiProperty()
   @IsString()
   @IsNotEmpty()
@@ -31,8 +36,8 @@ export class CreateStaffDto {
 
   @ApiProperty({ enum: ['single', 'married', 'divorced', 'widowed'] })
   @IsEnum(['single', 'married', 'divorced', 'widowed'])
-  @IsNotEmpty()
-  maritalStatus: string;
+  @IsOptional()
+  maritalStatus?: string;
 
   @ApiPropertyOptional()
   @IsString()
@@ -54,40 +59,49 @@ export class CreateStaffDto {
   @IsNotEmpty()
   stateOfOrigin: string;
 
-  @ApiPropertyOptional()
   @IsString()
-  @IsOptional()
-  lgaOfOrigin?: string;
+  @IsNotEmpty()
+  lgaOfOrigin: string;
+
+  @ApiProperty({ enum: ['NC', 'NE', 'NW', 'SS', 'SW', 'SE'] })
+  @IsEnum(['NC', 'NE', 'NW', 'SS', 'SW', 'SE'])
+  @IsNotEmpty()
+  zone: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  qualification: string;
 
   @ApiPropertyOptional({ default: 'Nigerian' })
   @IsString()
   @IsOptional()
   nationality?: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional()
   @IsUUID()
-  @IsNotEmpty()
-  departmentId: string;
+  @IsOptional()
+  departmentId?: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional()
   @IsString()
-  @IsNotEmpty()
-  designation: string;
+  @IsOptional()
+  designation?: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional()
   @IsString()
-  @IsNotEmpty()
-  unit: string;
+  @IsOptional()
+  unit?: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional()
   @IsString()
-  @IsNotEmpty()
-  cadre: string;
+  @IsOptional()
+  cadre?: string;
 
-  @ApiProperty({ enum: ['Permanent', 'Contract', 'Temporary', 'Probation', 'Casual'] })
+  @ApiPropertyOptional({ enum: ['Permanent', 'Contract', 'Temporary', 'Probation', 'Casual'] })
   @IsEnum(['Permanent', 'Contract', 'Temporary', 'Probation', 'Casual'])
-  @IsNotEmpty()
-  employmentType: string;
+  @IsOptional()
+  employmentType?: string;
 
   @ApiProperty()
   @Type(() => Date)
@@ -95,11 +109,11 @@ export class CreateStaffDto {
   @IsNotEmpty()
   employmentDate: Date;
 
-  @ApiPropertyOptional({ description: 'Exit date for staff leaving mid-month (for prorated salary)' })
+  @ApiProperty()
   @Type(() => Date)
   @IsDate()
-  @IsOptional()
-  exitDate?: Date;
+  @IsNotEmpty()
+  exitDate: Date;
 
   @ApiPropertyOptional({ enum: ['resignation', 'termination', 'retirement', 'death'] })
   @IsEnum(['resignation', 'termination', 'retirement', 'death'])
@@ -127,11 +141,27 @@ export class CreateStaffDto {
   @IsOptional()
   previousBasicSalary?: number;
 
-  @ApiPropertyOptional()
+  @ApiProperty()
   @Type(() => Date)
   @IsDate()
-  @IsOptional()
-  confirmationDate?: Date;
+  @IsNotEmpty()
+  confirmationDate: Date;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  postOnFirstAppointment: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  presentAppointment: string;
+
+  @ApiProperty()
+  @Type(() => Date)
+  @IsDate()
+  @IsNotEmpty()
+  dateOfPresentAppointment: Date;
 
   @ApiPropertyOptional()
   @Type(() => Date)
@@ -157,20 +187,26 @@ export class CreateStaffDto {
   @IsOptional()
   currentBasicSalary?: number;
 
-  @ApiPropertyOptional()
+  @ApiProperty()
   @IsString()
-  @IsOptional()
-  bankName?: string;
+  @IsNotEmpty()
+  bankName: string;
 
-  @ApiPropertyOptional()
+  @ApiProperty({ description: 'CBN bank code (sort code)' })
   @IsString()
-  @IsOptional()
-  accountNumber?: string;
+  @Matches(/^\d+$/)
+  @IsNotEmpty()
+  bankCode: string;
 
-  @ApiPropertyOptional()
+  @ApiProperty()
   @IsString()
-  @IsOptional()
-  accountName?: string;
+  @IsNotEmpty()
+  accountNumber: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  accountName: string;
 
   @ApiPropertyOptional()
   @IsString()
@@ -212,8 +248,8 @@ export class CreateStaffDto {
   @IsOptional()
   nokAddress?: string;
 
-  @ApiPropertyOptional({ enum: ['active', 'suspended', 'on_leave', 'retired', 'terminated'] })
-  @IsEnum(['active', 'suspended', 'on_leave', 'retired', 'terminated'])
+  @ApiPropertyOptional({ enum: ['active', 'suspended', 'on_leave', 'retired', 'terminated', 'resigned', 'secondment', 'interdiction'] })
+  @IsEnum(['active', 'suspended', 'on_leave', 'retired', 'terminated', 'resigned', 'secondment', 'interdiction'])
   @IsOptional()
   status?: string;
 }

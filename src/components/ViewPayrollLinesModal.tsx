@@ -1,10 +1,12 @@
 import React from 'react';
 import { Modal } from './Modal';
 import { PayrollBatch, PayrollLine } from '../types/entities';
-import { User, Calculator, CalendarClock, Loader2, Download, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { User, Calculator, CalendarClock, Loader2, Download, FileText, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { getProrationBadgeText } from '../lib/proration-calculator';
 import { formatCurrency } from '../utils/format';
 import { payrollAPI } from '../lib/api-client';
+import { getBankByName } from '../constants/banks';
+import { loadPdfMake } from '../utils/loadPdfMake';
 
 interface ViewPayrollLinesModalProps {
   isOpen: boolean;
@@ -35,7 +37,7 @@ export function ViewPayrollLinesModal({
   onSortChange,
   sortDirection = 'desc',
 }: ViewPayrollLinesModalProps) {
-  const [isExporting, setIsExporting] = React.useState(false);
+  const [exporting, setExporting] = React.useState<'csv' | 'pdf' | null>(null);
 
   const getGradeKey = (gradeLevel: unknown) => {
     const raw = String(gradeLevel ?? '').trim().toUpperCase();
@@ -83,6 +85,10 @@ export function ViewPayrollLinesModal({
     return Number.isFinite(n) ? n : 0;
   };
 
+  const round2 = (value: number) => Math.round(value * 100) / 100;
+
+  const toCsvMoney = (value: unknown) => round2(toNumber(value)).toFixed(2);
+
   const lineTotalAllowances = (line: PayrollLine) => {
     const hasExplicit = (line as any).total_allowances !== undefined && (line as any).total_allowances !== null;
     if (hasExplicit) return toNumber((line as any).total_allowances);
@@ -92,96 +98,170 @@ export function ViewPayrollLinesModal({
     return Number.isFinite(derived) ? derived : 0;
   };
 
-  const formatBreakdown = (items: unknown) => {
-    if (!Array.isArray(items)) return '';
-    const parts = items
-      .map((i: any) => {
-        const code = String(i?.code ?? '').trim();
-        const name = String(i?.name ?? '').trim();
-        const amount = toNumber(i?.amount);
-        const label = [code, name].filter(Boolean).join(' - ');
-        if (!label) return '';
-        return `${label}: ${amount}`;
-      })
-      .filter(Boolean);
-    return parts.join('; ');
+  const getBankCode = (bankNameOrCode: unknown) => {
+    const raw = String(bankNameOrCode ?? '').trim();
+    if (!raw) return '';
+    if (/^\d+$/.test(raw)) return raw;
+    return getBankByName(raw)?.code || '';
+  };
+
+  const gradeStepText = (line: PayrollLine) => `${String(line.grade_level ?? '').trim()}/${String(line.step ?? '').trim()}`;
+
+  const itemKey = (item: any) => {
+    const code = String(item?.code ?? '').trim();
+    const name = String(item?.name ?? '').trim();
+    if (code && name) return `${code}__${name}`;
+    if (code) return code;
+    return name;
+  };
+
+  const itemBaseLabel = (item: any) => {
+    const code = String(item?.code ?? '').trim();
+    const name = String(item?.name ?? '').trim();
+    return name || code;
+  };
+
+  const buildItemLabels = (items: any[]) => {
+    const keyToBase = new Map<string, string>();
+    const baseCounts = new Map<string, number>();
+    for (const item of items) {
+      const key = itemKey(item);
+      if (!key) continue;
+      const base = itemBaseLabel(item);
+      keyToBase.set(key, base);
+      baseCounts.set(base, (baseCounts.get(base) ?? 0) + 1);
+    }
+    const keyToLabel = new Map<string, string>();
+    for (const item of items) {
+      const key = itemKey(item);
+      if (!key) continue;
+      const base = keyToBase.get(key) ?? '';
+      const count = baseCounts.get(base) ?? 0;
+      if (count <= 1) {
+        keyToLabel.set(key, base);
+        continue;
+      }
+      const code = String(item?.code ?? '').trim();
+      keyToLabel.set(key, code ? `${base} (${code})` : base);
+    }
+    return keyToLabel;
+  };
+
+  const collectExportModel = (allLines: PayrollLine[]) => {
+    const allowanceItems: any[] = [];
+    const deductionItems: any[] = [];
+
+    for (const line of allLines) {
+      const allowances = Array.isArray((line as any).allowances) ? (line as any).allowances : [];
+      const deductions = Array.isArray((line as any).deductions) ? (line as any).deductions : [];
+      for (const a of allowances) allowanceItems.push(a);
+      for (const d of deductions) deductionItems.push(d);
+    }
+
+    const allowanceKeyToLabel = buildItemLabels(allowanceItems);
+    const deductionKeyToLabel = buildItemLabels(deductionItems);
+
+    const allowanceKeys = Array.from(allowanceKeyToLabel.keys()).sort((a, b) => {
+      const la = allowanceKeyToLabel.get(a) ?? a;
+      const lb = allowanceKeyToLabel.get(b) ?? b;
+      return la.localeCompare(lb);
+    });
+    const deductionKeys = Array.from(deductionKeyToLabel.keys()).sort((a, b) => {
+      const la = deductionKeyToLabel.get(a) ?? a;
+      const lb = deductionKeyToLabel.get(b) ?? b;
+      return la.localeCompare(lb);
+    });
+
+    const getItemAmount = (items: any[], key: string) => {
+      if (!Array.isArray(items)) return 0;
+      let sum = 0;
+      for (const i of items) {
+        if (itemKey(i) === key) sum += toNumber(i?.amount);
+      }
+      return sum;
+    };
+
+    const columns: Array<{
+      id: string;
+      header: string;
+      isMoney: boolean;
+      get: (line: PayrollLine, index: number) => string;
+    }> = [
+      { id: 'sn', header: 'S/N', isMoney: false, get: (_line, index) => String(index + 1) },
+      { id: 'staff_number', header: 'Staff Number', isMoney: false, get: (line) => String(line.staff_number ?? '') },
+      { id: 'staff_name', header: 'Staff Name', isMoney: false, get: (line) => String(line.staff_name ?? '') },
+      { id: 'grade_step', header: 'Grade/Step', isMoney: false, get: (line) => gradeStepText(line) },
+      { id: 'basic_salary', header: 'Basic Salary', isMoney: true, get: (line) => toCsvMoney(line.basic_salary) },
+      ...allowanceKeys.map((key) => ({
+        id: `allowance:${key}`,
+        header: allowanceKeyToLabel.get(key) ?? key,
+        isMoney: true,
+        get: (line: PayrollLine) => toCsvMoney(getItemAmount((line as any).allowances, key)),
+      })),
+      { id: 'total_allowances', header: 'Total Allowances', isMoney: true, get: (line) => toCsvMoney(lineTotalAllowances(line)) },
+      { id: 'gross_pay', header: 'Gross Pay', isMoney: true, get: (line) => toCsvMoney(line.gross_pay) },
+      ...deductionKeys.map((key) => ({
+        id: `deduction:${key}`,
+        header: deductionKeyToLabel.get(key) ?? key,
+        isMoney: true,
+        get: (line: PayrollLine) => toCsvMoney(getItemAmount((line as any).deductions, key)),
+      })),
+      { id: 'total_deductions', header: 'Total Deductions', isMoney: true, get: (line) => toCsvMoney(line.total_deductions) },
+      { id: 'net_pay', header: 'Net Pay', isMoney: true, get: (line) => toCsvMoney(line.net_pay) },
+      { id: 'bank_code', header: 'Bank Code', isMoney: false, get: (line) => getBankCode((line as any).bank_name) },
+      { id: 'account_number', header: 'Account Number', isMoney: false, get: (line) => String((line as any).account_number ?? '') },
+    ];
+
+    const moneyTotals = new Map<string, number>();
+    for (const col of columns) {
+      if (!col.isMoney) continue;
+      moneyTotals.set(col.id, 0);
+    }
+    allLines.forEach((line, index) => {
+      for (const col of columns) {
+        if (!col.isMoney) continue;
+        const raw = col.get(line, index);
+        moneyTotals.set(col.id, (moneyTotals.get(col.id) ?? 0) + toNumber(raw));
+      }
+    });
+
+    return { columns, moneyTotals };
   };
 
   if (!batch) return null;
 
   const handleExportCSV = async () => {
     try {
-      setIsExporting(true);
+      setExporting('csv');
       // Fetch all lines for export
       const response = await payrollAPI.getPayrollLines(batch.id, { limit: 100000, sort: sortDirection });
       const allLinesRaw = Array.isArray(response) ? response : (response.data || []);
       const allLines = [...allLinesRaw].sort((a, b) => compareLines(a, b, sortDirection));
 
       if (allLines.length === 0) {
-        setIsExporting(false);
+        setExporting(null);
         return;
       }
 
-      // Define CSV Headers
-      const headers = [
-        'Staff Number',
-        'Staff Name',
-        'Grade Level',
-        'Step',
-        'Basic Salary',
-        'Total Allowances',
-        'Gross Pay',
-        'Total Deductions',
-        'Net Pay',
-        'Bank Name',
-        'Account Number',
-        'Allowances Breakdown',
-        'Deductions Breakdown',
-      ];
+      const { columns, moneyTotals } = collectExportModel(allLines);
 
-      // Format Rows
-      const rows = allLines.map((line: PayrollLine) => {
-        const row = [
-          line.staff_number,
-          line.staff_name,
-          line.grade_level,
-          line.step,
-          toNumber(line.basic_salary),
-          lineTotalAllowances(line),
-          toNumber(line.gross_pay),
-          toNumber(line.total_deductions),
-          toNumber(line.net_pay),
-          line.bank_name || '',
-          line.account_number || '',
-          formatBreakdown((line as any).allowances),
-          formatBreakdown((line as any).deductions),
-        ];
-        return row.map(csvCell).join(',');
+      const headers = columns.map((c) => csvCell(c.header)).join(',');
+
+      const rows = allLines.map((line, index) => {
+        const cells = columns.map((c) => csvCell(c.get(line, index)));
+        return cells.join(',');
       });
 
-      const totalBasic = allLines.reduce((sum, l) => sum + toNumber(l.basic_salary), 0);
-      const totalAllowances = allLines.reduce((sum, l) => sum + lineTotalAllowances(l), 0);
-
-      const totalRow = [
-        'TOTAL',
-        '',
-        '',
-        '',
-        totalBasic,
-        totalAllowances,
-        toNumber(batch.total_gross),
-        toNumber(batch.total_deductions),
-        toNumber(batch.total_net),
-        '',
-        '',
-        '',
-        '',
-      ]
-        .map(csvCell)
+      const totalRow = columns
+        .map((c) => {
+          if (c.id === 'staff_name') return csvCell('TOTAL');
+          if (!c.isMoney) return csvCell('');
+          return csvCell(round2(moneyTotals.get(c.id) ?? 0).toFixed(2));
+        })
         .join(',');
 
       const csvContent = [
-        headers.join(','),
+        headers,
         ...rows,
         '', // Empty line
         totalRow
@@ -200,9 +280,108 @@ export function ViewPayrollLinesModal({
     } catch (error) {
       console.error('Export failed', error);
     } finally {
-      setIsExporting(false);
+      setExporting(null);
     }
   };
+
+  const handleExportPDF = async () => {
+    try {
+      setExporting('pdf');
+      const response = await payrollAPI.getPayrollLines(batch.id, { limit: 100000, sort: sortDirection });
+      const allLinesRaw = Array.isArray(response) ? response : (response.data || []);
+      const allLines = [...allLinesRaw].sort((a, b) => compareLines(a, b, sortDirection));
+
+      if (allLines.length === 0) {
+        setExporting(null);
+        return;
+      }
+
+      const { columns, moneyTotals } = collectExportModel(allLines);
+
+      const formatPDFMoney = (amount: number) =>
+        '₦' + round2(amount).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+      const tableBody: any[] = [];
+      tableBody.push(
+        columns.map((c) => ({
+          text: c.header,
+          bold: true,
+          color: 'white',
+          fillColor: '#008000',
+          fontSize: 8,
+          margin: [3, 3, 3, 3],
+        })),
+      );
+
+      allLines.forEach((line, index) => {
+        tableBody.push(
+          columns.map((c) => {
+            const value = c.get(line, index);
+            if (!c.isMoney) {
+              return { text: value || '', fontSize: 7, margin: [3, 2, 3, 2] };
+            }
+            return { text: formatPDFMoney(toNumber(value)), alignment: 'right', fontSize: 7, margin: [3, 2, 3, 2] };
+          }),
+        );
+      });
+
+      tableBody.push(
+        columns.map((c) => {
+          if (c.id === 'staff_name') {
+            return { text: 'TOTAL', bold: true, fontSize: 8, margin: [3, 3, 3, 3] };
+          }
+          if (!c.isMoney) {
+            return { text: '', fontSize: 8, margin: [3, 3, 3, 3] };
+          }
+          return {
+            text: formatPDFMoney(moneyTotals.get(c.id) ?? 0),
+            alignment: 'right',
+            bold: true,
+            fontSize: 8,
+            margin: [3, 3, 3, 3],
+          };
+        }),
+      );
+
+      const docDefinition = {
+        pageOrientation: 'landscape',
+        pageMargins: [20, 20, 20, 20],
+        content: [
+          { text: 'Nigerian Judicial Service Committee', fontSize: 14, bold: true, color: '#008000', margin: [0, 0, 0, 4] },
+          { text: `Payroll Lines - Batch ${batch.batch_number}`, fontSize: 12, bold: true, margin: [0, 0, 0, 2] },
+          { text: `Generated: ${new Date().toLocaleDateString()}`, fontSize: 9, color: '#6b7280', margin: [0, 0, 0, 10] },
+          {
+            table: {
+              headerRows: 1,
+              widths: Array(columns.length).fill('*'),
+              body: tableBody,
+            },
+            layout: {
+              fillColor: (rowIndex: number) => {
+                if (rowIndex === 0) return '#008000';
+                return rowIndex % 2 === 0 ? '#F9FAFB' : null;
+              },
+              hLineColor: () => '#e5e7eb',
+              vLineColor: () => '#e5e7eb',
+              paddingLeft: () => 2,
+              paddingRight: () => 2,
+              paddingTop: () => 2,
+              paddingBottom: () => 2,
+            },
+          },
+        ],
+      };
+
+      const pdfMake = await loadPdfMake();
+      const filename = `payroll_lines_${batch.batch_number}_${new Date().toISOString().split('T')[0]}.pdf`;
+      pdfMake.createPdf(docDefinition).download(filename);
+    } catch (error) {
+      console.error('PDF export failed', error);
+    } finally {
+      setExporting(null);
+    }
+  };
+
 
   const toggleSort = () => {
     if (onSortChange) {
@@ -235,14 +414,24 @@ export function ViewPayrollLinesModal({
               </div>
             </div>
             
-            <button
-                onClick={handleExportCSV}
-                disabled={isExporting || isLoading}
-                className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50"
-            >
-                {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-                Export CSV
-            </button>
+            <div className="w-full sm:w-auto flex flex-col sm:flex-row gap-2">
+              <button
+                  onClick={handleExportCSV}
+                  disabled={exporting !== null || isLoading}
+                  className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50"
+              >
+                  {exporting === 'csv' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                  Export CSV
+              </button>
+              <button
+                  onClick={handleExportPDF}
+                  disabled={exporting !== null || isLoading}
+                  className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 border border-border text-foreground rounded-md hover:bg-accent disabled:opacity-50"
+              >
+                  {exporting === 'pdf' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                  Export PDF
+              </button>
+            </div>
         </div>
 
         {isLoading ? (

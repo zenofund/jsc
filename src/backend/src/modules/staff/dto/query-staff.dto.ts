@@ -22,8 +22,8 @@ export class QueryStaffDto {
   @IsOptional()
   search?: string;
 
-  @ApiPropertyOptional({ enum: ['active', 'on_leave', 'suspended', 'retired', 'terminated'] })
-  @IsEnum(['active', 'on_leave', 'suspended', 'retired', 'terminated'])
+  @ApiPropertyOptional({ enum: ['active', 'on_leave', 'suspended', 'retired', 'terminated', 'resigned', 'secondment', 'interdiction'] })
+  @IsEnum(['active', 'on_leave', 'suspended', 'retired', 'terminated', 'resigned', 'secondment', 'interdiction'])
   @IsOptional()
   status?: string;
 

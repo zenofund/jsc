@@ -55,22 +55,27 @@ export interface Staff {
     last_name: string;
     date_of_birth: string;
     gender: 'male' | 'female';
-    phone: string;
-    email: string;
-    address: string;
+    phone?: string;
+    email?: string;
+    address?: string;
     state_of_origin: string;
     lga_of_origin: string;
-    marital_status: 'single' | 'married' | 'divorced' | 'widowed';
+    zone?: string;
+    qualification?: string;
+    marital_status?: 'single' | 'married' | 'divorced' | 'widowed';
     nationality?: string;
   };
   next_of_kin: {
-    name: string;
-    relationship: string;
-    phone: string;
-    address: string;
+    name?: string;
+    relationship?: string;
+    phone?: string;
+    address?: string;
   };
   appointment: {
     date_of_first_appointment: string;
+    post_on_first_appointment?: string;
+    present_appointment?: string;
+    date_of_present_appointment?: string;
     current_posting: string;
     department: string;
     department_id?: string; // Added for edit form population
@@ -92,6 +97,7 @@ export interface Staff {
     grade_level: number | string;
     step: number;
     bank_name: string;
+    bank_code?: string;
     account_number: string;
     account_name?: string;
     bvn?: string;
@@ -99,7 +105,7 @@ export interface Staff {
     tax_id?: string;
     nhf_number?: string;
   };
-  status: 'active' | 'suspended' | 'on_leave' | 'retired' | 'terminated';
+  status: 'active' | 'suspended' | 'on_leave' | 'retired' | 'terminated' | 'resigned' | 'secondment' | 'interdiction';
   created_at: string;
   updated_at: string;
   created_by: string;

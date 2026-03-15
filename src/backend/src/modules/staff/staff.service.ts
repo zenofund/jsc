@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger, OnModuleInit } from '@nestjs/common';
 import { DatabaseService } from '@common/database/database.service';
 import { EmailService } from '@modules/email/email.service';
 import { SalaryLookupService } from '@modules/salary-structures/salary-lookup.service';
@@ -15,7 +15,7 @@ import { DepartmentsService } from '@modules/departments/departments.service';
 import { SettingsService } from '@modules/settings/settings.service';
 
 @Injectable()
-export class StaffService {
+export class StaffService implements OnModuleInit {
   private readonly logger = new Logger(StaffService.name);
 
   constructor(
@@ -28,11 +28,59 @@ export class StaffService {
     private settingsService: SettingsService,
   ) {}
 
+  async onModuleInit() {
+    await this.ensureStaffOnboardingColumns();
+  }
+
+  private async ensureStaffOnboardingColumns() {
+    try {
+      await this.databaseService.query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS zone VARCHAR(5)`);
+      await this.databaseService.query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS qualification VARCHAR(255)`);
+      await this.databaseService.query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS date_of_first_appointment DATE`);
+      await this.databaseService.query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS post_on_first_appointment VARCHAR(255)`);
+      await this.databaseService.query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS present_appointment VARCHAR(255)`);
+      await this.databaseService.query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS date_of_present_appointment DATE`);
+      await this.databaseService.query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS bank_code VARCHAR(20)`);
+
+      await this.databaseService.query(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1
+            FROM information_schema.table_constraints
+            WHERE constraint_name = 'staff_zone_allowed'
+              AND table_name = 'staff'
+              AND constraint_type = 'CHECK'
+          ) THEN
+            ALTER TABLE staff
+            ADD CONSTRAINT staff_zone_allowed
+            CHECK (zone IS NULL OR zone IN ('NC', 'NE', 'NW', 'SS', 'SW', 'SE')) NOT VALID;
+          END IF;
+        END $$;
+      `);
+
+      await this.databaseService.query(`ALTER TABLE staff VALIDATE CONSTRAINT staff_zone_allowed`).catch(() => null);
+    } catch (error: any) {
+      this.logger.warn(`Failed to ensure staff onboarding columns: ${error?.message}`);
+    }
+  }
+
   /**
    * Create new staff member
    */
   async create(createStaffDto: CreateStaffDto, userId: string) {
-    const staffNumber = await this.getNextStaffNumberValue();
+    const staffNumber = String(createStaffDto.staffNumber || '').trim();
+    if (!staffNumber) {
+      throw new BadRequestException('Staff number is required');
+    }
+
+    const existingStaffNumber = await this.databaseService.queryOne(
+      'SELECT id FROM staff WHERE staff_number = $1',
+      [staffNumber],
+    );
+    if (existingStaffNumber) {
+      throw new BadRequestException('Staff number already exists');
+    }
 
     // Check if email already exists
     if (createStaffDto.email) {
@@ -83,50 +131,60 @@ export class StaffService {
     const staff = await this.databaseService.queryOne(
       `INSERT INTO staff (
         staff_number, first_name, middle_name, last_name, date_of_birth, gender, marital_status,
-        phone, email, address, state_of_origin, lga_of_origin, nationality,
-        department_id, designation, employment_type, employment_date, exit_date, exit_reason, confirmation_date, retirement_date,
+        phone, email, address, state_of_origin, lga_of_origin, zone, qualification, nationality,
+        department_id, designation, employment_type, employment_date, date_of_first_appointment, post_on_first_appointment, present_appointment, date_of_present_appointment, exit_date, exit_reason, confirmation_date, retirement_date,
         grade_level, step, current_basic_salary,
-        bank_name, account_number, account_name, bvn,
+        bank_name, bank_code, account_number, account_name, bvn,
         tax_id, pension_pin, nhf_number,
         nok_name, nok_relationship, nok_phone, nok_address,
         unit, cadre,
         status, created_by
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-        $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24,
-        $25, $26, $27, $28, $29, $30, $31,
-        $32, $33, $34, $35,
-        $36, $37,
-        $38, $39
+        $1, $2, $3, $4, $5, $6, $7,
+        $8, $9, $10, $11, $12, $13, $14, $15,
+        $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
+        $28, $29, $30,
+        $31, $32, $33, $34, $35,
+        $36, $37, $38,
+        $39, $40, $41, $42,
+        $43, $44,
+        $45, $46
       ) RETURNING *`,
       [
         staffNumber,
         createStaffDto.firstName,
-        createStaffDto.middleName || null,
+        createStaffDto.middleName,
         createStaffDto.lastName,
         createStaffDto.dateOfBirth,
         createStaffDto.gender,
-        createStaffDto.maritalStatus,
+        createStaffDto.maritalStatus || null,
         createStaffDto.phone || null,
         createStaffDto.email || null,
         createStaffDto.address || null,
         createStaffDto.stateOfOrigin,
-        createStaffDto.lgaOfOrigin || null,
+        createStaffDto.lgaOfOrigin,
+        createStaffDto.zone,
+        createStaffDto.qualification,
         createStaffDto.nationality || 'Nigerian',
-        createStaffDto.departmentId,
-        createStaffDto.designation,
-        createStaffDto.employmentType,
+        createStaffDto.departmentId || null,
+        createStaffDto.designation || null,
+        createStaffDto.employmentType || null,
         createStaffDto.employmentDate,
-        createStaffDto.exitDate || null,
+        createStaffDto.employmentDate,
+        createStaffDto.postOnFirstAppointment,
+        createStaffDto.presentAppointment,
+        createStaffDto.dateOfPresentAppointment,
+        createStaffDto.exitDate,
         createStaffDto.exitReason || null,
-        createStaffDto.confirmationDate || null,
+        createStaffDto.confirmationDate,
         createStaffDto.retirementDate || null,
         createStaffDto.gradeLevel,
         createStaffDto.step,
         basicSalary, // Use salary from structure instead of createStaffDto.currentBasicSalary
-        createStaffDto.bankName || null,
-        createStaffDto.accountNumber || null,
-        createStaffDto.accountName || null,
+        createStaffDto.bankName,
+        createStaffDto.bankCode,
+        createStaffDto.accountNumber,
+        createStaffDto.accountName,
         createStaffDto.bvn || null,
         createStaffDto.taxId || null,
         createStaffDto.pensionPin || null,
@@ -135,8 +193,8 @@ export class StaffService {
         createStaffDto.nokRelationship || null,
         createStaffDto.nokPhone || null,
         createStaffDto.nokAddress || null,
-        createStaffDto.unit,
-        createStaffDto.cadre,
+        createStaffDto.unit || null,
+        createStaffDto.cadre || null,
         'active',
         userId,
       ],
@@ -406,14 +464,14 @@ export class StaffService {
   }
 
   /**
-   * Get staff eligible for payroll (active staff only)
+   * Get staff eligible for payroll (active and interdiction)
    */
   async getPayrollEligibleStaff() {
     return this.databaseService.query(
       `SELECT s.*, d.name as department_name
        FROM staff s
        LEFT JOIN departments d ON s.department_id = d.id
-       WHERE s.status = 'active'
+       WHERE s.status IN ('active', 'interdiction')
        ORDER BY s.staff_number`,
     );
   }
@@ -924,6 +982,7 @@ export class StaffService {
       });
 
       const existingEmails = new Set(existingStaff.map(s => s.email?.toLowerCase()).filter(Boolean));
+      const existingStaffNumbers = new Set(existingStaff.map(s => s.staff_number).filter(Boolean));
       
       // Salary lookup map from active structure
       const salaryMap = new Map<string, number>();
@@ -933,24 +992,6 @@ export class StaffService {
           salaryMap.set(`${g.level}-${s.step}`, parseFloat(s.basic_salary));
         });
       });
-
-      // Staff number sequence
-      const year = new Date().getFullYear();
-      const currentYearPrefix = `JSC/${year}/`;
-      
-      // Filter existing staff numbers for current year and get highest sequence
-      const yearStaffNumbers = existingStaff
-        .map(s => s.staff_number)
-        .filter(sn => sn && sn.startsWith(currentYearPrefix));
-      
-      let maxSequence = 0;
-      yearStaffNumbers.forEach(sn => {
-        const parts = sn.split('/');
-        const seq = parseInt(parts[2], 10);
-        if (!isNaN(seq) && seq > maxSequence) maxSequence = seq;
-      });
-      
-      let nextSequence = maxSequence + 1;
 
       // Default password hash (hash once for all users to save 80+ seconds)
       const defaultPassword = '12345678';
@@ -975,7 +1016,12 @@ export class StaffService {
             departmentId = deptMap.get(record.departmentName.toLowerCase());
             if (!departmentId) throw new Error(`Department '${record.departmentName}' not found`);
           }
-          if (!departmentId) throw new Error('Department is required');
+          if (!departmentId) departmentId = null;
+
+          const staffNumber = String(record.staffNumber || '').trim();
+          if (!staffNumber) throw new Error('Staff number is required');
+          if (existingStaffNumbers.has(staffNumber)) throw new Error(`Staff number ${staffNumber} already exists`);
+          existingStaffNumbers.add(staffNumber);
 
           // Check Email uniqueness
           if (record.email) {
@@ -989,9 +1035,6 @@ export class StaffService {
           const basicSalary = salaryMap.get(salaryKey);
           if (basicSalary === undefined) throw new Error(`Invalid Grade ${record.gradeLevel} Step ${record.step} in current salary structure`);
 
-          // Generate Staff Number
-          const staffNumber = `JSC/${year}/${(nextSequence++).toString().padStart(4, '0')}`;
-
           // Pre-generate ID for linking staff with users
           const staffId = uuidv4();
 
@@ -1000,27 +1043,36 @@ export class StaffService {
             id: staffId,
             staff_number: staffNumber,
             first_name: record.firstName,
-            middle_name: record.middleName || null,
+            middle_name: record.middleName,
             last_name: record.lastName,
             date_of_birth: record.dateOfBirth,
             gender: record.gender === 'famale' ? 'female' : record.gender,
-            marital_status: record.maritalStatus,
+            marital_status: record.maritalStatus || null,
             phone: record.phone || null,
             email: record.email || null,
             address: record.address || null,
             state_of_origin: record.stateOfOrigin,
-            lga_of_origin: record.lgaOfOrigin || null,
+            lga_of_origin: record.lgaOfOrigin,
+            zone: record.zone,
+            qualification: record.qualification,
             nationality: record.nationality || 'Nigerian',
             department_id: departmentId,
-            designation: record.designation,
-            employment_type: record.employmentType,
+            designation: record.designation || null,
+            employment_type: record.employmentType || null,
             employment_date: record.employmentDate,
+            date_of_first_appointment: record.employmentDate,
+            post_on_first_appointment: record.postOnFirstAppointment,
+            present_appointment: record.presentAppointment,
+            date_of_present_appointment: record.dateOfPresentAppointment,
+            exit_date: record.exitDate,
+            confirmation_date: record.confirmationDate,
             grade_level: record.gradeLevel,
             step: record.step,
             current_basic_salary: basicSalary,
-            bank_name: record.bankName || null,
-            account_number: record.accountNumber || null,
-            account_name: record.accountName || null,
+            bank_name: record.bankName,
+            bank_code: record.bankCode,
+            account_number: record.accountNumber,
+            account_name: record.accountName,
             bvn: record.bvn || null,
             tax_id: record.taxId || null,
             pension_pin: record.pensionPin || null,
