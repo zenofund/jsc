@@ -131,10 +131,6 @@ export function StaffListPage() {
       'date_of_present_appointment',
       'grade_level',
       'step',
-      'bank_code',
-      'bank_name',
-      'account_name',
-      'account_number',
       'exit_date',
     ];
 
@@ -737,11 +733,7 @@ export function StaffListPage() {
       !formData.date_of_present_appointment ||
       !formData.exit_date ||
       !formData.grade_level ||
-      !formData.step ||
-      !formData.bank_code ||
-      !formData.bank_name ||
-      !formData.account_name ||
-      !formData.account_number
+      !formData.step
     ) {
       showToast('error', 'Please fill in all required fields');
       return;
@@ -792,10 +784,10 @@ export function StaffListPage() {
         
         gradeLevel: normalizeGrade(formData.grade_level),
         step: Number(formData.step),
-        bankName: formData.bank_name,
-        bankCode: formData.bank_code,
-        accountNumber: formData.account_number,
-        accountName: formData.account_name,
+        bankName: formData.bank_name || undefined,
+        bankCode: formData.bank_code || undefined,
+        accountNumber: formData.account_number || undefined,
+        accountName: formData.account_name || undefined,
         pensionPin: formData.pension_pin || undefined,
         taxId: formData.tax_id || undefined,
         bvn: formData.bvn || undefined,
@@ -846,11 +838,7 @@ export function StaffListPage() {
       !formData.date_of_present_appointment ||
       !formData.exit_date ||
       !formData.grade_level ||
-      !formData.step ||
-      !formData.bank_code ||
-      !formData.bank_name ||
-      !formData.account_name ||
-      !formData.account_number
+      !formData.step
     ) {
       showToast('error', 'Please fill in all required fields');
       return;
@@ -903,10 +891,10 @@ export function StaffListPage() {
         
         gradeLevel: normalizeGrade(formData.grade_level),
         step: Number(formData.step),
-        bankName: formData.bank_name,
-        bankCode: formData.bank_code,
-        accountNumber: formData.account_number,
-        accountName: formData.account_name,
+        bankName: formData.bank_name || undefined,
+        bankCode: formData.bank_code || undefined,
+        accountNumber: formData.account_number || undefined,
+        accountName: formData.account_name || undefined,
         pensionPin: formData.pension_pin || undefined,
         taxId: formData.tax_id || undefined,
         bvn: formData.bvn || undefined,
@@ -1791,14 +1779,13 @@ export function StaffListPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">
-                    Bank Name *
+                    Bank Name
                   </label>
                   <select
                     name="bank_code"
                     value={formData.bank_code}
                     onChange={handleInputChange}
                     className={`w-full px-3 py-2 border ${formErrors.bank_code ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
-                    required
                   >
                     <option value="">Select Bank</option>
                     {Array.isArray(supportedBanks) && supportedBanks.map((bank, index) => (
@@ -1811,7 +1798,7 @@ export function StaffListPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">
-                    Account Number *
+                    Account Number
                   </label>
                   <input
                     type="text"
@@ -1819,7 +1806,6 @@ export function StaffListPage() {
                     value={formData.account_number}
                     onChange={handleInputChange}
                     className={`w-full px-3 py-2 border ${formErrors.account_number ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
-                    required
                   />
                   {formErrors.account_number && <p className="text-red-500 text-xs mt-1">{formErrors.account_number}</p>}
                 </div>
@@ -1827,7 +1813,7 @@ export function StaffListPage() {
 
               <div>
                 <label className="block text-sm font-medium text-foreground mb-1">
-                  Account Name *
+                  Account Name
                 </label>
                 <input
                   type="text"
@@ -1835,7 +1821,6 @@ export function StaffListPage() {
                   value={formData.account_name}
                   onChange={handleInputChange}
                   className={`w-full px-3 py-2 border ${formErrors.account_name ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
-                  required
                 />
                 {formErrors.account_name && <p className="text-red-500 text-xs mt-1">{formErrors.account_name}</p>}
               </div>

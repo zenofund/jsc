@@ -187,26 +187,26 @@ export class CreateStaffDto {
   @IsOptional()
   currentBasicSalary?: number;
 
-  @ApiProperty()
+  @ApiPropertyOptional()
   @IsString()
-  @IsNotEmpty()
-  bankName: string;
+  @IsOptional()
+  bankName?: string;
 
-  @ApiProperty({ description: 'CBN bank code (sort code)' })
+  @ApiPropertyOptional({ description: 'CBN bank code (sort code)' })
   @IsString()
   @Matches(/^\d+$/)
-  @IsNotEmpty()
-  bankCode: string;
+  @IsOptional()
+  bankCode?: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional()
   @IsString()
-  @IsNotEmpty()
-  accountNumber: string;
+  @IsOptional()
+  accountNumber?: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional()
   @IsString()
-  @IsNotEmpty()
-  accountName: string;
+  @IsOptional()
+  accountName?: string;
 
   @ApiPropertyOptional()
   @IsString()
