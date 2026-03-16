@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger, OnModuleInit, UnauthorizedException } from '@nestjs/common';
 import { DatabaseService } from '@common/database/database.service';
 import { EmailService } from '@modules/email/email.service';
 import { SalaryLookupService } from '@modules/salary-structures/salary-lookup.service';
@@ -965,13 +965,32 @@ export class StaffService implements OnModuleInit {
     const startTime = Date.now();
 
     try {
+      const userExists = await this.databaseService.queryOne(
+        'SELECT id FROM users WHERE id = $1',
+        [userId],
+      );
+      if (!userExists) {
+        throw new UnauthorizedException('Session expired. Please log in again.');
+      }
+
+      let structure = null;
+      try {
+        structure = await this.salaryLookupService.getActiveStructure();
+      } catch (error) {
+        if (!(error instanceof NotFoundException)) {
+          throw error;
+        }
+      }
+
       // 1. Pre-fetch all necessary reference data in parallel
-      const [departments, existingStaff, structure] = await Promise.all([
+      const [departments, existingStaff, existingUsers] = await Promise.all([
         this.departmentsService.findAll(),
-        this.databaseService.query<{ email: string; staff_number: string }>(
-          'SELECT email, staff_number FROM staff WHERE status != \'terminated\''
+        this.databaseService.query<{ staff_number: string }>(
+          'SELECT staff_number FROM staff'
         ),
-        this.salaryLookupService.getActiveStructure()
+        this.databaseService.query<{ email: string }>(
+          'SELECT email FROM users'
+        ),
       ]);
 
       // Create lookup maps
@@ -981,17 +1000,19 @@ export class StaffService implements OnModuleInit {
         if (dept.code) deptMap.set(dept.code.toLowerCase(), dept.id);
       });
 
-      const existingEmails = new Set(existingStaff.map(s => s.email?.toLowerCase()).filter(Boolean));
+      const existingEmails = new Set(existingUsers.map(u => u.email?.toLowerCase()).filter(Boolean));
       const existingStaffNumbers = new Set(existingStaff.map(s => s.staff_number).filter(Boolean));
       
       // Salary lookup map from active structure
       const salaryMap = new Map<string, number>();
-      const gradeLevels = structure.grade_levels as any[];
-      gradeLevels.forEach(g => {
-        g.steps?.forEach(s => {
-          salaryMap.set(`${g.level}-${s.step}`, parseFloat(s.basic_salary));
+      if (structure?.grade_levels) {
+        const gradeLevels = structure.grade_levels as any[];
+        gradeLevels.forEach(g => {
+          g.steps?.forEach(s => {
+            salaryMap.set(`${g.level}-${s.step}`, parseFloat(s.basic_salary));
+          });
         });
-      });
+      }
 
       // Default password hash (hash once for all users to save 80+ seconds)
       const defaultPassword = '12345678';
@@ -1000,9 +1021,44 @@ export class StaffService implements OnModuleInit {
       const validStaffToInsert = [];
       const validUsersToInsert = [];
 
+      const parseDateValue = (value: any, fieldLabel: string, required: boolean) => {
+        if (value === undefined || value === null || String(value).trim() === '') {
+          if (required) throw new Error(`${fieldLabel} is required`);
+          return null;
+        }
+        if (value instanceof Date && !isNaN(value.getTime())) {
+          return value.toISOString().split('T')[0];
+        }
+        const raw = String(value).trim();
+        const ddmmyyyy = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(raw);
+        if (ddmmyyyy) return `${ddmmyyyy[3]}-${ddmmyyyy[2]}-${ddmmyyyy[1]}`;
+        if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+        const parsed = new Date(raw);
+        if (isNaN(parsed.getTime())) {
+          throw new Error(`${fieldLabel} has invalid date format`);
+        }
+        return parsed.toISOString().split('T')[0];
+      };
+
+      const normalizeGender = (value: any) => {
+        const g = String(value || '').toLowerCase().trim();
+        if (!g) return null;
+        if (g === 'famale') return 'female';
+        if (g === 'male' || g === 'female') return g;
+        return null;
+      };
+
       // 2. Validate and transform records in memory
+      let autoNumberCounter = 1;
       for (const record of staffRecords) {
         try {
+          const dateOfBirth = parseDateValue(record.dateOfBirth, 'dateOfBirth', false);
+          const employmentDate = parseDateValue(record.employmentDate, 'employmentDate', false) || new Date().toISOString().split('T')[0];
+          const dateOfPresentAppointment = parseDateValue(record.dateOfPresentAppointment, 'dateOfPresentAppointment', false);
+          const confirmationDate = parseDateValue(record.confirmationDate, 'confirmationDate', false);
+          const retirementDate = parseDateValue(record.retirementDate, 'retirementDate', false);
+          const exitDate = parseDateValue(record.exitDate, 'exitDate', false);
+
           // Resolve Department
           let departmentId = record.departmentId;
           const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -1018,8 +1074,12 @@ export class StaffService implements OnModuleInit {
           }
           if (!departmentId) departmentId = null;
 
-          const staffNumber = String(record.staffNumber || '').trim();
-          if (!staffNumber) throw new Error('Staff number is required');
+          let staffNumber = String(record.staffNumber || '').trim();
+          if (!staffNumber) {
+            do {
+              staffNumber = `AUTO-${Date.now()}-${autoNumberCounter++}`;
+            } while (existingStaffNumbers.has(staffNumber));
+          }
           if (existingStaffNumbers.has(staffNumber)) throw new Error(`Staff number ${staffNumber} already exists`);
           existingStaffNumbers.add(staffNumber);
 
@@ -1030,10 +1090,14 @@ export class StaffService implements OnModuleInit {
             existingEmails.add(emailLower); // Add to set to prevent duplicates within same upload
           }
 
-          // Validate Grade/Step and get Salary
-          const salaryKey = `${record.gradeLevel}-${record.step}`;
-          const basicSalary = salaryMap.get(salaryKey);
-          if (basicSalary === undefined) throw new Error(`Invalid Grade ${record.gradeLevel} Step ${record.step} in current salary structure`);
+          let basicSalary: number | null = null;
+          if (record.gradeLevel !== undefined && record.gradeLevel !== null && String(record.gradeLevel).trim() !== '' && record.step !== undefined && record.step !== null && !Number.isNaN(Number(record.step))) {
+            const salaryKey = `${record.gradeLevel}-${record.step}`;
+            const resolvedSalary = salaryMap.get(salaryKey);
+            if (resolvedSalary !== undefined) {
+              basicSalary = resolvedSalary;
+            }
+          }
 
           // Pre-generate ID for linking staff with users
           const staffId = uuidv4();
@@ -1042,11 +1106,11 @@ export class StaffService implements OnModuleInit {
           const staffData = {
             id: staffId,
             staff_number: staffNumber,
-            first_name: record.firstName,
+            first_name: record.firstName || 'Unknown',
             middle_name: record.middleName,
-            last_name: record.lastName,
-            date_of_birth: record.dateOfBirth,
-            gender: record.gender === 'famale' ? 'female' : record.gender,
+            last_name: record.lastName || 'Unknown',
+            date_of_birth: dateOfBirth,
+            gender: normalizeGender(record.gender),
             marital_status: record.maritalStatus || null,
             phone: record.phone || null,
             email: record.email || null,
@@ -1059,13 +1123,13 @@ export class StaffService implements OnModuleInit {
             department_id: departmentId,
             designation: record.designation || null,
             employment_type: record.employmentType || null,
-            employment_date: record.employmentDate,
-            date_of_first_appointment: record.employmentDate,
+            employment_date: employmentDate,
+            date_of_first_appointment: employmentDate,
             post_on_first_appointment: record.postOnFirstAppointment,
             present_appointment: record.presentAppointment,
-            date_of_present_appointment: record.dateOfPresentAppointment,
-            exit_date: record.exitDate,
-            confirmation_date: record.confirmationDate,
+            date_of_present_appointment: dateOfPresentAppointment,
+            exit_date: exitDate,
+            confirmation_date: confirmationDate,
             grade_level: record.gradeLevel,
             step: record.step,
             current_basic_salary: basicSalary,
@@ -1083,6 +1147,7 @@ export class StaffService implements OnModuleInit {
             nok_address: record.nokAddress || null,
             unit: record.unit || null,
             cadre: record.cadre || null,
+            retirement_date: retirementDate,
             status: 'active',
             created_by: userId,
             created_at: new Date(),
@@ -1096,7 +1161,7 @@ export class StaffService implements OnModuleInit {
           }
 
           // Prepare User database object if email exists
-          if (record.email) {
+          if (record.email && record.email.includes('@')) {
             validUsersToInsert.push({
               id: uuidv4(),
               email: record.email.toLowerCase(),
@@ -1125,24 +1190,28 @@ export class StaffService implements OnModuleInit {
         // For staff with ~40 columns, chunk size should be < 1500. 100 is safe and fast.
         const CHUNK_SIZE = 100;
         
-        for (let i = 0; i < validStaffToInsert.length; i += CHUNK_SIZE) {
-          const chunk = validStaffToInsert.slice(i, i + CHUNK_SIZE);
-          await this.databaseService.bulkInsert('staff', chunk);
-        }
-
-        if (validUsersToInsert.length > 0) {
-          for (let i = 0; i < validUsersToInsert.length; i += CHUNK_SIZE) {
-            const chunk = validUsersToInsert.slice(i, i + CHUNK_SIZE);
-            await this.databaseService.bulkInsert('users', chunk);
+        await this.databaseService.transaction(async (client) => {
+          for (let i = 0; i < validStaffToInsert.length; i += CHUNK_SIZE) {
+            const chunk = validStaffToInsert.slice(i, i + CHUNK_SIZE);
+            await this.databaseService.bulkInsert('staff', chunk, client);
           }
-        }
+
+          if (validUsersToInsert.length > 0) {
+            for (let i = 0; i < validUsersToInsert.length; i += CHUNK_SIZE) {
+              const chunk = validUsersToInsert.slice(i, i + CHUNK_SIZE);
+              await this.databaseService.bulkInsert('users', chunk, client);
+            }
+          }
+        });
 
         // Log a single audit trail entry for the whole batch
+        // Note: entityId MUST be a valid UUID or null in the database.
+        // We'll leave it as null and use description/newValues to store batch info.
         await this.auditService.log({
           userId,
           action: AuditAction.CREATE,
           entity: 'staff',
-          entityId: 'bulk-import-' + Date.now(),
+          entityId: null,
           description: `Bulk imported ${validStaffToInsert.length} staff members`,
           newValues: { count: validStaffToInsert.length, success: results.success, failed: results.failed },
         });

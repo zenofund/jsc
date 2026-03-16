@@ -87,7 +87,7 @@ export class DatabaseService implements OnModuleInit {
   /**
    * Bulk insert helper
    */
-  async bulkInsert<T>(tableName: string, records: T[]): Promise<void> {
+  async bulkInsert<T>(tableName: string, records: T[], client?: any): Promise<void> {
     if (records.length === 0) return;
 
     const keys = Object.keys(records[0]);
@@ -106,7 +106,11 @@ export class DatabaseService implements OnModuleInit {
 
     const query = `INSERT INTO ${tableName} (${columns}) VALUES ${valuePlaceholders}`;
     try {
-      await this.query(query, values);
+      if (client) {
+        await client.query(query, values);
+      } else {
+        await this.query(query, values);
+      }
     } catch (error) {
       this.logger.error(`Bulk insert failed for table ${tableName}`);
       this.logger.error(`Query: ${query.substring(0, 500)}...`);

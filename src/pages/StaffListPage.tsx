@@ -396,6 +396,12 @@ export function StaffListPage() {
       complete: (results) => {
         const rows = (results.data as any[]).filter((r) => Object.values(r).some((v) => v !== null && String(v).trim() !== ''));
         // Map CSV headers to backend BulkCreateStaffDto
+        const toDate = (value: any) => {
+          if (value === undefined || value === null) return undefined;
+          const trimmed = String(value).trim();
+          if (!trimmed) return undefined;
+          return toApiDate(trimmed);
+        };
         const mapped = rows.map((r) => {
           const lower = (s: string) => (s ? String(s).toLowerCase().trim() : undefined);
           const cap = (s: string) => (s ? String(s).charAt(0).toUpperCase() + String(s).slice(1).toLowerCase() : undefined);
@@ -414,7 +420,7 @@ export function StaffListPage() {
             firstName: r.first_name || undefined,
             middleName: r.middle_name || undefined,
             lastName: r.last_name || undefined,
-            dateOfBirth: r.date_of_birth || undefined,
+            dateOfBirth: toDate(r.date_of_birth),
             gender: lower(r.gender),
             maritalStatus: lower(r.marital_status),
             nationality: r.nationality || 'Nigerian',
@@ -436,18 +442,18 @@ export function StaffListPage() {
             unit: r.unit || undefined,
             cadre: r.cadre || undefined,
             employmentType: cap(r.appointment_type) || undefined,
-            employmentDate: r.date_of_first_appointment || r.employment_date || undefined,
+            employmentDate: toDate(r.date_of_first_appointment || r.employment_date),
             postOnFirstAppointment: r.post_on_first_appointment || undefined,
             presentAppointment: r.present_appointment || undefined,
-            dateOfPresentAppointment: r.date_of_present_appointment || undefined,
-            confirmationDate: r.confirmation_date || undefined,
-            retirementDate: r.retirement_date || undefined,
-            exitDate: r.exit_date || undefined,
+            dateOfPresentAppointment: toDate(r.date_of_present_appointment),
+            confirmationDate: toDate(r.confirmation_date),
+            retirementDate: toDate(r.retirement_date),
+            exitDate: toDate(r.exit_date),
             exitReason: r.exit_reason || undefined,
             gradeLevel: normalizeGrade(r.grade_level),
             step: num(r.step),
-            bankName: resolvedBankName,
-            bankCode: resolvedBankCode,
+            bankName: resolvedBankName || r.bank_name,
+            bankCode: resolvedBankCode || r.bank_code,
             accountNumber: r.account_number || undefined,
             accountName: r.account_name || undefined,
             pensionPin: r.pension_pin || undefined,
@@ -460,7 +466,11 @@ export function StaffListPage() {
         });
         const invalidRows: number[] = [];
         const filtered = mapped.filter((rec, idx) => {
-          const gl = normalizeGrade((rec as any).gradeLevel);
+          const rawGrade = (rec as any).gradeLevel;
+          if (rawGrade === undefined || rawGrade === null || String(rawGrade).trim() === '') {
+            return true;
+          }
+          const gl = normalizeGrade(rawGrade);
           if (!allowedGrades.includes(gl)) {
             invalidRows.push(idx + 1);
             return false;
