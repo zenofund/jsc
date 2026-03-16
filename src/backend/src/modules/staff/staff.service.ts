@@ -1026,18 +1026,44 @@ export class StaffService implements OnModuleInit {
           if (required) throw new Error(`${fieldLabel} is required`);
           return null;
         }
+
+        let dateString: string | null = null;
+        
         if (value instanceof Date && !isNaN(value.getTime())) {
-          return value.toISOString().split('T')[0];
+          dateString = value.toISOString().split('T')[0];
+        } else {
+          const raw = String(value).trim();
+          // Try DD/MM/YYYY format first
+          const ddmmyyyy = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(raw);
+          if (ddmmyyyy) {
+            dateString = `${ddmmyyyy[3]}-${ddmmyyyy[2]}-${ddmmyyyy[1]}`;
+          } else if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+            // YYYY-MM-DD format
+            dateString = raw;
+          } else {
+            // Try standard Date parsing
+            const parsed = new Date(raw);
+            if (isNaN(parsed.getTime())) {
+              throw new Error(`${fieldLabel} has invalid date format: ${raw}`);
+            }
+            dateString = parsed.toISOString().split('T')[0];
+          }
         }
-        const raw = String(value).trim();
-        const ddmmyyyy = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(raw);
-        if (ddmmyyyy) return `${ddmmyyyy[3]}-${ddmmyyyy[2]}-${ddmmyyyy[1]}`;
-        if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
-        const parsed = new Date(raw);
-        if (isNaN(parsed.getTime())) {
-          throw new Error(`${fieldLabel} has invalid date format`);
+
+        // Validate date existence (e.g., Feb 29 in non-leap year)
+        if (dateString) {
+          const [year, month, day] = dateString.split('-').map(Number);
+          const testDate = new Date(year, month - 1, day);
+          if (
+            testDate.getFullYear() !== year ||
+            testDate.getMonth() !== month - 1 ||
+            testDate.getDate() !== day
+          ) {
+             throw new Error(`${fieldLabel} is an invalid date: ${dateString}`);
+          }
         }
-        return parsed.toISOString().split('T')[0];
+
+        return dateString;
       };
 
       const normalizeGender = (value: any) => {
