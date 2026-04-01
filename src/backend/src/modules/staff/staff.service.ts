@@ -41,6 +41,15 @@ export class StaffService implements OnModuleInit {
       await this.databaseService.query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS present_appointment VARCHAR(255)`);
       await this.databaseService.query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS date_of_present_appointment DATE`);
       await this.databaseService.query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS bank_code VARCHAR(20)`);
+      await this.databaseService.query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS confirmation_date DATE`);
+      await this.databaseService.query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS retirement_date DATE`);
+      await this.databaseService.query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS account_name VARCHAR(255)`);
+      await this.databaseService.query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS tax_id VARCHAR(50)`);
+      await this.databaseService.query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS pension_pin VARCHAR(50)`);
+      await this.databaseService.query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS nhf_number VARCHAR(50)`);
+      await this.databaseService.query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS unit VARCHAR(255)`);
+      await this.databaseService.query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS cadre VARCHAR(255)`);
+      await this.databaseService.query(`ALTER TABLE staff ALTER COLUMN email DROP NOT NULL`).catch(() => null);
 
       await this.databaseService.query(`
         DO $$
@@ -74,6 +83,10 @@ export class StaffService implements OnModuleInit {
       throw new BadRequestException('Staff number is required');
     }
 
+    let normalizedEmail = createStaffDto.email
+      ? String(createStaffDto.email).trim().toLowerCase()
+      : null;
+
     const existingStaffNumber = await this.databaseService.queryOne(
       'SELECT id FROM staff WHERE staff_number = $1',
       [staffNumber],
@@ -82,14 +95,25 @@ export class StaffService implements OnModuleInit {
       throw new BadRequestException('Staff number already exists');
     }
 
-    // Check if email already exists
-    if (createStaffDto.email) {
+    if (normalizedEmail) {
       const existing = await this.databaseService.queryOne(
         'SELECT id FROM staff WHERE email = $1',
-        [createStaffDto.email],
+        [normalizedEmail],
       );
       if (existing) {
         throw new BadRequestException('Email already exists');
+      }
+    }
+
+    if (!normalizedEmail) {
+      const emailColumn = await this.databaseService.queryOne<{ is_nullable: 'YES' | 'NO' }>(
+        `SELECT is_nullable
+         FROM information_schema.columns
+         WHERE table_name = 'staff' AND column_name = 'email'`,
+      );
+      if (emailColumn?.is_nullable === 'NO') {
+        const base = staffNumber.toLowerCase().replace(/[^a-z0-9]/g, '');
+        normalizedEmail = `${base || 'staff'}@no-email.local`;
       }
     }
 
@@ -128,77 +152,106 @@ export class StaffService implements OnModuleInit {
       );
     }
 
-    const staff = await this.databaseService.queryOne(
-      `INSERT INTO staff (
-        staff_number, first_name, middle_name, last_name, date_of_birth, gender, marital_status,
-        phone, email, address, state_of_origin, lga_of_origin, zone, qualification, nationality,
-        department_id, designation, employment_type, employment_date, date_of_first_appointment, post_on_first_appointment, present_appointment, date_of_present_appointment, exit_date, exit_reason, confirmation_date, retirement_date,
-        grade_level, step, current_basic_salary,
-        bank_name, bank_code, account_number, account_name, bvn,
-        tax_id, pension_pin, nhf_number,
-        nok_name, nok_relationship, nok_phone, nok_address,
-        unit, cadre,
-        status, created_by
-      ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7,
-        $8, $9, $10, $11, $12, $13, $14, $15,
-        $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
-        $28, $29, $30,
-        $31, $32, $33, $34, $35,
-        $36, $37, $38,
-        $39, $40, $41, $42,
-        $43, $44,
-        $45, $46
-      ) RETURNING *`,
-      [
-        staffNumber,
-        createStaffDto.firstName,
-        createStaffDto.middleName,
-        createStaffDto.lastName,
-        createStaffDto.dateOfBirth,
-        createStaffDto.gender,
-        createStaffDto.maritalStatus || null,
-        createStaffDto.phone || null,
-        createStaffDto.email || null,
-        createStaffDto.address || null,
-        createStaffDto.stateOfOrigin,
-        createStaffDto.lgaOfOrigin,
-        createStaffDto.zone,
-        createStaffDto.qualification,
-        createStaffDto.nationality || 'Nigerian',
-        createStaffDto.departmentId || null,
-        createStaffDto.designation || null,
-        createStaffDto.employmentType || null,
-        createStaffDto.employmentDate,
-        createStaffDto.employmentDate,
-        createStaffDto.postOnFirstAppointment,
-        createStaffDto.presentAppointment,
-        createStaffDto.dateOfPresentAppointment,
-        createStaffDto.exitDate,
-        createStaffDto.exitReason || null,
-        createStaffDto.confirmationDate,
-        createStaffDto.retirementDate || null,
-        createStaffDto.gradeLevel,
-        createStaffDto.step,
-        basicSalary, // Use salary from structure instead of createStaffDto.currentBasicSalary
-        createStaffDto.bankName,
-        createStaffDto.bankCode,
-        createStaffDto.accountNumber,
-        createStaffDto.accountName,
-        createStaffDto.bvn || null,
-        createStaffDto.taxId || null,
-        createStaffDto.pensionPin || null,
-        createStaffDto.nhfNumber || null,
-        createStaffDto.nokName || null,
-        createStaffDto.nokRelationship || null,
-        createStaffDto.nokPhone || null,
-        createStaffDto.nokAddress || null,
-        createStaffDto.unit || null,
-        createStaffDto.cadre || null,
-        'active',
-        userId,
-      ],
-    );
+    let staff: any;
+    try {
+      staff = await this.databaseService.queryOne(
+        `INSERT INTO staff (
+          staff_number, first_name, middle_name, last_name, date_of_birth, gender, marital_status,
+          phone, email, address, state_of_origin, lga_of_origin, zone, qualification, nationality,
+          department_id, designation, employment_type, employment_date, date_of_first_appointment, post_on_first_appointment, present_appointment, date_of_present_appointment, exit_date, exit_reason, confirmation_date, retirement_date,
+          grade_level, step, current_basic_salary,
+          bank_name, bank_code, account_number, account_name, bvn,
+          tax_id, pension_pin, nhf_number,
+          nok_name, nok_relationship, nok_phone, nok_address,
+          unit, cadre,
+          status, created_by
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7,
+          $8, $9, $10, $11, $12, $13, $14, $15,
+          $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
+          $28, $29, $30,
+          $31, $32, $33, $34, $35,
+          $36, $37, $38,
+          $39, $40, $41, $42,
+          $43, $44,
+          $45, $46
+        ) RETURNING *`,
+        [
+          staffNumber,
+          createStaffDto.firstName,
+          createStaffDto.middleName,
+          createStaffDto.lastName,
+          createStaffDto.dateOfBirth,
+          createStaffDto.gender,
+          createStaffDto.maritalStatus || null,
+          createStaffDto.phone || null,
+          normalizedEmail,
+          createStaffDto.address || null,
+          createStaffDto.stateOfOrigin,
+          createStaffDto.lgaOfOrigin,
+          createStaffDto.zone,
+          createStaffDto.qualification,
+          createStaffDto.nationality || 'Nigerian',
+          createStaffDto.departmentId || null,
+          createStaffDto.designation || null,
+          createStaffDto.employmentType || null,
+          createStaffDto.employmentDate,
+          createStaffDto.employmentDate,
+          createStaffDto.postOnFirstAppointment,
+          createStaffDto.presentAppointment,
+          createStaffDto.dateOfPresentAppointment,
+          createStaffDto.exitDate,
+          createStaffDto.exitReason || null,
+          createStaffDto.confirmationDate,
+          createStaffDto.retirementDate || null,
+          createStaffDto.gradeLevel,
+          createStaffDto.step,
+          basicSalary,
+          createStaffDto.bankName,
+          createStaffDto.bankCode,
+          createStaffDto.accountNumber,
+          createStaffDto.accountName,
+          createStaffDto.bvn || null,
+          createStaffDto.taxId || null,
+          createStaffDto.pensionPin || null,
+          createStaffDto.nhfNumber || null,
+          createStaffDto.nokName || null,
+          createStaffDto.nokRelationship || null,
+          createStaffDto.nokPhone || null,
+          createStaffDto.nokAddress || null,
+          createStaffDto.unit || null,
+          createStaffDto.cadre || null,
+          'active',
+          userId,
+        ],
+      );
+    } catch (error: any) {
+      const code = error?.code;
+      const detail = error?.detail || '';
+      this.logger.error(`Staff create failed (${code}): ${error?.message}`);
+      if (code === '23505') {
+        if (detail.includes('staff_number')) {
+          throw new BadRequestException('Staff number already exists');
+        }
+        if (detail.includes('email')) {
+          throw new BadRequestException('Email already exists');
+        }
+        throw new BadRequestException('Duplicate value violates unique constraint');
+      }
+      if (code === '23502') {
+        throw new BadRequestException(`${error?.column || 'A required field'} is required`);
+      }
+      if (code === '23503') {
+        throw new BadRequestException('Invalid reference data. Check department or current user.');
+      }
+      if (code === '22P02') {
+        throw new BadRequestException('Invalid data format supplied for one or more fields.');
+      }
+      if (code === '42703') {
+        throw new BadRequestException('Staff table schema is outdated. Missing required columns.');
+      }
+      throw error;
+    }
 
     // Log audit trail
     await this.auditService.log({
