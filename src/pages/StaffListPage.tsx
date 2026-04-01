@@ -126,7 +126,6 @@ export function StaffListPage() {
       'qualification',
       'post_on_first_appointment',
       'appointment_date',
-      'confirmation_date',
       'present_appointment',
       'date_of_present_appointment',
       'grade_level',
@@ -738,7 +737,6 @@ export function StaffListPage() {
       !formData.qualification ||
       !formData.post_on_first_appointment ||
       !formData.appointment_date ||
-      !formData.confirmation_date ||
       !formData.present_appointment ||
       !formData.date_of_present_appointment ||
       !formData.exit_date ||
@@ -817,8 +815,11 @@ export function StaffListPage() {
       resetForm();
     } catch (error: any) {
       console.error('Create staff error:', error);
+      const serverMessage = typeof error?.message === 'string' ? error.message.trim() : '';
       if (error.message?.includes('403') || error.status === 403) {
          showToast('error', 'You do not have permission to create staff.');
+      } else if (serverMessage) {
+         showToast('error', serverMessage);
       } else {
          showToast('error', 'Failed to create staff');
       }
@@ -843,7 +844,6 @@ export function StaffListPage() {
       !formData.qualification ||
       !formData.post_on_first_appointment ||
       !formData.appointment_date ||
-      !formData.confirmation_date ||
       !formData.present_appointment ||
       !formData.date_of_present_appointment ||
       !formData.exit_date ||
@@ -1527,7 +1527,7 @@ export function StaffListPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">
-                    Date of Confirmation *
+                    Date of Confirmation
                   </label>
                   <input
                     type="text"
@@ -1537,7 +1537,6 @@ export function StaffListPage() {
                     className={`w-full px-3 py-2 border ${formErrors.confirmation_date ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
                     placeholder="dd/mm/yyyy"
                     inputMode="numeric"
-                    required
                   />
                   {formErrors.confirmation_date && <p className="text-red-500 text-xs mt-1">{formErrors.confirmation_date}</p>}
                 </div>

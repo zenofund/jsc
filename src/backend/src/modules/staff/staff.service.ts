@@ -202,7 +202,7 @@ export class StaffService implements OnModuleInit {
           createStaffDto.dateOfPresentAppointment,
           createStaffDto.exitDate,
           createStaffDto.exitReason || null,
-          createStaffDto.confirmationDate,
+          createStaffDto.confirmationDate || null,
           createStaffDto.retirementDate || null,
           createStaffDto.gradeLevel,
           createStaffDto.step,
