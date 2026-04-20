@@ -1,8 +1,14 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { DatabaseService } from '@common/database/database.service';
-import { CreateCooperativeDto } from './dto/create-cooperative.dto';
+import { CooperativeType, CreateCooperativeDto } from './dto/create-cooperative.dto';
 import { AddCooperativeMemberDto } from './dto/add-member.dto';
 import { RecordContributionDto } from './dto/record-contribution.dto';
+import {
+  CooperativeMigrationImportDto,
+  MigrationContributionRowDto,
+  MigrationMemberRowDto,
+  MigrationOpeningBalanceRowDto,
+} from './dto/migration-import.dto';
 
 @Injectable()
 export class CooperativesService {
@@ -948,5 +954,220 @@ export class CooperativesService {
     userId: string
   ) {
     return this.bulkRecordFromPayroll(payrollBatchId, deductions, userId);
+  }
+
+  private normalizeContributionMonth(month?: string): string {
+    if (!month) {
+      return new Date().toISOString().slice(0, 7);
+    }
+    if (/^\d{4}-\d{2}$/.test(month)) {
+      return month;
+    }
+    const parsed = new Date(month);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new BadRequestException(`Invalid month value: ${month}`);
+    }
+    return parsed.toISOString().slice(0, 7);
+  }
+
+  private async resolveCooperativeId(
+    row: { cooperativeId?: string; cooperativeCode?: string },
+  ): Promise<string> {
+    if (row.cooperativeId) {
+      return row.cooperativeId;
+    }
+    if (!row.cooperativeCode) {
+      throw new BadRequestException('Provide cooperativeId or cooperativeCode');
+    }
+    const cooperative = await this.databaseService.queryOne(
+      'SELECT id FROM cooperatives WHERE code = $1',
+      [row.cooperativeCode],
+    );
+    if (!cooperative) {
+      throw new NotFoundException(`Cooperative not found for code ${row.cooperativeCode}`);
+    }
+    return cooperative.id;
+  }
+
+  private async resolveStaffId(
+    row: { staffId?: string; staffNumber?: string },
+  ): Promise<string> {
+    if (row.staffId) {
+      return row.staffId;
+    }
+    if (!row.staffNumber) {
+      throw new BadRequestException('Provide staffId or staffNumber');
+    }
+    const staff = await this.databaseService.queryOne(
+      'SELECT id FROM staff WHERE staff_number = $1',
+      [row.staffNumber],
+    );
+    if (!staff) {
+      throw new NotFoundException(`Staff not found for staff number ${row.staffNumber}`);
+    }
+    return staff.id;
+  }
+
+  private async resolveMemberId(
+    row: MigrationContributionRowDto | MigrationOpeningBalanceRowDto,
+  ): Promise<{ cooperativeId: string; memberId: string }> {
+    const cooperativeId = await this.resolveCooperativeId({
+      cooperativeId: row.cooperativeId,
+      cooperativeCode: row.cooperativeCode,
+    });
+
+    if ('memberId' in row && row.memberId) {
+      return { cooperativeId, memberId: row.memberId };
+    }
+
+    const staffId = await this.resolveStaffId({
+      staffId: row.staffId,
+      staffNumber: row.staffNumber,
+    });
+    const member = await this.databaseService.queryOne(
+      `SELECT id FROM cooperative_members
+       WHERE cooperative_id = $1 AND staff_id = $2 AND status = 'active'`,
+      [cooperativeId, staffId],
+    );
+    if (!member) {
+      throw new NotFoundException(
+        `Active membership not found for cooperative ${cooperativeId} and staff ${staffId}`,
+      );
+    }
+    return { cooperativeId, memberId: member.id };
+  }
+
+  async importMigrationData(dto: CooperativeMigrationImportDto, userId: string) {
+    const dryRun = Boolean(dto.dryRun);
+    const result = {
+      dryRun,
+      summary: {
+        cooperatives: { total: dto.cooperatives?.length || 0, success: 0, failed: 0 },
+        members: { total: dto.members?.length || 0, success: 0, failed: 0 },
+        openingBalances: { total: dto.openingBalances?.length || 0, success: 0, failed: 0 },
+        contributions: { total: dto.contributions?.length || 0, success: 0, failed: 0 },
+      },
+      errors: [] as Array<{ section: string; row: number; message: string }>,
+    };
+
+    const addError = (section: string, row: number, error: any) => {
+      result.errors.push({
+        section,
+        row,
+        message: error?.message || 'Unknown import error',
+      });
+    };
+
+    for (let i = 0; i < (dto.cooperatives || []).length; i++) {
+      const row = dto.cooperatives![i];
+      try {
+        const existing = await this.databaseService.queryOne(
+          'SELECT id FROM cooperatives WHERE code = $1',
+          [row.code],
+        );
+        const cooperativeDto: CreateCooperativeDto = {
+          code: row.code,
+          name: row.name,
+          type: CooperativeType.THRIFT,
+          registrationFee: 0,
+          monthlyContribution: row.monthly_contribution_required || 0,
+          description: row.description,
+          cooperative_type: row.cooperative_type,
+          monthly_contribution_required: row.monthly_contribution_required,
+          share_capital_value: row.share_capital_value,
+          minimum_shares: row.minimum_shares,
+          status: row.status || 'active',
+        };
+
+        if (!dryRun) {
+          if (existing) {
+            await this.updateCooperative(existing.id, cooperativeDto, userId);
+          } else {
+            await this.createCooperative(cooperativeDto, userId);
+          }
+        }
+        result.summary.cooperatives.success++;
+      } catch (error) {
+        result.summary.cooperatives.failed++;
+        addError('cooperatives', i + 1, error);
+      }
+    }
+
+    for (let i = 0; i < (dto.members || []).length; i++) {
+      const row = dto.members![i] as MigrationMemberRowDto;
+      try {
+        const cooperativeId = await this.resolveCooperativeId({
+          cooperativeId: row.cooperativeId,
+          cooperativeCode: row.cooperativeCode,
+        });
+        const staffId = await this.resolveStaffId({
+          staffId: row.staffId,
+          staffNumber: row.staffNumber,
+        });
+        if (!dryRun) {
+          await this.addMember(
+            {
+              cooperativeId,
+              staffId,
+              monthlyContribution: row.monthlyContribution,
+              shares_owned: row.shares_owned,
+            },
+            userId,
+          );
+        }
+        result.summary.members.success++;
+      } catch (error) {
+        result.summary.members.failed++;
+        addError('members', i + 1, error);
+      }
+    }
+
+    for (let i = 0; i < (dto.openingBalances || []).length; i++) {
+      const row = dto.openingBalances![i];
+      try {
+        const resolved = await this.resolveMemberId(row);
+        const contributionDto: RecordContributionDto = {
+          cooperativeId: resolved.cooperativeId,
+          memberId: resolved.memberId,
+          amount: row.amount,
+          month: this.normalizeContributionMonth(row.month),
+          contribution_type: row.contributionType || 'opening_balance',
+          payment_method: 'migration',
+          receipt_number: `OPEN-${Date.now()}-${i + 1}`,
+        };
+        if (!dryRun) {
+          await this.recordContribution(contributionDto, userId);
+        }
+        result.summary.openingBalances.success++;
+      } catch (error) {
+        result.summary.openingBalances.failed++;
+        addError('openingBalances', i + 1, error);
+      }
+    }
+
+    for (let i = 0; i < (dto.contributions || []).length; i++) {
+      const row = dto.contributions![i];
+      try {
+        const resolved = await this.resolveMemberId(row);
+        const contributionDto: RecordContributionDto = {
+          cooperativeId: resolved.cooperativeId,
+          memberId: resolved.memberId,
+          amount: row.amount,
+          month: this.normalizeContributionMonth(row.month),
+          contribution_type: row.contributionType || 'regular',
+          payment_method: row.paymentMethod || 'migration',
+          receipt_number: row.receiptNumber || `MIG-${Date.now()}-${i + 1}`,
+        };
+        if (!dryRun) {
+          await this.recordContribution(contributionDto, userId);
+        }
+        result.summary.contributions.success++;
+      } catch (error) {
+        result.summary.contributions.failed++;
+        addError('contributions', i + 1, error);
+      }
+    }
+
+    return result;
   }
 }

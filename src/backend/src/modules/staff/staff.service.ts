@@ -41,15 +41,6 @@ export class StaffService implements OnModuleInit {
       await this.databaseService.query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS present_appointment VARCHAR(255)`);
       await this.databaseService.query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS date_of_present_appointment DATE`);
       await this.databaseService.query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS bank_code VARCHAR(20)`);
-      await this.databaseService.query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS confirmation_date DATE`);
-      await this.databaseService.query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS retirement_date DATE`);
-      await this.databaseService.query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS account_name VARCHAR(255)`);
-      await this.databaseService.query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS tax_id VARCHAR(50)`);
-      await this.databaseService.query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS pension_pin VARCHAR(50)`);
-      await this.databaseService.query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS nhf_number VARCHAR(50)`);
-      await this.databaseService.query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS unit VARCHAR(255)`);
-      await this.databaseService.query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS cadre VARCHAR(255)`);
-      await this.databaseService.query(`ALTER TABLE staff ALTER COLUMN email DROP NOT NULL`).catch(() => null);
 
       await this.databaseService.query(`
         DO $$
@@ -83,10 +74,6 @@ export class StaffService implements OnModuleInit {
       throw new BadRequestException('Staff number is required');
     }
 
-    let normalizedEmail = createStaffDto.email
-      ? String(createStaffDto.email).trim().toLowerCase()
-      : null;
-
     const existingStaffNumber = await this.databaseService.queryOne(
       'SELECT id FROM staff WHERE staff_number = $1',
       [staffNumber],
@@ -95,25 +82,14 @@ export class StaffService implements OnModuleInit {
       throw new BadRequestException('Staff number already exists');
     }
 
-    if (normalizedEmail) {
+    // Check if email already exists
+    if (createStaffDto.email) {
       const existing = await this.databaseService.queryOne(
         'SELECT id FROM staff WHERE email = $1',
-        [normalizedEmail],
+        [createStaffDto.email],
       );
       if (existing) {
         throw new BadRequestException('Email already exists');
-      }
-    }
-
-    if (!normalizedEmail) {
-      const emailColumn = await this.databaseService.queryOne<{ is_nullable: 'YES' | 'NO' }>(
-        `SELECT is_nullable
-         FROM information_schema.columns
-         WHERE table_name = 'staff' AND column_name = 'email'`,
-      );
-      if (emailColumn?.is_nullable === 'NO') {
-        const base = staffNumber.toLowerCase().replace(/[^a-z0-9]/g, '');
-        normalizedEmail = `${base || 'staff'}@no-email.local`;
       }
     }
 
@@ -152,106 +128,77 @@ export class StaffService implements OnModuleInit {
       );
     }
 
-    let staff: any;
-    try {
-      staff = await this.databaseService.queryOne(
-        `INSERT INTO staff (
-          staff_number, first_name, middle_name, last_name, date_of_birth, gender, marital_status,
-          phone, email, address, state_of_origin, lga_of_origin, zone, qualification, nationality,
-          department_id, designation, employment_type, employment_date, date_of_first_appointment, post_on_first_appointment, present_appointment, date_of_present_appointment, exit_date, exit_reason, confirmation_date, retirement_date,
-          grade_level, step, current_basic_salary,
-          bank_name, bank_code, account_number, account_name, bvn,
-          tax_id, pension_pin, nhf_number,
-          nok_name, nok_relationship, nok_phone, nok_address,
-          unit, cadre,
-          status, created_by
-        ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7,
-          $8, $9, $10, $11, $12, $13, $14, $15,
-          $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
-          $28, $29, $30,
-          $31, $32, $33, $34, $35,
-          $36, $37, $38,
-          $39, $40, $41, $42,
-          $43, $44,
-          $45, $46
-        ) RETURNING *`,
-        [
-          staffNumber,
-          createStaffDto.firstName,
-          createStaffDto.middleName,
-          createStaffDto.lastName,
-          createStaffDto.dateOfBirth,
-          createStaffDto.gender,
-          createStaffDto.maritalStatus || null,
-          createStaffDto.phone || null,
-          normalizedEmail,
-          createStaffDto.address || null,
-          createStaffDto.stateOfOrigin,
-          createStaffDto.lgaOfOrigin,
-          createStaffDto.zone,
-          createStaffDto.qualification,
-          createStaffDto.nationality || 'Nigerian',
-          createStaffDto.departmentId || null,
-          createStaffDto.designation || null,
-          createStaffDto.employmentType || null,
-          createStaffDto.employmentDate,
-          createStaffDto.employmentDate,
-          createStaffDto.postOnFirstAppointment,
-          createStaffDto.presentAppointment,
-          createStaffDto.dateOfPresentAppointment,
-          createStaffDto.exitDate,
-          createStaffDto.exitReason || null,
-          createStaffDto.confirmationDate || null,
-          createStaffDto.retirementDate || null,
-          createStaffDto.gradeLevel,
-          createStaffDto.step,
-          basicSalary,
-          createStaffDto.bankName,
-          createStaffDto.bankCode,
-          createStaffDto.accountNumber,
-          createStaffDto.accountName,
-          createStaffDto.bvn || null,
-          createStaffDto.taxId || null,
-          createStaffDto.pensionPin || null,
-          createStaffDto.nhfNumber || null,
-          createStaffDto.nokName || null,
-          createStaffDto.nokRelationship || null,
-          createStaffDto.nokPhone || null,
-          createStaffDto.nokAddress || null,
-          createStaffDto.unit || null,
-          createStaffDto.cadre || null,
-          'active',
-          userId,
-        ],
-      );
-    } catch (error: any) {
-      const code = error?.code;
-      const detail = error?.detail || '';
-      this.logger.error(`Staff create failed (${code}): ${error?.message}`);
-      if (code === '23505') {
-        if (detail.includes('staff_number')) {
-          throw new BadRequestException('Staff number already exists');
-        }
-        if (detail.includes('email')) {
-          throw new BadRequestException('Email already exists');
-        }
-        throw new BadRequestException('Duplicate value violates unique constraint');
-      }
-      if (code === '23502') {
-        throw new BadRequestException(`${error?.column || 'A required field'} is required`);
-      }
-      if (code === '23503') {
-        throw new BadRequestException('Invalid reference data. Check department or current user.');
-      }
-      if (code === '22P02') {
-        throw new BadRequestException('Invalid data format supplied for one or more fields.');
-      }
-      if (code === '42703') {
-        throw new BadRequestException('Staff table schema is outdated. Missing required columns.');
-      }
-      throw error;
-    }
+    const staff = await this.databaseService.queryOne(
+      `INSERT INTO staff (
+        staff_number, first_name, middle_name, last_name, date_of_birth, gender, marital_status,
+        phone, email, address, state_of_origin, lga_of_origin, zone, qualification, nationality,
+        department_id, designation, employment_type, employment_date, date_of_first_appointment, post_on_first_appointment, present_appointment, date_of_present_appointment, exit_date, exit_reason, confirmation_date, retirement_date,
+        grade_level, step, current_basic_salary,
+        bank_name, bank_code, account_number, account_name, bvn,
+        tax_id, pension_pin, nhf_number,
+        nok_name, nok_relationship, nok_phone, nok_address,
+        unit, cadre,
+        status, created_by
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7,
+        $8, $9, $10, $11, $12, $13, $14, $15,
+        $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
+        $28, $29, $30,
+        $31, $32, $33, $34, $35,
+        $36, $37, $38,
+        $39, $40, $41, $42,
+        $43, $44,
+        $45, $46
+      ) RETURNING *`,
+      [
+        staffNumber,
+        createStaffDto.firstName,
+        createStaffDto.middleName,
+        createStaffDto.lastName,
+        createStaffDto.dateOfBirth,
+        createStaffDto.gender,
+        createStaffDto.maritalStatus || null,
+        createStaffDto.phone || null,
+        createStaffDto.email || null,
+        createStaffDto.address || null,
+        createStaffDto.stateOfOrigin,
+        createStaffDto.lgaOfOrigin,
+        createStaffDto.zone,
+        createStaffDto.qualification,
+        createStaffDto.nationality || 'Nigerian',
+        createStaffDto.departmentId || null,
+        createStaffDto.designation || null,
+        createStaffDto.employmentType || null,
+        createStaffDto.employmentDate,
+        createStaffDto.employmentDate,
+        createStaffDto.postOnFirstAppointment,
+        createStaffDto.presentAppointment,
+        createStaffDto.dateOfPresentAppointment,
+        createStaffDto.exitDate,
+        createStaffDto.exitReason || null,
+        createStaffDto.confirmationDate,
+        createStaffDto.retirementDate || null,
+        createStaffDto.gradeLevel,
+        createStaffDto.step,
+        basicSalary, // Use salary from structure instead of createStaffDto.currentBasicSalary
+        createStaffDto.bankName,
+        createStaffDto.bankCode,
+        createStaffDto.accountNumber,
+        createStaffDto.accountName,
+        createStaffDto.bvn || null,
+        createStaffDto.taxId || null,
+        createStaffDto.pensionPin || null,
+        createStaffDto.nhfNumber || null,
+        createStaffDto.nokName || null,
+        createStaffDto.nokRelationship || null,
+        createStaffDto.nokPhone || null,
+        createStaffDto.nokAddress || null,
+        createStaffDto.unit || null,
+        createStaffDto.cadre || null,
+        'active',
+        userId,
+      ],
+    );
 
     // Log audit trail
     await this.auditService.log({
@@ -448,11 +395,13 @@ export class StaffService implements OnModuleInit {
    */
   async update(id: string, updateStaffDto: UpdateStaffDto, userId: string) {
     const existing = await this.findOne(id);
+    let computedBasicSalary: number | null = null;
 
     if (updateStaffDto.gradeLevel !== undefined || updateStaffDto.step !== undefined) {
       const newGrade = updateStaffDto.gradeLevel ?? existing.grade_level;
       const newStep = updateStaffDto.step ?? existing.step;
       await this.salaryLookupService.validateGradeAndStep(newGrade as any, newStep as any);
+      computedBasicSalary = await this.salaryLookupService.getBasicSalary(newGrade as any, Number(newStep));
     }
 
     const updates = [];
@@ -469,6 +418,12 @@ export class StaffService implements OnModuleInit {
         paramIndex++;
       }
     });
+
+    if (computedBasicSalary !== null && updateStaffDto.currentBasicSalary === undefined) {
+      updates.push(`current_basic_salary = $${paramIndex}`);
+      params.push(computedBasicSalary);
+      paramIndex++;
+    }
 
     if (updates.length === 0) {
       throw new BadRequestException('No fields to update');
@@ -764,6 +719,18 @@ export class StaffService implements OnModuleInit {
    */
   async getDashboardStats(staffId: string) {
     const staff = await this.findOne(staffId);
+    let dashboardBasicSalary = parseFloat(String(staff.current_basic_salary ?? '0')) || 0;
+
+    try {
+      dashboardBasicSalary = await this.salaryLookupService.getBasicSalary(
+        staff.grade_level,
+        Number(staff.step),
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Failed live salary lookup for staff ${staff.staff_number} (GL ${staff.grade_level} Step ${staff.step}). Using stored current_basic_salary.`,
+      );
+    }
     
     // Calculate years of service
     const employmentDate = new Date(staff.employment_date);
@@ -846,7 +813,7 @@ export class StaffService implements OnModuleInit {
         step: staff.step,
         bank_name: staff.bank_name,
         account_number: staff.account_number,
-        current_salary: staff.current_basic_salary,
+        current_salary: dashboardBasicSalary,
       },
       next_of_kin: {
         name: staff.nok_name,
@@ -907,7 +874,7 @@ export class StaffService implements OnModuleInit {
 
     return {
       staff: nestedStaff,
-      current_salary: staff.current_basic_salary,
+      current_salary: dashboardBasicSalary,
       grade_level: staff.grade_level,
       step: staff.step,
       years_of_service: yearsOfService,
@@ -1058,11 +1025,22 @@ export class StaffService implements OnModuleInit {
       
       // Salary lookup map from active structure
       const salaryMap = new Map<string, number>();
+      const normalizeGradeLevel = (value: any) => {
+        let normalized = String(value || '').trim().toUpperCase();
+        normalized = normalized.replace(/[\s-]+/g, '');
+        if (/^GL\d+$/.test(normalized)) {
+          normalized = normalized.slice(2);
+        }
+        if (/^\d+$/.test(normalized)) {
+          normalized = normalized.replace(/^0+(?=\d)/, '');
+        }
+        return normalized;
+      };
       if (structure?.grade_levels) {
         const gradeLevels = structure.grade_levels as any[];
         gradeLevels.forEach(g => {
           g.steps?.forEach(s => {
-            salaryMap.set(`${g.level}-${s.step}`, parseFloat(s.basic_salary));
+            salaryMap.set(`${normalizeGradeLevel(g.level)}-${Number(s.step)}`, parseFloat(s.basic_salary));
           });
         });
       }
@@ -1171,7 +1149,7 @@ export class StaffService implements OnModuleInit {
 
           let basicSalary: number | null = null;
           if (record.gradeLevel !== undefined && record.gradeLevel !== null && String(record.gradeLevel).trim() !== '' && record.step !== undefined && record.step !== null && !Number.isNaN(Number(record.step))) {
-            const salaryKey = `${record.gradeLevel}-${record.step}`;
+            const salaryKey = `${normalizeGradeLevel(record.gradeLevel)}-${Number(record.step)}`;
             const resolvedSalary = salaryMap.get(salaryKey);
             if (resolvedSalary !== undefined) {
               basicSalary = resolvedSalary;

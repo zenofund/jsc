@@ -15,6 +15,7 @@ import {
   UpdateGuarantorDto,
   LoanStatus,
 } from './dto/loan.dto';
+import { LoanMigrationImportDto } from './dto/migration-import.dto';
 
 @ApiTags('Loans')
 @ApiBearerAuth()
@@ -248,5 +249,11 @@ export class LoansController {
   @ApiOperation({ summary: 'Get loan statistics for a staff member' })
   getStaffLoanStats(@Param('staffId') staffId: string) {
     return this.loansService.getStaffLoanStats(staffId);
+  }
+
+  @Post('migration/import')
+  @ApiOperation({ summary: 'Batch import loan migration data' })
+  importMigrationData(@Body() dto: LoanMigrationImportDto, @Request() req) {
+    return this.loansService.importMigrationData(dto, req.user.userId);
   }
 }

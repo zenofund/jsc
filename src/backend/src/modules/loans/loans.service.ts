@@ -15,6 +15,11 @@ import {
   UpdateGuarantorDto,
   LoanStatus,
 } from './dto/loan.dto';
+import {
+  LoanMigrationImportDto,
+  MigrationLoanRepaymentRowDto,
+  MigrationLoanRowDto,
+} from './dto/migration-import.dto';
 
 @Injectable()
 export class LoansService {
@@ -1009,5 +1014,303 @@ export class LoansService {
     );
 
     return stats;
+  }
+
+  private normalizeMonth(month?: string): string {
+    if (!month) {
+      return new Date().toISOString().slice(0, 7);
+    }
+    if (/^\d{4}-\d{2}$/.test(month)) {
+      return month;
+    }
+    const parsed = new Date(month);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new BadRequestException(`Invalid month value: ${month}`);
+    }
+    return parsed.toISOString().slice(0, 7);
+  }
+
+  private normalizeDate(date?: string): string {
+    if (!date) {
+      return new Date().toISOString().slice(0, 10);
+    }
+    const parsed = new Date(date);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new BadRequestException(`Invalid date value: ${date}`);
+    }
+    return parsed.toISOString().slice(0, 10);
+  }
+
+  private async resolveStaff(row: { staffId?: string; staffNumber?: string }) {
+    if (row.staffId) {
+      const staff = await this.databaseService.queryOne(
+        `SELECT id, staff_number, first_name, last_name
+         FROM staff WHERE id = $1`,
+        [row.staffId],
+      );
+      if (!staff) throw new NotFoundException(`Staff not found for id ${row.staffId}`);
+      return staff;
+    }
+    if (!row.staffNumber) {
+      throw new BadRequestException('Provide staffId or staffNumber');
+    }
+    const staff = await this.databaseService.queryOne(
+      `SELECT id, staff_number, first_name, last_name
+       FROM staff WHERE staff_number = $1`,
+      [row.staffNumber],
+    );
+    if (!staff) throw new NotFoundException(`Staff not found for number ${row.staffNumber}`);
+    return staff;
+  }
+
+  private async resolveLoanType(row: { loanTypeId?: string; loanTypeCode?: string }) {
+    if (row.loanTypeId) {
+      const loanType = await this.databaseService.queryOne(
+        `SELECT id, code, name, interest_rate
+         FROM loan_types WHERE id = $1`,
+        [row.loanTypeId],
+      );
+      if (!loanType) throw new NotFoundException(`Loan type not found for id ${row.loanTypeId}`);
+      return loanType;
+    }
+    if (!row.loanTypeCode) {
+      throw new BadRequestException('Provide loanTypeId or loanTypeCode');
+    }
+    const loanType = await this.databaseService.queryOne(
+      `SELECT id, code, name, interest_rate
+       FROM loan_types WHERE code = $1`,
+      [row.loanTypeCode],
+    );
+    if (!loanType) throw new NotFoundException(`Loan type not found for code ${row.loanTypeCode}`);
+    return loanType;
+  }
+
+  async importMigrationData(dto: LoanMigrationImportDto, userId: string) {
+    const dryRun = Boolean(dto.dryRun);
+    const result = {
+      dryRun,
+      summary: {
+        loans: { total: dto.loans?.length || 0, success: 0, failed: 0 },
+        repayments: { total: dto.repayments?.length || 0, success: 0, failed: 0 },
+      },
+      errors: [] as Array<{ section: string; row: number; message: string }>,
+      references: [] as Array<{ row: number; legacyReference?: string; disbursementNumber: string }>,
+    };
+
+    const addError = (section: string, row: number, error: any) => {
+      result.errors.push({
+        section,
+        row,
+        message: error?.message || 'Unknown import error',
+      });
+    };
+
+    const legacyDisbursementMap = new Map<string, string>();
+
+    for (let i = 0; i < (dto.loans || []).length; i++) {
+      const row = dto.loans![i] as MigrationLoanRowDto;
+      try {
+        const staff = await this.resolveStaff({ staffId: row.staffId, staffNumber: row.staffNumber });
+        const loanType = await this.resolveLoanType({ loanTypeId: row.loanTypeId, loanTypeCode: row.loanTypeCode });
+
+        const principal = Number(row.principalAmount || 0);
+        const amountRepaid = Number(row.amountRepaid || 0);
+        const normalizedOutstanding =
+          row.outstandingBalance !== undefined
+            ? Number(row.outstandingBalance)
+            : Math.max(0, principal - amountRepaid);
+        const interestRate = row.interestRate !== undefined ? Number(row.interestRate) : Number(loanType.interest_rate || 0);
+        const interestAmount = (principal * interestRate * row.tenureMonths) / (12 * 100);
+        const totalRepayment = principal + interestAmount;
+        const monthlyDeduction = Math.round(totalRepayment / row.tenureMonths);
+        const appStatus = LoanStatus.DISBURSED;
+        const disbursementStatus =
+          normalizedOutstanding <= 0
+            ? LoanStatus.COMPLETED
+            : row.status === LoanStatus.DEFAULTED
+              ? LoanStatus.DEFAULTED
+              : 'active';
+
+        const disbursementDate = this.normalizeDate(row.disbursementDate);
+        const startMonth = this.normalizeMonth(row.startMonth || disbursementDate);
+        const openingRepaymentMonth = this.normalizeMonth(row.startMonth || disbursementDate);
+
+        // Generate numbers consistent with current format
+        const year = new Date().getFullYear();
+        const appCount = await this.databaseService.queryOne(
+          `SELECT COUNT(*) as count FROM loan_applications WHERE application_number LIKE $1`,
+          [`LN/${year}/%`],
+        );
+        const applicationNumber = `LN/${year}/${String(parseInt(appCount.count, 10) + 1).padStart(5, '0')}`;
+
+        const disbCount = await this.databaseService.queryOne(
+          `SELECT COUNT(*) as count FROM loan_disbursements WHERE disbursement_number LIKE $1`,
+          [`DISB/${year}/%`],
+        );
+        const disbursementNumber = `DISB/${year}/${String(parseInt(disbCount.count, 10) + 1).padStart(5, '0')}`;
+
+        if (!dryRun) {
+          const app = await this.databaseService.queryOne(
+            `INSERT INTO loan_applications (
+              application_number, staff_id, staff_number, staff_name,
+              loan_type_id, loan_type_name, amount_requested, amount_approved,
+              purpose, tenure_months, monthly_deduction, total_repayment, interest_amount,
+              status, approved_by, approved_at, approval_remarks, submitted_at
+            ) VALUES (
+              $1, $2, $3, $4,
+              $5, $6, $7, $8,
+              $9, $10, $11, $12, $13,
+              $14, $15, NOW(), $16, NOW()
+            ) RETURNING *`,
+            [
+              applicationNumber,
+              staff.id,
+              staff.staff_number,
+              `${staff.first_name} ${staff.last_name}`.trim(),
+              loanType.id,
+              loanType.name,
+              principal,
+              principal,
+              row.purpose || 'Legacy migration import',
+              row.tenureMonths,
+              monthlyDeduction,
+              Math.round(totalRepayment * 100) / 100,
+              Math.round(interestAmount * 100) / 100,
+              appStatus,
+              userId,
+              row.remarks || 'Imported from legacy records',
+            ],
+          );
+
+          const disbursement = await this.databaseService.queryOne(
+            `INSERT INTO loan_disbursements (
+              disbursement_number, loan_application_id, staff_id, staff_number,
+              amount_disbursed, disbursement_date, disbursement_method, start_month, end_month,
+              tenure_months, monthly_deduction, balance_outstanding, disbursed_by,
+              remarks, status, bank_name, account_number, account_name
+            ) VALUES (
+              $1, $2, $3, $4,
+              $5, $6, $7, $8, $9,
+              $10, $11, $12, $13,
+              $14, $15, $16, $17, $18
+            ) RETURNING *`,
+            [
+              disbursementNumber,
+              app.id,
+              staff.id,
+              staff.staff_number,
+              principal,
+              disbursementDate,
+              row.disbursementMethod || 'migration',
+              startMonth,
+              row.endMonth ? this.normalizeMonth(row.endMonth) : null,
+              row.tenureMonths,
+              monthlyDeduction,
+              normalizedOutstanding,
+              userId,
+              row.remarks || 'Imported from legacy records',
+              disbursementStatus,
+              null,
+              null,
+              null,
+            ],
+          );
+
+          if (amountRepaid > 0) {
+            await this.databaseService.query(
+              `INSERT INTO loan_repayments (
+                disbursement_id, staff_id, amount, repayment_date, month,
+                payment_method, reference_number, recorded_by, remarks
+              ) VALUES (
+                $1, $2, $3, NOW(), $4,
+                $5, $6, $7, $8
+              )`,
+              [
+                disbursement.id,
+                staff.id,
+                amountRepaid,
+                openingRepaymentMonth,
+                'migration',
+                row.legacyReference || `MIG-OPEN-${disbursementNumber}`,
+                userId,
+                'Opening repaid amount from legacy migration',
+              ],
+            );
+          }
+        }
+
+        if (row.legacyReference) {
+          legacyDisbursementMap.set(row.legacyReference, disbursementNumber);
+        }
+        result.references.push({
+          row: i + 1,
+          legacyReference: row.legacyReference,
+          disbursementNumber,
+        });
+        result.summary.loans.success++;
+      } catch (error) {
+        result.summary.loans.failed++;
+        addError('loans', i + 1, error);
+      }
+    }
+
+    for (let i = 0; i < (dto.repayments || []).length; i++) {
+      const row = dto.repayments![i] as MigrationLoanRepaymentRowDto;
+      try {
+        let disbursementNumber = row.disbursementNumber || '';
+        if (!disbursementNumber && row.legacyReference) {
+          disbursementNumber = legacyDisbursementMap.get(row.legacyReference) || '';
+        }
+        if (!disbursementNumber) {
+          throw new BadRequestException('Provide disbursementNumber or a mapped legacyReference');
+        }
+
+        const disbursement = await this.databaseService.queryOne(
+          `SELECT id, staff_id, balance_outstanding, status FROM loan_disbursements
+           WHERE disbursement_number = $1`,
+          [disbursementNumber],
+        );
+        if (!disbursement) {
+          throw new NotFoundException(`Disbursement not found for ${disbursementNumber}`);
+        }
+        const month = this.normalizeMonth(row.month);
+        const amount = Number(row.amount || 0);
+        const newBalance = Number(disbursement.balance_outstanding || 0) - amount;
+
+        if (!dryRun) {
+          await this.databaseService.query(
+            `INSERT INTO loan_repayments (
+              disbursement_id, staff_id, amount, repayment_date, month,
+              payment_method, reference_number, recorded_by, remarks
+            ) VALUES ($1, $2, $3, NOW(), $4, $5, $6, $7, $8)`,
+            [
+              disbursement.id,
+              disbursement.staff_id,
+              amount,
+              month,
+              'migration',
+              row.legacyReference || `MIG-RPY-${disbursementNumber}-${i + 1}`,
+              userId,
+              'Repayment from legacy migration',
+            ],
+          );
+          await this.databaseService.query(
+            `UPDATE loan_disbursements
+             SET balance_outstanding = $1,
+                 status = CASE WHEN $1 <= 0 THEN 'completed' ELSE status END,
+                 updated_at = NOW()
+             WHERE id = $2`,
+            [newBalance, disbursement.id],
+          );
+        }
+
+        result.summary.repayments.success++;
+      } catch (error) {
+        result.summary.repayments.failed++;
+        addError('repayments', i + 1, error);
+      }
+    }
+
+    return result;
   }
 }

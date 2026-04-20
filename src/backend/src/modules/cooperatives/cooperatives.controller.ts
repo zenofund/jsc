@@ -4,6 +4,7 @@ import { CooperativesService } from './cooperatives.service';
 import { CreateCooperativeDto } from './dto/create-cooperative.dto';
 import { AddCooperativeMemberDto } from './dto/add-member.dto';
 import { RecordContributionDto } from './dto/record-contribution.dto';
+import { CooperativeMigrationImportDto } from './dto/migration-import.dto';
 
 @ApiTags('Cooperatives')
 @ApiBearerAuth()
@@ -29,6 +30,12 @@ export class CooperativesController {
   @ApiOperation({ summary: 'Get cooperative stats' })
   getCooperativeStats() {
     return this.cooperativesService.getCooperativeStats();
+  }
+
+  @Post('migration/import')
+  @ApiOperation({ summary: 'Batch import cooperative migration data' })
+  importMigrationData(@Body() dto: CooperativeMigrationImportDto, @Request() req) {
+    return this.cooperativesService.importMigrationData(dto, req.user.userId);
   }
 
   @Get(':id/stats')

@@ -11,6 +11,18 @@ export class SalaryLookupService {
 
   constructor(private databaseService: DatabaseService) {}
 
+  private normalizeGradeLevel(value: string | number): string {
+    let normalized = String(value || '').trim().toUpperCase();
+    normalized = normalized.replace(/[\s-]+/g, '');
+    if (/^GL\d+$/.test(normalized)) {
+      normalized = normalized.slice(2);
+    }
+    if (/^\d+$/.test(normalized)) {
+      normalized = normalized.replace(/^0+(?=\d)/, '');
+    }
+    return normalized;
+  }
+
   private async getAllowedGrades(): Promise<string[]> {
     const row = await this.databaseService.queryOne(
       `SELECT value->'allowed_grades' AS allowed
@@ -64,8 +76,10 @@ export class SalaryLookupService {
     }
 
     // Find the grade level
-    const gradeKey = String(gradeLevel).trim();
-    const grade = gradeLevels.find((g: any) => String(g.level).trim().toUpperCase() === gradeKey.toUpperCase());
+    const gradeKey = this.normalizeGradeLevel(gradeLevel);
+    const grade = gradeLevels.find(
+      (g: any) => this.normalizeGradeLevel(g.level) === gradeKey,
+    );
     
     if (!grade) {
       throw new NotFoundException(
@@ -74,7 +88,8 @@ export class SalaryLookupService {
     }
 
     // Find the step
-    const stepData = grade.steps?.find((s: any) => s.step === step);
+    const stepKey = Number(step);
+    const stepData = grade.steps?.find((s: any) => Number(s.step) === stepKey);
     
     if (!stepData) {
       throw new NotFoundException(
@@ -114,7 +129,9 @@ export class SalaryLookupService {
     const salaryMap = new Map<string, number>();
 
     for (const staff of staffList) {
-      const key = `${String(staff.gradeLevel)}-${staff.step}`;
+      const gradeKey = this.normalizeGradeLevel(staff.gradeLevel);
+      const stepKey = Number(staff.step);
+      const key = `${gradeKey}-${stepKey}`;
       
       // Skip if already calculated
       if (salaryMap.has(key)) {
@@ -122,7 +139,7 @@ export class SalaryLookupService {
       }
 
       // Find the grade level
-      const grade = gradeLevels.find((g: any) => String(g.level).trim().toUpperCase() === String(staff.gradeLevel).trim().toUpperCase());
+      const grade = gradeLevels.find((g: any) => this.normalizeGradeLevel(g.level) === gradeKey);
       
       if (!grade) {
         this.logger.warn(
@@ -132,7 +149,7 @@ export class SalaryLookupService {
       }
 
       // Find the step
-      const stepData = grade.steps?.find((s: any) => s.step === staff.step);
+      const stepData = grade.steps?.find((s: any) => Number(s.step) === stepKey);
       
       if (!stepData) {
         this.logger.warn(
@@ -184,7 +201,7 @@ export class SalaryLookupService {
   async validateGradeAndStep(gradeLevel: string | number, step: number): Promise<boolean> {
     try {
       const allowed = await this.getAllowedGrades();
-      const gradeKey = String(gradeLevel).trim();
+      const gradeKey = this.normalizeGradeLevel(gradeLevel);
       const isNumeric = /^\d+$/.test(gradeKey);
       if (isNumeric && allowed.length > 0 && !allowed.includes(gradeKey)) {
         throw new NotFoundException(

@@ -241,23 +241,37 @@ export class SalaryStructuresService {
       throw new BadRequestException('Invalid salary structure format');
     }
 
+    const normalizeGradeLevel = (value: string | number) => {
+      let normalized = String(value || '').trim().toUpperCase();
+      normalized = normalized.replace(/[\s-]+/g, '');
+      if (/^GL\d+$/.test(normalized)) {
+        normalized = normalized.slice(2);
+      }
+      if (/^\d+$/.test(normalized)) {
+        normalized = normalized.replace(/^0+(?=\d)/, '');
+      }
+      return normalized;
+    };
+
     // Find the grade level
-    const grade = gradeLevels.find((g: any) => String(g.level) === String(gradeLevel));
+    const gradeKey = normalizeGradeLevel(gradeLevel);
+    const grade = gradeLevels.find((g: any) => normalizeGradeLevel(g.level) === gradeKey);
     
     if (!grade) {
       throw new NotFoundException(`Grade level ${gradeLevel} not found in structure`);
     }
 
     // Find the step
-    const stepData = grade.steps?.find((s: any) => s.step === step);
+    const stepKey = Number(step);
+    const stepData = grade.steps?.find((s: any) => Number(s.step) === stepKey);
     
     if (!stepData) {
       throw new NotFoundException(`Step ${step} not found in grade level ${gradeLevel}`);
     }
 
     return {
-      gradeLevel,
-      step,
+      gradeLevel: gradeKey,
+      step: stepKey,
       basicSalary: stepData.basic_salary,
       structureName: structure.name,
       structureCode: structure.code,
