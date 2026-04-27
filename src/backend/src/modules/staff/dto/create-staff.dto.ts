@@ -141,11 +141,11 @@ export class CreateStaffDto {
   @IsOptional()
   previousBasicSalary?: number;
 
-  @ApiProperty()
+  @ApiPropertyOptional()
   @Type(() => Date)
   @IsDate()
-  @IsNotEmpty()
-  confirmationDate: Date;
+  @IsOptional()
+  confirmationDate?: Date;
 
   @ApiProperty()
   @IsString()
