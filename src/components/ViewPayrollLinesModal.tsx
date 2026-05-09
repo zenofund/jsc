@@ -65,9 +65,7 @@ export function ViewPayrollLinesModal({
     const bPriority = categoryPriority(bGrade.raw);
 
     // Force CAT4 and CAT1 to top, regardless of direction. 
-    // Or if we want them to flip when direction flips, we multiply by dir. 
-    // Since 'desc' is default and we want CAT4 on top during 'desc', we need to invert priority.
-    if (aPriority !== bPriority) return (aPriority - bPriority) * -dir;
+    if (aPriority !== bPriority) return aPriority - bPriority;
 
     // For numeric grades, sort highest to lowest by default ('desc' puts 17 above 3)
     if (aGrade.num !== null && bGrade.num !== null && aGrade.num !== bGrade.num) {
@@ -390,7 +388,11 @@ export function ViewPayrollLinesModal({
           {
             table: {
               headerRows: 1,
-              widths: Array(columns.length).fill('*'),
+              widths: columns.map((c) => {
+                if (c.id === 'sn') return 'auto';
+                if (c.id === 'staff_name') return '*';
+                return 'auto';
+              }),
               body: tableBody,
             },
             layout: {

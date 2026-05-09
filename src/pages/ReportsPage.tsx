@@ -408,6 +408,7 @@ export function ReportsPage() {
 
       const baseDocDefinition: any = {
         pageSize: 'A4',
+        pageOrientation: 'landscape',
         pageMargins: [20, 20, 20, 20],
         styles: {
           header: { fontSize: 16, bold: true, color: '#008000', alignment: 'center', margin: [0, 0, 0, 5] },
@@ -726,6 +727,7 @@ export function ReportsPage() {
 
       const baseDocDefinition: any = {
         pageSize: 'A4',
+        pageOrientation: 'landscape',
         pageMargins: [20, 20, 20, 20],
         styles: {
           header: { fontSize: 16, bold: true, color: '#008000', alignment: 'center', margin: [0, 0, 0, 5] },

@@ -130,12 +130,16 @@ export class PayrollService {
     let excludedGrades: string[] = [];
     try {
       excludedGrades = typeof item.excluded_grades === 'string' ? JSON.parse(item.excluded_grades) : (item.excluded_grades || []);
-    } catch(e) {}
-    
+    } catch(e) {
+      // Ignored parsing error
+    }
+
     let excludedEmpTypes: string[] = [];
     try {
       excludedEmpTypes = typeof item.excluded_employment_types === 'string' ? JSON.parse(item.excluded_employment_types) : (item.excluded_employment_types || []);
-    } catch(e) {}
+    } catch(e) {
+      // Ignored parsing error
+    }
 
     const normalizedExcludedGrades = excludedGrades.map(g => String(g).replace(/\s+/g, '').toUpperCase());
     if (normalizedExcludedGrades.includes(gradeKey)) return true;

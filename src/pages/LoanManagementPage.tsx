@@ -7,10 +7,12 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { loanApplicationAPI, loanTypeAPI, disbursementAPI, loanStatsAPI, cooperativeAPI } from '../lib/loanAPI';
-import type { LoanType, LoanApplication, LoanDisbursement, Cooperative } from '../types/entities';
+import { staffAPI } from '../lib/api-client';
+import type { LoanType, LoanApplication, LoanDisbursement, Cooperative, Staff } from '../types/entities';
 import { PageSkeleton } from '../components/PageLoader';
 import { showToast } from '../utils/toast';
 import { formatCompactCurrency, formatCurrency } from '../utils/format';
+import { Modal } from '../components/Modal';
 
 type TabType = 'overview' | 'applications' | 'loan-types' | 'disbursements' | 'reports';
 
@@ -173,6 +175,7 @@ function ApplicationsTab({
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [isDisbursing, setIsDisbursing] = useState(false);
   const [showDisbursementModal, setShowDisbursementModal] = useState(false);
+  const [showAssignModal, setShowAssignModal] = useState(false);
   const [disbursementData, setDisbursementData] = useState({
     disbursement_method: 'bank_transfer' as const,
     bank_name: '',
@@ -182,6 +185,19 @@ function ApplicationsTab({
   });
   const [approvalModal, setApprovalModal] = useState<{ open: boolean; app: LoanApplication | null; action: 'approved' | 'rejected' | null }>({ open: false, app: null, action: null });
   const [approvalComment, setApprovalComment] = useState('');
+
+  // Assign Loan State
+  const [assignLoanData, setAssignLoanData] = useState({
+    staffId: '',
+    loanTypeId: '',
+    requestedAmount: 0,
+    tenureMonths: 1,
+    purpose: '',
+    autoApproveDisburse: false,
+  });
+  const [assigningLoan, setAssigningLoan] = useState(false);
+  const [staffList, setStaffList] = useState<Staff[]>([]);
+  const [loanTypesList, setLoanTypesList] = useState<LoanType[]>([]);
 
   useEffect(() => {
     if (selectedApp) {
@@ -194,15 +210,123 @@ function ApplicationsTab({
     }
   }, [selectedApp]);
 
-  const filteredApplications = applications.filter((app) => {
-    const matchesStatus = statusFilter === 'all' || app.status === statusFilter;
-    const matchesSearch =
-      app.staff_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      app.application_number.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesStatus && matchesSearch;
-  });
+  useEffect(() => {
+    if (showAssignModal) {
+      const fetchFormData = async () => {
+        try {
+            const [staffData, typesData] = await Promise.all([
+              staffAPI.getAllStaff({ fetchAll: true, limit: 1000 }),
+              loanTypeAPI.getAll()
+            ]);
+            setStaffList(Array.isArray(staffData) ? staffData : staffData.data || []);
+            setLoanTypesList(typesData.filter((t: LoanType) => t.status === 'active'));
+          } catch (error) {
+          console.error('Failed to load assign form data', error);
+        }
+      };
+      fetchFormData();
+    }
+  }, [showAssignModal]);
 
-  const handleApprove = async (applicationId: string, action: 'approved' | 'rejected', comments?: string) => {
+  const getStaffDisplayLabel = (staff: Staff) => {
+    const staffWithFlatName = staff as unknown as {
+      first_name?: string;
+      last_name?: string;
+      full_name?: string;
+      staff_name?: string;
+    };
+    const first = (staffWithFlatName.first_name || staff.bio_data?.first_name || '').trim();
+    const last = (staffWithFlatName.last_name || staff.bio_data?.last_name || '').trim();
+    const fullName = `${first} ${last}`.trim();
+    const fallbackName = staffWithFlatName.full_name
+      || staffWithFlatName.staff_name
+      || 'Unknown Staff';
+    const displayName = fullName || fallbackName;
+    const staffId = staff.staff_number || 'N/A';
+    return `${displayName} (${staffId})`;
+  };
+
+  const filteredApplications = applications.filter((app) => {
+      const matchesStatus = statusFilter === 'all' || app.status === statusFilter;
+      const matchesSearch =
+        app.staff_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        app.application_number.toLowerCase().includes(searchTerm.toLowerCase());
+      return matchesStatus && matchesSearch;
+    });
+
+    const handleAssignLoan = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!assignLoanData.staffId || !assignLoanData.loanTypeId || assignLoanData.requestedAmount <= 0 || assignLoanData.tenureMonths <= 0 || !assignLoanData.purpose) {
+        showToast.error('Error', 'Please fill in all required fields correctly');
+        return;
+      }
+
+      try {
+        setAssigningLoan(true);
+        const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+        
+        // 1. Create Application
+        const createPayload = {
+          staffId: assignLoanData.staffId,
+          loanTypeId: assignLoanData.loanTypeId,
+          requestedAmount: assignLoanData.requestedAmount,
+          tenureMonths: assignLoanData.tenureMonths,
+          purpose: assignLoanData.purpose,
+          guarantors: [] // Admin assigning usually overrides guarantor requirement or handles offline
+        };
+        
+        const newApp = await loanApplicationAPI.create(createPayload);
+        
+        // 2. Auto Approve & Disburse if checked
+        if (assignLoanData.autoApproveDisburse && newApp && newApp.id) {
+          // Approve
+          await loanApplicationAPI.processApproval(
+            newApp.id, 
+            currentUser.id, 
+            currentUser.full_name, 
+            'approved', 
+            'Admin Auto-Approved during assignment', 
+            assignLoanData.requestedAmount
+          );
+          
+          // Fetch staff bank details for disbursement
+          const staff = staffList.find(s => s.id === assignLoanData.staffId);
+          
+          // Disburse
+          await disbursementAPI.create({
+            loan_application_id: newApp.id,
+            disbursement_method: 'bank_transfer',
+            bank_name: staff?.salary_info?.bank_name || 'N/A',
+            account_number: staff?.salary_info?.account_number || 'N/A',
+            reference_number: `AUTO-${Date.now()}`,
+            disbursed_by: currentUser.id,
+            amount: assignLoanData.requestedAmount,
+          });
+          
+          showToast.success('Loan assigned, approved, and disbursed successfully');
+        } else {
+          showToast.success('Loan assigned successfully (Pending Approval)');
+        }
+        
+        setShowAssignModal(false);
+        setAssignLoanData({
+          staffId: '',
+          loanTypeId: '',
+          requestedAmount: 0,
+          tenureMonths: 1,
+          purpose: '',
+          autoApproveDisburse: false,
+        });
+        onRefresh();
+        
+      } catch (error: any) {
+        showToast.error('Error Assigning Loan', error.message);
+      } finally {
+        setAssigningLoan(false);
+      }
+    };
+
+    const handleApprove = async (applicationId: string, action: 'approved' | 'rejected', comments?: string) => {
     try {
       setProcessingId(applicationId);
       const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
@@ -292,6 +416,13 @@ function ApplicationsTab({
           <option value="rejected">Rejected</option>
           <option value="disbursed">Disbursed</option>
         </select>
+        <button
+          onClick={() => setShowAssignModal(true)}
+          className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors whitespace-nowrap"
+        >
+          <Plus className="w-4 h-4" />
+          Assign Loan
+        </button>
       </div>
 
       {/* Table */}
@@ -502,27 +633,142 @@ function ApplicationsTab({
                   Cancel
                 </button>
                 <button
-                  onClick={async () => {
-                    const targetId = approvalModal.app?.id;
-                    const action = approvalModal.action;
-                    if (!targetId || !action) return;
-                    setApprovalModal({ open: false, app: null, action: null });
-                    await handleApprove(targetId, action, approvalComment.trim());
-                  }}
-                  className={`px-4 py-2 text-white rounded ${
-                    approvalModal.action === 'approved' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'
-                  }`}
-                >
-                  {approvalModal.action === 'approved' ? 'Approve' : 'Reject'}
-                </button>
+                    onClick={async () => {
+                      const targetId = approvalModal.app?.id;
+                      const action = approvalModal.action;
+                      if (!targetId || !action) return;
+                      setApprovalModal({ open: false, app: null, action: null });
+                      await handleApprove(targetId, action, approvalComment.trim());
+                    }}
+                    className={`px-4 py-2 text-white rounded ${
+                      approvalModal.action === 'approved' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'
+                    }`}
+                  >
+                    {approvalModal.action === 'approved' ? 'Approve' : 'Reject'}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
-  );
-}
+        )}
+
+      {/* Assign Loan Modal */}
+      <Modal
+          isOpen={showAssignModal}
+          onClose={() => setShowAssignModal(false)}
+          title="Assign Loan to Staff"
+          size="md"
+        >
+          <form onSubmit={handleAssignLoan} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1">Select Staff *</label>
+              <select
+                value={assignLoanData.staffId}
+                onChange={(e) => setAssignLoanData({ ...assignLoanData, staffId: e.target.value })}
+                className="w-full px-3 py-2 rounded-lg border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                required
+              >
+                <option value="">-- Select Staff --</option>
+                {staffList.map(staff => (
+                  <option key={staff.id} value={staff.id}>
+                    {getStaffDisplayLabel(staff)}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">Loan Type *</label>
+            <select
+              value={assignLoanData.loanTypeId}
+              onChange={(e) => setAssignLoanData({ ...assignLoanData, loanTypeId: e.target.value })}
+              className="w-full px-3 py-2 rounded-lg border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              required
+            >
+              <option value="">-- Select Loan Type --</option>
+              {loanTypesList.map(type => (
+                <option key={type.id} value={type.id}>
+                  {type.name} ({type.cooperative_id ? 'Cooperative' : 'Standalone'}) - Max: {formatCurrency(type.max_amount)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1">Amount (₦) *</label>
+              <input
+                type="number"
+                min="1"
+                value={assignLoanData.requestedAmount || ''}
+                onChange={(e) => setAssignLoanData({ ...assignLoanData, requestedAmount: Number(e.target.value) })}
+                className="w-full px-3 py-2 rounded-lg border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1">Tenure (Months) *</label>
+              <input
+                type="number"
+                min="1"
+                value={assignLoanData.tenureMonths || ''}
+                onChange={(e) => setAssignLoanData({ ...assignLoanData, tenureMonths: Number(e.target.value) })}
+                className="w-full px-3 py-2 rounded-lg border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                required
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">Purpose *</label>
+            <textarea
+              value={assignLoanData.purpose}
+              onChange={(e) => setAssignLoanData({ ...assignLoanData, purpose: e.target.value })}
+              className="w-full px-3 py-2 rounded-lg border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              rows={3}
+              required
+            />
+          </div>
+
+          <div className="flex items-center gap-2 p-4 bg-muted/30 rounded-lg border border-border mt-4">
+            <input
+              type="checkbox"
+              id="autoApproveDisburse"
+              checked={assignLoanData.autoApproveDisburse}
+              onChange={(e) => setAssignLoanData({ ...assignLoanData, autoApproveDisburse: e.target.checked })}
+              className="w-4 h-4 text-primary focus:ring-primary border-border rounded"
+            />
+            <label htmlFor="autoApproveDisburse" className="text-sm font-medium text-foreground cursor-pointer">
+              Auto-Approve & Disburse Immediately
+            </label>
+          </div>
+          <p className="text-xs text-muted-foreground ml-6">
+            If checked, this loan will instantly bypass the pending state, become approved, and be marked as disbursed using the staff's default salary bank account.
+          </p>
+
+          <div className="flex justify-end gap-3 pt-4 border-t border-border mt-6">
+            <button
+              type="button"
+              onClick={() => setShowAssignModal(false)}
+              className="px-4 py-2 rounded-lg text-foreground hover:bg-accent transition-colors"
+              disabled={assigningLoan}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={assigningLoan}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+            >
+              {assigningLoan ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+              {assignLoanData.autoApproveDisburse ? 'Assign & Disburse' : 'Assign Loan'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+      </div>
+    );
+  }
 
 // Loan Types Tab with full CRUD
 function LoanTypesTab({
