@@ -1,0 +1,1 @@
+ALTER TABLE loan_applications ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMP WITH TIME ZONE;
