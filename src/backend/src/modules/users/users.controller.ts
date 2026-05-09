@@ -19,6 +19,14 @@ export class UsersController {
     return this.authService.getAllUsers();
   }
 
+  @Get('permission-catalog')
+  @Roles('admin')
+  @ApiOperation({ summary: 'Get permission catalog and role templates' })
+  @ApiResponse({ status: 200, description: 'Permission catalog retrieved successfully' })
+  async getPermissionCatalog() {
+    return this.authService.getPermissionCatalog();
+  }
+
   @Post()
   @Roles('admin')
   @ApiOperation({ summary: 'Create new user' })

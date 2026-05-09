@@ -683,6 +683,12 @@ export { loanApplicationAPI } from './loanAPI';
 // ============================================
 
 export const userAPI = {
+  async getPermissionCatalog() {
+    return makeApiRequest('/users/permission-catalog', {
+      method: 'GET',
+    });
+  },
+
   async createUser(userData: any, options?: RequestInit) {
     return makeApiRequest('/users', {
       method: 'POST',

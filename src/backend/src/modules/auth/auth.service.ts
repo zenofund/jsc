@@ -20,12 +20,68 @@ export class AuthService {
     private auditService: AuditService,
   ) {}
 
+  private normalizeRole(role: unknown): string {
+    return String(role || '').trim().toLowerCase();
+  }
+
+  private async getRoleTemplatePermissions(role: string): Promise<string[]> {
+    const normalizedRole = this.normalizeRole(role);
+    if (!normalizedRole) return [];
+
+    const rows = await this.databaseService.query(
+      `SELECT arp.permission_key
+       FROM app_role_permissions arp
+       JOIN app_permissions ap ON ap.permission_key = arp.permission_key
+       WHERE LOWER(arp.role_key) = $1
+         AND ap.is_active = TRUE
+       ORDER BY arp.permission_key`,
+      [normalizedRole],
+    );
+
+    return rows.map((row: any) => String(row.permission_key));
+  }
+
+  private async resolveUserPermissions(user: { id: string; role: string; permissions?: string[] | null }) {
+    if (Array.isArray(user.permissions) && user.permissions.length > 0) {
+      return user.permissions.map((p) => String(p));
+    }
+
+    return this.getRoleTemplatePermissions(user.role);
+  }
+
+  async getPermissionCatalog() {
+    const permissions = await this.databaseService.query(
+      `SELECT permission_key, module_name, display_name, description, is_active
+       FROM app_permissions
+       WHERE is_active = TRUE
+       ORDER BY module_name, permission_key`,
+    );
+
+    const roleRows = await this.databaseService.query(
+      `SELECT role_key, permission_key
+       FROM app_role_permissions
+       ORDER BY role_key, permission_key`,
+    );
+
+    const roleTemplates: Record<string, string[]> = {};
+    for (const row of roleRows) {
+      const roleKey = this.normalizeRole(row.role_key);
+      if (!roleTemplates[roleKey]) roleTemplates[roleKey] = [];
+      roleTemplates[roleKey].push(String(row.permission_key));
+    }
+
+    return {
+      permissions,
+      roleTemplates,
+    };
+  }
+
   /**
    * Validate user credentials
    */
   async validateUser(email: string, password: string): Promise<any> {
     const user = await this.databaseService.queryOne(
-      `SELECT id, email, password_hash, full_name, role, department_id, staff_id, status 
+      `SELECT id, email, password_hash, full_name, role, permissions, department_id, staff_id, status
        FROM users 
        WHERE email = $1 AND status = 'active'`,
       [email],
@@ -56,6 +112,8 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    const effectivePermissions = await this.resolveUserPermissions(user);
+
     // Update last login
     await this.databaseService.query(
       'UPDATE users SET last_login = NOW() WHERE id = $1',
@@ -82,6 +140,7 @@ export class AuthService {
       sub: user.id,
       email: user.email,
       role: user.role,
+      permissions: effectivePermissions,
       departmentId: user.department_id,
       staffId: user.staff_id,
     };
@@ -105,6 +164,7 @@ export class AuthService {
         email: user.email,
         name: user.full_name,
         role: user.role,
+        permissions: effectivePermissions,
         department_id: user.department_id,
         staff_id: user.staff_id,
       },
@@ -116,7 +176,7 @@ export class AuthService {
    */
   async getProfile(userId: string) {
     const user = await this.databaseService.queryOne(
-      `SELECT u.id, u.email, u.full_name, u.role, u.department_id, u.staff_id, u.status, u.last_login,
+      `SELECT u.id, u.email, u.full_name, u.role, u.permissions, u.department_id, u.staff_id, u.status, u.last_login,
               d.name as department_name, d.code as department_code,
               s.staff_number, s.first_name, s.last_name, s.designation
        FROM users u
@@ -149,6 +209,8 @@ export class AuthService {
         user.designation = staff.designation;
       }
     }
+
+    user.permissions = await this.resolveUserPermissions(user);
 
     return user;
   }
@@ -206,12 +268,19 @@ export class AuthService {
   }
 
   async getAllUsers() {
-    return this.databaseService.query(
-      `SELECT u.id, u.email, u.full_name, u.role, u.department_id, u.status, u.last_login,
+    const users = await this.databaseService.query(
+      `SELECT u.id, u.email, u.full_name, u.role, u.permissions, u.department_id, u.status, u.last_login,
               d.name as department
        FROM users u
        LEFT JOIN departments d ON u.department_id = d.id
        ORDER BY u.created_at DESC`
+    );
+
+    return Promise.all(
+      users.map(async (u: any) => ({
+        ...u,
+        permissions: await this.resolveUserPermissions(u),
+      })),
     );
   }
 
@@ -226,15 +295,23 @@ export class AuthService {
 
     const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
 
+    const normalizedRole = this.normalizeRole(createUserDto.role);
+    const requestedPermissions = Array.isArray(createUserDto.permissions)
+      ? createUserDto.permissions.map((p: string) => String(p))
+      : [];
+    const permissions =
+      requestedPermissions.length > 0 ? requestedPermissions : await this.getRoleTemplatePermissions(normalizedRole);
+
     const result = await this.databaseService.queryOne(
-      `INSERT INTO users (email, password_hash, full_name, role, department_id, staff_id, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id, email, full_name, role, department_id, staff_id, status`,
+      `INSERT INTO users (email, password_hash, full_name, role, permissions, department_id, staff_id, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, email, full_name, role, permissions, department_id, staff_id, status`,  
       [
         createUserDto.email,
         hashedPassword,
         createUserDto.full_name || createUserDto.fullName,
-        createUserDto.role,
+        normalizedRole,
+        permissions,
         createUserDto.department_id || createUserDto.departmentId || null,
         createUserDto.staff_id || createUserDto.staffId || null,
         'active',
@@ -274,9 +351,19 @@ export class AuthService {
       values.push(fullName);
     }
     
-    if (updateUserDto.role) {
+    const roleToSet = updateUserDto.role ? this.normalizeRole(updateUserDto.role) : undefined;
+    if (roleToSet) {
       fields.push(`role = $${paramIndex++}`);
-      values.push(updateUserDto.role);
+      values.push(roleToSet);
+    }
+
+    if (Array.isArray(updateUserDto.permissions)) {
+      fields.push(`permissions = $${paramIndex++}`);
+      values.push(updateUserDto.permissions.map((p: string) => String(p)));
+    } else if (roleToSet) {
+      const rolePermissions = await this.getRoleTemplatePermissions(roleToSet);
+      fields.push(`permissions = $${paramIndex++}`);
+      values.push(rolePermissions);
     }
 
     let deptId = updateUserDto.department_id !== undefined ? updateUserDto.department_id : updateUserDto.departmentId;
@@ -308,7 +395,7 @@ export class AuthService {
     }
 
     values.push(userId);
-    const query = `UPDATE users SET ${fields.join(', ')} WHERE id = $${paramIndex} RETURNING id, email, full_name, role, status`;
+    const query = `UPDATE users SET ${fields.join(', ')} WHERE id = $${paramIndex} RETURNING id, email, full_name, role, permissions, status`;
 
     const result = await this.databaseService.queryOne(query, values);
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { userAPI, settingsAPI, auditAPI } from '../lib/api-client';
@@ -13,6 +13,14 @@ import { StatusBadge } from '../components/StatusBadge';
 import { PageSkeleton } from '../components/PageLoader';
 
 import { Skeleton } from '../components/ui/skeleton';
+
+type PermissionCatalogItem = {
+  permission_key: string;
+  module_name: string;
+  display_name: string;
+  description?: string;
+  is_active: boolean;
+};
 
 export function AdminPage() {
   const { user } = useAuth();
@@ -32,6 +40,10 @@ export function AdminPage() {
   const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
   const [showUserPassword, setShowUserPassword] = useState(false);
   const [logoProcessing, setLogoProcessing] = useState(false);
+  const [permissionCatalog, setPermissionCatalog] = useState<PermissionCatalogItem[]>([]);
+  const [roleTemplates, setRoleTemplates] = useState<Record<string, string[]>>({});
+  const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
+  const [customPermissionsEnabled, setCustomPermissionsEnabled] = useState(false);
 
   // User form state
   const [userForm, setUserForm] = useState({
@@ -60,6 +72,28 @@ export function AdminPage() {
     if (r === 'checking') return 'Checking';
     return String(r || '').replace(/_/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase());
   };
+
+  const getTemplatePermissions = (role: string) => {
+    return roleTemplates[normalizeRole(role)] || [];
+  };
+
+  const roleOptions = useMemo(() => {
+    const configured = Object.keys(roleTemplates);
+    if (configured.length > 0) {
+      return configured.sort((a, b) => a.localeCompare(b));
+    }
+    return ['staff', 'payroll_officer', 'checking', 'cpo', 'auditor', 'admin', 'hr_manager', 'cashier'];
+  }, [roleTemplates]);
+
+  const groupedPermissions = useMemo(() => {
+    const grouped: Record<string, PermissionCatalogItem[]> = {};
+    for (const permission of permissionCatalog) {
+      const moduleName = permission.module_name || 'general';
+      if (!grouped[moduleName]) grouped[moduleName] = [];
+      grouped[moduleName].push(permission);
+    }
+    return grouped;
+  }, [permissionCatalog]);
 
   const handleEditWorkflow = () => {
     setWorkflowStages([...(settings?.approval_workflow || [])].map((s: any) => ({
@@ -123,6 +157,23 @@ export function AdminPage() {
     loadData();
   }, [activeTab]);
 
+  useEffect(() => {
+    loadPermissionConfig();
+  }, []);
+
+  const loadPermissionConfig = async () => {
+    try {
+      const config = await userAPI.getPermissionCatalog();
+      setPermissionCatalog(Array.isArray(config?.permissions) ? config.permissions : []);
+      setRoleTemplates((config?.roleTemplates || {}) as Record<string, string[]>);
+      setSelectedPermissions((config?.roleTemplates?.staff || []) as string[]);
+    } catch (error) {
+      console.error('Failed to load permission catalog:', error);
+      setPermissionCatalog([]);
+      setRoleTemplates({});
+    }
+  };
+
   const loadData = async () => {
     try {
       if (activeTab === 'users') {
@@ -149,7 +200,7 @@ export function AdminPage() {
         {
           ...userForm,
           password_hash: userForm.password,
-          permissions: getRolePermissions(userForm.role),
+          permissions: selectedPermissions,
           must_change_password: true,
         },
         {
@@ -182,7 +233,7 @@ export function AdminPage() {
         editingUser.id,
         {
           ...userForm,
-          permissions: getRolePermissions(userForm.role),
+          permissions: selectedPermissions,
         }
       );
       showToast.success('User updated successfully');
@@ -343,23 +394,8 @@ export function AdminPage() {
       department: '',
       status: 'active',
     });
-  };
-
-  const getRolePermissions = (role: User['role']): string[] => {
-    const permissions: Record<User['role'], string[]> = {
-      admin: ['*'],
-      payroll_officer: ['payroll.create', 'payroll.edit', 'staff.view', 'staff.create', 'staff.edit'],
-      hr_manager: ['staff.create', 'staff.edit', 'staff.view', 'department.manage'],
-      reviewer: ['payroll.review', 'payroll.view', 'staff.view'],
-      checking: ['payroll.review', 'payroll.view', 'staff.view'],
-      approver: ['payroll.approve', 'payroll.view', 'staff.view'],
-      cpo: ['payroll.approve', 'payroll.view', 'staff.view'],
-      auditor: ['payroll.view', 'staff.view', 'audit.view'],
-      cashier: ['payment.execute', 'payroll.view'],
-      staff: ['payslip.view', 'profile.view'],
-      payroll_loader: ['payroll.view', 'payroll.load'],
-    };
-    return permissions[role];
+    setCustomPermissionsEnabled(false);
+    setSelectedPermissions(getTemplatePermissions('staff'));
   };
 
   const userColumns = [
@@ -407,6 +443,10 @@ export function AdminPage() {
                 department: row.department || '',
                 status: row.status,
               });
+              const existingPermissions = Array.isArray((row as any).permissions) ? (row as any).permissions : [];
+              const templatePermissions = getTemplatePermissions(row.role);
+              setSelectedPermissions(existingPermissions.length > 0 ? existingPermissions : templatePermissions);
+              setCustomPermissionsEnabled(existingPermissions.length > 0);
               setShowUserModal(true);
             }}
             className="p-1 hover:bg-gray-100 rounded"
@@ -457,6 +497,10 @@ export function AdminPage() {
           <button
             onClick={() => {
               setIdempotencyKey(crypto.randomUUID());
+              setEditingUser(null);
+              resetUserForm();
+              setSelectedPermissions(getTemplatePermissions('staff'));
+              setCustomPermissionsEnabled(false);
               setShowUserModal(true);
             }}
             className="bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90 flex items-center gap-2 transition-colors"
@@ -884,19 +928,86 @@ export function AdminPage() {
             </label>
             <select
               value={userForm.role}
-              onChange={(e) => setUserForm({ ...userForm, role: e.target.value as User['role'] })}
+              onChange={(e) => {
+                const nextRole = e.target.value as User['role'];
+                setUserForm({ ...userForm, role: nextRole });
+                if (!customPermissionsEnabled) {
+                  setSelectedPermissions(getTemplatePermissions(nextRole));
+                }
+              }}
               className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
               required
             >
-              <option value="staff">Staff</option>
-              <option value="payroll_officer">Payroll Officer</option>
-              <option value="checking">Checking</option>
-              <option value="cpo">CPO</option>
-              <option value="auditor">Auditor</option>
-              <option value="admin">Administrator</option>
-              <option value="hr_manager">HR Manager</option>
-              <option value="cashier">Cashier</option>
+              {roleOptions.map((role) => (
+                <option key={role} value={role}>
+                  {formatRoleLabel(role)}
+                </option>
+              ))}
             </select>
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="block text-sm font-medium text-foreground">
+                App Permissions
+              </label>
+              <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={customPermissionsEnabled}
+                  onChange={(e) => {
+                    const enabled = e.target.checked;
+                    setCustomPermissionsEnabled(enabled);
+                    if (!enabled) {
+                      setSelectedPermissions(getTemplatePermissions(userForm.role));
+                    }
+                  }}
+                  className="w-4 h-4 rounded border-border"
+                />
+                Customize permissions
+              </label>
+            </div>
+
+            {!customPermissionsEnabled && (
+              <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                Using role template permissions for <span className="font-medium text-foreground">{formatRoleLabel(userForm.role)}</span>.
+              </div>
+            )}
+
+            {customPermissionsEnabled && (
+              <div className="max-h-56 overflow-y-auto rounded-lg border border-border p-3 space-y-3">
+                {Object.keys(groupedPermissions).length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No permission catalog available.</p>
+                ) : (
+                  Object.entries(groupedPermissions).map(([moduleName, permissions]) => (
+                    <div key={moduleName} className="space-y-1">
+                      <p className="text-xs font-semibold uppercase text-muted-foreground">{moduleName}</p>
+                      {permissions.map((permission) => (
+                        <label key={permission.permission_key} className="flex items-start gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={selectedPermissions.includes(permission.permission_key)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedPermissions((prev) => Array.from(new Set([...prev, permission.permission_key])));
+                              } else {
+                                setSelectedPermissions((prev) => prev.filter((p) => p !== permission.permission_key));
+                              }
+                            }}
+                            className="mt-0.5 w-4 h-4 rounded border-border"
+                          />
+                          <span className="text-foreground">{permission.display_name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            <p className="text-xs text-muted-foreground">
+              Selected permissions: {selectedPermissions.length}
+            </p>
           </div>
 
           <div>
