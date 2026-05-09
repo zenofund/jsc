@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { 
   DollarSign, TrendingUp, Users, Clock, CheckCircle, XCircle, FileText,
   Plus, Edit2, Trash2, Download, Search, Building2,
@@ -198,6 +198,7 @@ function ApplicationsTab({
   const [assigningLoan, setAssigningLoan] = useState(false);
   const [staffList, setStaffList] = useState<Staff[]>([]);
   const [loanTypesList, setLoanTypesList] = useState<LoanType[]>([]);
+  const [staffSearchTerm, setStaffSearchTerm] = useState('');
 
   useEffect(() => {
     if (selectedApp) {
@@ -245,6 +246,17 @@ function ApplicationsTab({
     const staffId = staff.staff_number || 'N/A';
     return `${displayName} (${staffId})`;
   };
+
+  const filteredStaffList = useMemo(() => {
+    const q = staffSearchTerm.trim().toLowerCase();
+    if (!q) return staffList;
+
+    return staffList.filter((staff) => {
+      const staffNo = (staff.staff_number || '').toLowerCase();
+      const label = getStaffDisplayLabel(staff).toLowerCase();
+      return staffNo.includes(q) || label.includes(q);
+    });
+  }, [staffList, staffSearchTerm]);
 
   const filteredApplications = applications.filter((app) => {
       const matchesStatus = statusFilter === 'all' || app.status === statusFilter;
@@ -309,6 +321,7 @@ function ApplicationsTab({
         }
         
         setShowAssignModal(false);
+        setStaffSearchTerm('');
         setAssignLoanData({
           staffId: '',
           loanTypeId: '',
@@ -655,13 +668,26 @@ function ApplicationsTab({
       {/* Assign Loan Modal */}
       <Modal
           isOpen={showAssignModal}
-          onClose={() => setShowAssignModal(false)}
+          onClose={() => {
+            setShowAssignModal(false);
+            setStaffSearchTerm('');
+          }}
           title="Assign Loan to Staff"
           size="md"
         >
           <form onSubmit={handleAssignLoan} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-foreground mb-1">Select Staff *</label>
+              <div className="relative mb-2">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <input
+                  type="text"
+                  value={staffSearchTerm}
+                  onChange={(e) => setStaffSearchTerm(e.target.value)}
+                  placeholder="Search by name or staff ID..."
+                  className="w-full pl-9 pr-3 py-2 rounded-lg border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+              </div>
               <select
                 value={assignLoanData.staffId}
                 onChange={(e) => setAssignLoanData({ ...assignLoanData, staffId: e.target.value })}
@@ -669,11 +695,17 @@ function ApplicationsTab({
                 required
               >
                 <option value="">-- Select Staff --</option>
-                {staffList.map(staff => (
-                  <option key={staff.id} value={staff.id}>
-                    {getStaffDisplayLabel(staff)}
+                {filteredStaffList.length === 0 ? (
+                  <option value="" disabled>
+                    No staff match "{staffSearchTerm.trim()}"
                   </option>
-                ))}
+                ) : (
+                  filteredStaffList.map((staff) => (
+                    <option key={staff.id} value={staff.id}>
+                      {getStaffDisplayLabel(staff)}
+                    </option>
+                  ))
+                )}
               </select>
             </div>
 
@@ -749,7 +781,10 @@ function ApplicationsTab({
           <div className="flex justify-end gap-3 pt-4 border-t border-border mt-6">
             <button
               type="button"
-              onClick={() => setShowAssignModal(false)}
+                onClick={() => {
+                  setShowAssignModal(false);
+                  setStaffSearchTerm('');
+                }}
               className="px-4 py-2 rounded-lg text-foreground hover:bg-accent transition-colors"
               disabled={assigningLoan}
             >

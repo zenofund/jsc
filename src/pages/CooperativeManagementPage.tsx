@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Building2, Plus, Edit, Users, DollarSign, TrendingUp,
   Search, Filter, RefreshCw, X, Trash2, Eye, UserPlus,
@@ -165,8 +165,8 @@ export function CooperativeManagementPage() {
         setContributions(allContributions);
       }
 
-      // Load all staff for member registration
-      const response = await staffAPI.getAllStaff();
+      // Load all staff for member registration (fetch all pages, not first page only)
+      const response = await staffAPI.getAllStaff({ fetchAll: true, limit: 1000 });
       const rawData = Array.isArray(response) ? response : (response.data || []);
       
       // Map flat data to nested structure if needed
@@ -1701,12 +1701,41 @@ function MemberFormModal({
     monthly_contribution: 0,
     shares_owned: '',
   });
+  const [staffSearchTerm, setStaffSearchTerm] = useState('');
 
   const selectedCooperative = cooperatives.find(c => c.id === formData.cooperative_id);
   const shareCapitalValue = Number(selectedCooperative?.share_capital_value || 0);
   const hasShareCapitalValue = shareCapitalValue > 0;
   const shareCount = Number(formData.shares_owned || 0);
   const shareCapitalTotal = hasShareCapitalValue ? shareCount * shareCapitalValue : 0;
+  const getStaffDisplayLabel = (staff: Staff) => {
+    const staffWithFlatName = staff as unknown as {
+      first_name?: string;
+      last_name?: string;
+      full_name?: string;
+      staff_name?: string;
+    };
+    const first = (staffWithFlatName.first_name || staff.bio_data?.first_name || '').trim();
+    const last = (staffWithFlatName.last_name || staff.bio_data?.last_name || '').trim();
+    const fullName = `${first} ${last}`.trim();
+    const fallbackName = staffWithFlatName.full_name
+      || staffWithFlatName.staff_name
+      || 'Unknown Staff';
+    const displayName = fullName || fallbackName;
+    const staffId = staff.staff_number || 'N/A';
+    return `${displayName} (${staffId})`;
+  };
+
+  const filteredStaffList = useMemo(() => {
+    const q = staffSearchTerm.trim().toLowerCase();
+    if (!q) return staff;
+
+    return staff.filter((s) => {
+      const staffNo = (s.staff_number || '').toLowerCase();
+      const label = getStaffDisplayLabel(s).toLowerCase();
+      return staffNo.includes(q) || label.includes(q);
+    });
+  }, [staff, staffSearchTerm]);
 
   useEffect(() => {
     if (selectedCooperative) {
@@ -1728,7 +1757,15 @@ function MemberFormModal({
   };
 
   return (
-    <Modal isOpen={true} onClose={onClose} title="Register New Member" size="lg">
+    <Modal
+      isOpen={true}
+      onClose={() => {
+        setStaffSearchTerm('');
+        onClose();
+      }}
+      title="Register New Member"
+      size="lg"
+    >
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="block text-sm mb-2">Cooperative *</label>
@@ -1749,6 +1786,16 @@ function MemberFormModal({
 
         <div>
           <label className="block text-sm mb-2">Staff Member *</label>
+          <div className="relative mb-2">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <input
+              type="text"
+              value={staffSearchTerm}
+              onChange={(e) => setStaffSearchTerm(e.target.value)}
+              placeholder="Search by name or staff ID..."
+              className="w-full pl-9 pr-3 py-2 rounded-lg border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+          </div>
           <select
             value={formData.staff_id}
             onChange={(e) => setFormData({ ...formData, staff_id: e.target.value })}
@@ -1756,11 +1803,17 @@ function MemberFormModal({
             required
           >
             <option value="">Select Staff</option>
-            {staff.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.bio_data.last_name} {s.bio_data.first_name} {s.bio_data.middle_name} ({s.staff_number})
+            {filteredStaffList.length === 0 ? (
+              <option value="" disabled>
+                No staff match "{staffSearchTerm.trim()}"
               </option>
-            ))}
+            ) : (
+              filteredStaffList.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {getStaffDisplayLabel(s)}
+                </option>
+              ))
+            )}
           </select>
         </div>
 
@@ -1870,8 +1923,21 @@ function ContributionFormModal({
     payment_method: 'cash',
     receipt_number: '',
   });
+  const [memberSearchTerm, setMemberSearchTerm] = useState('');
 
   const filteredMembers = members.filter(m => m.cooperative_id === formData.cooperative_id);
+  const getMemberDisplayLabel = (m: CooperativeMember) => `${m.staff_name || 'Unknown Member'} (${m.member_number})`;
+  const filteredMemberList = useMemo(() => {
+    const q = memberSearchTerm.trim().toLowerCase();
+    if (!q) return filteredMembers;
+
+    return filteredMembers.filter((m) => {
+      const memberNo = (m.member_number || '').toLowerCase();
+      const staffNo = (m.staff_number || '').toLowerCase();
+      const label = getMemberDisplayLabel(m).toLowerCase();
+      return memberNo.includes(q) || staffNo.includes(q) || label.includes(q);
+    });
+  }, [filteredMembers, memberSearchTerm]);
   const selectedMember = members.find(m => m.id === formData.member_id);
 
   useEffect(() => {
@@ -1893,13 +1959,24 @@ function ContributionFormModal({
   };
 
   return (
-    <Modal isOpen={true} onClose={onClose} title="Record Contribution" size="lg">
+    <Modal
+      isOpen={true}
+      onClose={() => {
+        setMemberSearchTerm('');
+        onClose();
+      }}
+      title="Record Contribution"
+      size="lg"
+    >
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="block text-sm mb-2">Cooperative *</label>
           <select
             value={formData.cooperative_id}
-            onChange={(e) => setFormData({ ...formData, cooperative_id: e.target.value, member_id: '' })}
+            onChange={(e) => {
+              setFormData({ ...formData, cooperative_id: e.target.value, member_id: '' });
+              setMemberSearchTerm('');
+            }}
             className="w-full px-3 py-2 rounded-lg border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             required
           >
@@ -1914,6 +1991,17 @@ function ContributionFormModal({
 
         <div>
           <label className="block text-sm mb-2">Member *</label>
+          <div className="relative mb-2">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <input
+              type="text"
+              value={memberSearchTerm}
+              onChange={(e) => setMemberSearchTerm(e.target.value)}
+              placeholder="Search by name or staff/member ID..."
+              className="w-full pl-9 pr-3 py-2 rounded-lg border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              disabled={!formData.cooperative_id}
+            />
+          </div>
           <select
             value={formData.member_id}
             onChange={(e) => setFormData({ ...formData, member_id: e.target.value })}
@@ -1922,11 +2010,17 @@ function ContributionFormModal({
             disabled={!formData.cooperative_id}
           >
             <option value="">Select Member</option>
-            {filteredMembers.map((member) => (
-              <option key={member.id} value={member.id}>
-                {member.staff_name} ({member.member_number})
+            {filteredMemberList.length === 0 ? (
+              <option value="" disabled>
+                No staff match "{memberSearchTerm.trim()}"
               </option>
-            ))}
+            ) : (
+              filteredMemberList.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {getMemberDisplayLabel(member)}
+                </option>
+              ))
+            )}
           </select>
         </div>
 
