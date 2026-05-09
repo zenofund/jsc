@@ -80,7 +80,9 @@ export function AdminPage() {
   const roleOptions = useMemo(() => {
     const configured = Object.keys(roleTemplates);
     if (configured.length > 0) {
-      return configured.sort((a, b) => a.localeCompare(b));
+      // De-duplicate alias roles so UI does not show both reviewer/checking or approver/cpo.
+      return Array.from(new Set(configured.map((role) => normalizeRole(role))))
+        .sort((a, b) => a.localeCompare(b));
     }
     return ['staff', 'payroll_officer', 'checking', 'cpo', 'auditor', 'admin', 'hr_manager', 'cashier'];
   }, [roleTemplates]);
