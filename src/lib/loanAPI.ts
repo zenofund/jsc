@@ -738,8 +738,11 @@ export const loanStatsAPI = {
     const disbursements = await makeApiRequest('/loans/disbursements', { method: 'GET' });
     const members = await makeApiRequest('/cooperatives/members', { method: 'GET' });
 
+    const toNumber = (value: unknown) => Number(value || 0);
     const activeDisbursements = disbursements.filter((d: any) => d.status === 'active');
-    const pendingApplications = applications.filter((a: any) => a.status === 'pending' || a.status === 'guarantor_pending');
+    const pendingApplications = applications.filter((a: any) =>
+      ['pending', 'guarantor_pending', 'under_review'].includes(String(a.status)),
+    );
 
     return {
       total_applications: applications.length,
@@ -749,13 +752,13 @@ export const loanStatsAPI = {
       active_loans: activeDisbursements.length,
       completed_loans: disbursements.filter((d: any) => d.status === 'completed').length,
       total_disbursed: disbursements.reduce(
-        (sum: any, d: any) => sum + parseFloat(d.amount_disbursed ?? d.principal_amount ?? 0),
+        (sum: number, d: any) => sum + toNumber(d.amount_disbursed ?? d.principal_amount),
         0,
       ),
-      total_outstanding: activeDisbursements.reduce((sum: any, d: any) => sum + parseFloat(d.balance_outstanding || 0), 0),
-      total_repaid: disbursements.reduce((sum: any, d: any) => sum + parseFloat(d.total_repaid || 0), 0),
+      total_outstanding: activeDisbursements.reduce((sum: number, d: any) => sum + toNumber(d.balance_outstanding), 0),
+      total_repaid: disbursements.reduce((sum: number, d: any) => sum + toNumber(d.total_repaid), 0),
       cooperative_members: members.filter((m: any) => m.status === 'active').length,
-      total_contributions: members.reduce((sum: any, m: any) => sum + parseFloat(m.total_contributions || 0), 0),
+      total_contributions: members.reduce((sum: number, m: any) => sum + toNumber(m.total_contributions), 0),
     };
   },
 

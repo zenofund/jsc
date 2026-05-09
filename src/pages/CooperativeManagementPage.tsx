@@ -134,17 +134,18 @@ export function CooperativeManagementPage() {
   });
 
   useEffect(() => {
-    loadData();
-    loadStats();
+    reloadDashboardData();
   }, [viewMode]);
 
   const loadStats = async () => {
     try {
       const stats = await cooperativeAPI.getCooperativeStats(''); // Empty ID for global stats
       setDashboardStats({
-        total_cooperatives: parseInt(stats.total_cooperatives),
-        total_members: parseInt(stats.total_members),
-        total_contribution_transactions: parseInt(stats.total_contribution_transactions || stats.total_contributions_count || 0)
+        total_cooperatives: Number(stats?.total_cooperatives || 0),
+        total_members: Number(stats?.total_members || 0),
+        total_contribution_transactions: Number(
+          stats?.total_contribution_transactions ?? stats?.total_contributions_count ?? 0,
+        ),
       });
     } catch (error) {
       console.error('Failed to load dashboard stats:', error);
@@ -230,6 +231,10 @@ export function CooperativeManagementPage() {
     }
   };
 
+  const reloadDashboardData = async () => {
+    await Promise.all([loadData(), loadStats()]);
+  };
+
   const handleCreateCooperative = async (formData: CooperativeFormData) => {
     try {
       setIsSubmitting(true);
@@ -266,7 +271,7 @@ export function CooperativeManagementPage() {
       await cooperativeAPI.create(payload as any);
       toast.success('Cooperative created successfully');
       setShowCooperativeModal(false);
-      loadData();
+      reloadDashboardData();
     } catch (error: any) {
       toast.error(error.message || 'Failed to create cooperative');
     } finally {
@@ -290,7 +295,7 @@ export function CooperativeManagementPage() {
       toast.success('Cooperative updated successfully');
       setShowCooperativeModal(false);
       setEditingCooperative(null);
-      loadData();
+      reloadDashboardData();
     } catch (error: any) {
       toast.error(error.message || 'Failed to update cooperative');
     } finally {
@@ -310,7 +315,7 @@ export function CooperativeManagementPage() {
       await cooperativeAPI.delete(cooperativeToDelete.id);
       toast.success('Cooperative deleted successfully');
       setCooperativeToDelete(null);
-      loadData();
+      reloadDashboardData();
     } catch (error: any) {
       toast.error(error.message || 'Failed to delete cooperative');
     } finally {
@@ -327,7 +332,7 @@ export function CooperativeManagementPage() {
       });
       toast.success('Member registered successfully');
       setShowMemberModal(false);
-      loadData();
+      reloadDashboardData();
     } catch (error: any) {
       toast.error(error.message || 'Failed to register member');
     } finally {
@@ -343,7 +348,7 @@ export function CooperativeManagementPage() {
       });
       toast.success('Contribution recorded successfully');
       setShowContributionModal(false);
-      loadData();
+      reloadDashboardData();
     } catch (error: any) {
       toast.error(error.message || 'Failed to record contribution');
     } finally {
@@ -418,7 +423,7 @@ export function CooperativeManagementPage() {
       }
 
       if (!dryRun) {
-        loadData();
+        reloadDashboardData();
       }
       return result;
     } catch (error: any) {
@@ -435,7 +440,7 @@ export function CooperativeManagementPage() {
       await cooperativeAPI.withdraw({ memberId, amount, reason });
       toast.success('Withdrawal processed successfully');
       setShowWithdrawalModal(false);
-      loadData();
+      reloadDashboardData();
     } catch (error: any) {
       toast.error(error.message || 'Failed to process withdrawal');
     } finally {
@@ -449,7 +454,7 @@ export function CooperativeManagementPage() {
       await cooperativeAPI.distributeDividends(cooperativeId, amount);
       toast.success('Dividends distributed successfully');
       setShowDividendModal(false);
-      loadData();
+      reloadDashboardData();
     } catch (error: any) {
       toast.error(error.message || 'Failed to distribute dividends');
     } finally {
@@ -488,7 +493,7 @@ export function CooperativeManagementPage() {
       setUpdatingStatusId(memberId);
       await cooperativeAPI.updateMemberStatus(memberId, status, reason);
       toast.success(`Member status updated to ${status}`);
-      loadData();
+      reloadDashboardData();
     } catch (error: any) {
       toast.error(error.message || 'Failed to update member status');
     } finally {
@@ -511,7 +516,7 @@ export function CooperativeManagementPage() {
       await cooperativeAPI.deleteMember(memberToDelete.id);
       toast.success('Member deleted successfully');
       setMemberToDelete(null);
-      loadData();
+      reloadDashboardData();
     } catch (error: any) {
       toast.error(error.message || 'Failed to delete member');
     } finally {
@@ -531,7 +536,7 @@ export function CooperativeManagementPage() {
       await cooperativeAPI.deleteContribution(contributionToDelete.id);
       toast.success('Contribution deleted successfully');
       setContributionToDelete(null);
-      loadData();
+      reloadDashboardData();
     } catch (error: any) {
       toast.error(error.message || 'Failed to delete contribution');
     } finally {
@@ -604,7 +609,7 @@ export function CooperativeManagementPage() {
         </div>
         <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
           <button
-            onClick={loadData}
+            onClick={reloadDashboardData}
             className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-card hover:bg-accent border border-border transition-colors"
           >
             <RefreshCw className="w-4 h-4" />
