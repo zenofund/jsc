@@ -32,6 +32,18 @@ const CONMESS_2024_STRUCTURE = {
   17: [895000, 936170, 979540, 1025190, 1073200, 1123650, 1176620, 1232210, 1290510, 1351630, 1415700, 1482840, 1553180, 1626850, 1703980],
 };
 
+const AVAILABLE_GRADE_LEVELS = [
+  '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', 
+  '11', '12', '13', '14', '15', '16', '17', 'CAT1', 'CAT4'
+];
+
+const AVAILABLE_EMPLOYMENT_TYPES = [
+  'Permanent',
+  'Contract',
+  'Probation',
+  'Temporary'
+];
+
 export function PayrollSetupPage() {
   const { user } = useAuth();
   const confirm = useConfirm();
@@ -323,6 +335,8 @@ export function PayrollSetupPage() {
       is_pensionable: false,
       status: 'active',
       appliesToAll: true,
+      excluded_grades: [],
+      excluded_employment_types: [],
     });
   };
 
@@ -386,6 +400,8 @@ export function PayrollSetupPage() {
       is_statutory: false,
       status: 'active',
       appliesToAll: true,
+      excluded_grades: [],
+      excluded_employment_types: [],
     });
   };
 
@@ -704,6 +720,7 @@ export function PayrollSetupPage() {
                     <th className="px-6 py-4 text-left text-xs text-muted-foreground uppercase">Taxable</th>
                     <th className="px-6 py-4 text-left text-xs text-muted-foreground uppercase">Pensionable</th>
                     <th className="px-6 py-4 text-left text-xs text-muted-foreground uppercase">Global</th>
+                    <th className="px-6 py-4 text-left text-xs text-muted-foreground uppercase">Exclusions</th>
                     <th className="px-6 py-4 text-left text-xs text-muted-foreground uppercase">Status</th>
                     <th className="px-6 py-4 text-left text-xs text-muted-foreground uppercase">Actions</th>
                   </tr>
@@ -711,7 +728,7 @@ export function PayrollSetupPage() {
                 <tbody className="divide-y divide-border">
                   {allowances.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="px-6 py-12 text-center text-muted-foreground">
+                      <td colSpan={10} className="px-6 py-12 text-center text-muted-foreground">
                         No allowances configured
                       </td>
                     </tr>
@@ -749,6 +766,18 @@ export function PayrollSetupPage() {
                             <X className="w-4 h-4 text-red-600" />
                           )}
                         </td>
+                        <td className="px-6 py-4 text-sm text-card-foreground">
+                          {(() => {
+                            const eGrades = typeof allowance.excluded_grades === 'string' ? JSON.parse(allowance.excluded_grades) : allowance.excluded_grades || [];
+                            const eTypes = typeof allowance.excluded_employment_types === 'string' ? JSON.parse(allowance.excluded_employment_types) : allowance.excluded_employment_types || [];
+                            const total = eGrades.length + eTypes.length;
+                            return total > 0 ? (
+                              <span className="text-xs bg-muted px-2 py-1 rounded-full">{total} rules</span>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            );
+                          })()}
+                        </td>
                         <td className="px-6 py-4">
                           <StatusBadge status={allowance.status} />
                         </td>
@@ -767,6 +796,8 @@ export function PayrollSetupPage() {
                                   is_pensionable: allowance.is_pensionable,
                                   appliesToAll: allowance.applies_to_all,
                                   status: allowance.status,
+                                  excluded_grades: allowance.excluded_grades ? (typeof allowance.excluded_grades === 'string' ? JSON.parse(allowance.excluded_grades) : allowance.excluded_grades) : [],
+                                  excluded_employment_types: allowance.excluded_employment_types ? (typeof allowance.excluded_employment_types === 'string' ? JSON.parse(allowance.excluded_employment_types) : allowance.excluded_employment_types) : [],
                                 });
                                 setShowAllowanceModal(true);
                               }}
@@ -830,6 +861,7 @@ export function PayrollSetupPage() {
                     <th className="px-6 py-4 text-left text-xs text-muted-foreground uppercase">Amount/Rate</th>
                     <th className="px-6 py-4 text-left text-xs text-muted-foreground uppercase">Statutory</th>
                     <th className="px-6 py-4 text-left text-xs text-muted-foreground uppercase">Global</th>
+                    <th className="px-6 py-4 text-left text-xs text-muted-foreground uppercase">Exclusions</th>
                     <th className="px-6 py-4 text-left text-xs text-muted-foreground uppercase">Status</th>
                     <th className="px-6 py-4 text-left text-xs text-muted-foreground uppercase">Actions</th>
                   </tr>
@@ -837,7 +869,7 @@ export function PayrollSetupPage() {
                 <tbody className="divide-y divide-border">
                   {deductions.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-6 py-12 text-center text-muted-foreground">
+                      <td colSpan={8} className="px-6 py-12 text-center text-muted-foreground">
                         No deductions configured
                       </td>
                     </tr>
@@ -868,6 +900,18 @@ export function PayrollSetupPage() {
                             <X className="w-4 h-4 text-red-600" />
                           )}
                         </td>
+                        <td className="px-6 py-4 text-sm text-card-foreground">
+                          {(() => {
+                            const eGrades = typeof deduction.excluded_grades === 'string' ? JSON.parse(deduction.excluded_grades) : deduction.excluded_grades || [];
+                            const eTypes = typeof deduction.excluded_employment_types === 'string' ? JSON.parse(deduction.excluded_employment_types) : deduction.excluded_employment_types || [];
+                            const total = eGrades.length + eTypes.length;
+                            return total > 0 ? (
+                              <span className="text-xs bg-muted px-2 py-1 rounded-full">{total} rules</span>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            );
+                          })()}
+                        </td>
                         <td className="px-6 py-4">
                           <StatusBadge status={deduction.status} />
                         </td>
@@ -885,6 +929,8 @@ export function PayrollSetupPage() {
                                   is_statutory: deduction.is_statutory,
                                   appliesToAll: deduction.applies_to_all ?? true,
                                   status: deduction.status,
+                                  excluded_grades: deduction.excluded_grades ? (typeof deduction.excluded_grades === 'string' ? JSON.parse(deduction.excluded_grades) : deduction.excluded_grades) : [],
+                                  excluded_employment_types: deduction.excluded_employment_types ? (typeof deduction.excluded_employment_types === 'string' ? JSON.parse(deduction.excluded_employment_types) : deduction.excluded_employment_types) : [],
                                 });
                                 setShowDeductionModal(true);
                               }}
@@ -1158,6 +1204,100 @@ export function PayrollSetupPage() {
                 </div>
               </div>
 
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm mb-1 text-card-foreground">Excluded Grade Levels</label>
+                  <div className="max-h-32 overflow-y-auto border border-border rounded p-2 bg-input-background space-y-1">
+                    {AVAILABLE_GRADE_LEVELS.map(gl => (
+                      <label key={gl} className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={allowanceForm.excluded_grades.includes(gl)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setAllowanceForm({ ...allowanceForm, excluded_grades: [...allowanceForm.excluded_grades, gl] });
+                            } else {
+                              setAllowanceForm({ ...allowanceForm, excluded_grades: allowanceForm.excluded_grades.filter(g => g !== gl) });
+                            }
+                          }}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm text-card-foreground">{gl}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm mb-1 text-card-foreground">Excluded Employment Types</label>
+                  <div className="max-h-32 overflow-y-auto border border-border rounded p-2 bg-input-background space-y-1">
+                    {AVAILABLE_EMPLOYMENT_TYPES.map(et => (
+                      <label key={et} className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={allowanceForm.excluded_employment_types.includes(et)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setAllowanceForm({ ...allowanceForm, excluded_employment_types: [...allowanceForm.excluded_employment_types, et] });
+                            } else {
+                              setAllowanceForm({ ...allowanceForm, excluded_employment_types: allowanceForm.excluded_employment_types.filter(eType => eType !== et) });
+                            }
+                          }}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm text-card-foreground">{et}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm mb-1 text-card-foreground">Excluded Grade Levels</label>
+                  <div className="max-h-32 overflow-y-auto border border-border rounded p-2 bg-input-background space-y-1">
+                    {AVAILABLE_GRADE_LEVELS.map(gl => (
+                      <label key={gl} className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={deductionForm.excluded_grades.includes(gl)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setDeductionForm({ ...deductionForm, excluded_grades: [...deductionForm.excluded_grades, gl] });
+                            } else {
+                              setDeductionForm({ ...deductionForm, excluded_grades: deductionForm.excluded_grades.filter(g => g !== gl) });
+                            }
+                          }}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm text-card-foreground">{gl}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm mb-1 text-card-foreground">Excluded Employment Types</label>
+                  <div className="max-h-32 overflow-y-auto border border-border rounded p-2 bg-input-background space-y-1">
+                    {AVAILABLE_EMPLOYMENT_TYPES.map(et => (
+                      <label key={et} className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={deductionForm.excluded_employment_types.includes(et)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setDeductionForm({ ...deductionForm, excluded_employment_types: [...deductionForm.excluded_employment_types, et] });
+                            } else {
+                              setDeductionForm({ ...deductionForm, excluded_employment_types: deductionForm.excluded_employment_types.filter(eType => eType !== et) });
+                            }
+                          }}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm text-card-foreground">{et}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
               <div>
                 <label className="block text-sm mb-1 text-card-foreground">Status *</label>
                 <select
@@ -1375,4 +1515,12 @@ export function PayrollSetupPage() {
       )}
 
       {/* Upload Modal */}
-      {showUploadModal &&
+      {showUploadModal && (
+        <SalaryStructureUpload
+          onDataParsed={handleUploadedData}
+          onClose={() => setShowUploadModal(false)}
+        />
+      )}
+    </div>
+  );
+}

@@ -579,6 +579,8 @@ export class PayrollService {
         }
       }
 
+      const isContractStaff = staffMember.employment_type === 'Contract';
+
       // Calculate tax (Now passing actual deduction amounts for relief)
       const taxDetails = this.calculatePAYE(
         grossPay, 
@@ -1829,4 +1831,12 @@ export class PayrollService {
       JOIN payroll_batches pb ON wa.payroll_batch_id = pb.id
       WHERE ${
         isAuditor
-  
+          ? "LOWER(wa.approver_role) = 'auditor'"
+          : 'wa.approver_id = $1'
+      }
+        AND (wa.status = 'approved' OR wa.status = 'rejected')
+      ORDER BY wa.action_date DESC
+    `;
+    return this.databaseService.query(query, isAuditor ? [] : [userId]);
+  }
+}
