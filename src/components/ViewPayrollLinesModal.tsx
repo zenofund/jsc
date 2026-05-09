@@ -53,8 +53,23 @@ export function ViewPayrollLinesModal({
     const aGrade = getGradeKey(a.grade_level);
     const bGrade = getGradeKey(b.grade_level);
 
-    if (aGrade.isNumeric !== bGrade.isNumeric) return aGrade.isNumeric ? -1 : 1;
+    // Apply strict hierarchy for CAT4 -> CAT1 -> Others
+    const categoryPriority = (grade: string) => {
+      const g = grade.replace(/[\s-]+/g, '');
+      if (g === 'CAT4') return 0;
+      if (g === 'CAT1') return 1;
+      return 2;
+    };
+    
+    const aPriority = categoryPriority(aGrade.raw);
+    const bPriority = categoryPriority(bGrade.raw);
 
+    // Force CAT4 and CAT1 to top, regardless of direction. 
+    // Or if we want them to flip when direction flips, we multiply by dir. 
+    // Since 'desc' is default and we want CAT4 on top during 'desc', we need to invert priority.
+    if (aPriority !== bPriority) return (aPriority - bPriority) * -dir;
+
+    // For numeric grades, sort highest to lowest by default ('desc' puts 17 above 3)
     if (aGrade.num !== null && bGrade.num !== null && aGrade.num !== bGrade.num) {
       return (aGrade.num - bGrade.num) * dir;
     }
@@ -228,7 +243,10 @@ export function ViewPayrollLinesModal({
       { id: 'total_deductions', header: 'Total Ded.', isMoney: true, get: (line) => toCsvMoney(line.total_deductions) },
       { id: 'net_pay', header: 'Net Pay', isMoney: true, get: (line) => toCsvMoney(line.net_pay) },
       { id: 'bank_code', header: 'Bank Code', isMoney: false, get: (line) => getBankCode((line as any).bank_name) },
-      { id: 'account_number', header: 'Account Number', isMoney: false, get: (line) => String((line as any).account_number ?? '') },
+      { id: 'account_number', header: 'Account Number', isMoney: false, get: (line) => {
+        const acc = String((line as any).account_number ?? '').trim();
+        return acc ? `="${acc}"` : '';
+      } },
     ];
 
     const moneyTotals = new Map<string, number>();

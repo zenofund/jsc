@@ -249,10 +249,11 @@ export function ReportsPage() {
           const headers = ['STAFF NUMBER', 'STAFF NAME', 'ACCOUNT NUMBER', 'NET PAY'];
           csv += csvRow(headers);
           (bank.lines || []).forEach((l: any) => {
+            const acc = String(l.account_number ?? '').trim();
             csv += csvRow([
               l.staff_number,
               l.staff_name,
-              l.account_number,
+              acc ? `="${acc}"` : '',
               formatCurrency(l.net_pay || 0),
             ]);
           });
@@ -352,10 +353,11 @@ export function ReportsPage() {
 
       csv += csvRow(['STAFF NUMBER', 'STAFF NAME', 'ACCOUNT NUMBER', 'NET PAY']);
       (selectedBank.lines || []).forEach((l: any) => {
+        const acc = String(l.account_number ?? '').trim();
         csv += csvRow([
           l.staff_number,
           l.staff_name,
-          l.account_number,
+          acc ? `="${acc}"` : '',
           formatCurrency(l.net_pay || 0),
         ]);
       });
