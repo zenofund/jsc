@@ -1251,52 +1251,7 @@ export function PayrollSetupPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm mb-1 text-card-foreground">Excluded Grade Levels</label>
-                  <div className="max-h-32 overflow-y-auto border border-border rounded p-2 bg-input-background space-y-1">
-                    {AVAILABLE_GRADE_LEVELS.map(gl => (
-                      <label key={gl} className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={deductionForm.excluded_grades.includes(gl)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setDeductionForm({ ...deductionForm, excluded_grades: [...deductionForm.excluded_grades, gl] });
-                            } else {
-                              setDeductionForm({ ...deductionForm, excluded_grades: deductionForm.excluded_grades.filter(g => g !== gl) });
-                            }
-                          }}
-                          className="w-4 h-4"
-                        />
-                        <span className="text-sm text-card-foreground">{gl}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm mb-1 text-card-foreground">Excluded Employment Types</label>
-                  <div className="max-h-32 overflow-y-auto border border-border rounded p-2 bg-input-background space-y-1">
-                    {AVAILABLE_EMPLOYMENT_TYPES.map(et => (
-                      <label key={et} className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={deductionForm.excluded_employment_types.includes(et)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setDeductionForm({ ...deductionForm, excluded_employment_types: [...deductionForm.excluded_employment_types, et] });
-                            } else {
-                              setDeductionForm({ ...deductionForm, excluded_employment_types: deductionForm.excluded_employment_types.filter(eType => eType !== et) });
-                            }
-                          }}
-                          className="w-4 h-4"
-                        />
-                        <span className="text-sm text-card-foreground">{et}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </div>
+
 
               <div>
                 <label className="block text-sm mb-1 text-card-foreground">Status *</label>
@@ -1468,6 +1423,53 @@ export function PayrollSetupPage() {
                     />
                     <span className="text-sm text-card-foreground">Applies to All Staff</span>
                   </label>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm mb-1 text-card-foreground">Excluded Grade Levels</label>
+                  <div className="max-h-32 overflow-y-auto border border-border rounded p-2 bg-input-background space-y-1">
+                    {AVAILABLE_GRADE_LEVELS.map(gl => (
+                      <label key={gl} className="flex items-center gap-2">     
+                        <input
+                          type="checkbox"
+                          checked={deductionForm.excluded_grades.includes(gl)} 
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setDeductionForm({ ...deductionForm, excluded_grades: [...deductionForm.excluded_grades, gl] });
+                            } else {
+                              setDeductionForm({ ...deductionForm, excluded_grades: deductionForm.excluded_grades.filter(g => g !== gl) });
+                            }
+                          }}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm text-card-foreground">{gl}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm mb-1 text-card-foreground">Excluded Employment Types</label>
+                  <div className="max-h-32 overflow-y-auto border border-border rounded p-2 bg-input-background space-y-1">
+                    {AVAILABLE_EMPLOYMENT_TYPES.map(et => (
+                      <label key={et} className="flex items-center gap-2">     
+                        <input
+                          type="checkbox"
+                          checked={deductionForm.excluded_employment_types.includes(et)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setDeductionForm({ ...deductionForm, excluded_employment_types: [...deductionForm.excluded_employment_types, et] });
+                            } else {
+                              setDeductionForm({ ...deductionForm, excluded_employment_types: deductionForm.excluded_employment_types.filter(eType => eType !== et) });
+                            }
+                          }}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm text-card-foreground">{et}</span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
               </div>
 
