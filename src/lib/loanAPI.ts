@@ -440,6 +440,23 @@ export const loanMigrationAPI = {
 // ==================== LOAN REPAYMENTS ====================
 
 export const repaymentAPI = {
+  // Pay off a loan in full
+  async payOff(data: {
+    disbursementId: string;
+    amount: number;
+    month?: string;
+  }) {
+    const repaymentMonth = data.month || new Date().toISOString().slice(0, 7);
+    return makeApiRequest('/loans/repayments', {
+      method: 'POST',
+      body: JSON.stringify({
+        disbursementId: data.disbursementId,
+        amount: data.amount,
+        month: repaymentMonth,
+      }),
+    });
+  },
+
   // Record loan repayment (usually from payroll)
   async create(data: {
     disbursement_id: string;

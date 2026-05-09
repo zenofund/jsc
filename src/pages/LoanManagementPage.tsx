@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useConfirm } from '../contexts/ConfirmContext';
-import { loanApplicationAPI, loanTypeAPI, disbursementAPI, loanStatsAPI, cooperativeAPI } from '../lib/loanAPI';
+import { loanApplicationAPI, loanTypeAPI, disbursementAPI, loanStatsAPI, cooperativeAPI, repaymentAPI } from '../lib/loanAPI';
 import { staffAPI } from '../lib/api-client';
 import type { LoanType, LoanApplication, LoanDisbursement, Cooperative, Staff } from '../types/entities';
 import { PageSkeleton } from '../components/PageLoader';
@@ -112,7 +112,7 @@ export function LoanManagementPage() {
         <LoanTypesTab loanTypes={loanTypes} onRefresh={loadData} />
       )}
       {activeTab === 'disbursements' && (
-        <DisbursementsTab disbursements={disbursements} />
+        <DisbursementsTab disbursements={disbursements} onRefresh={loadData} />
       )}
       {activeTab === 'reports' && <ReportsTab />}
     </div>
@@ -1209,9 +1209,20 @@ function LoanTypesTab({
 }
 
 // Disbursements Tab
-function DisbursementsTab({ disbursements }: { disbursements: LoanDisbursement[] }) {
+function DisbursementsTab({
+  disbursements,
+  onRefresh,
+}: {
+  disbursements: LoanDisbursement[];
+  onRefresh: () => Promise<void>;
+}) {
   const [showStatementModal, setShowStatementModal] = useState(false);
   const [statement, setStatement] = useState<any>(null);
+  const [payoffModal, setPayoffModal] = useState<{ open: boolean; disbursement: LoanDisbursement | null }>({
+    open: false,
+    disbursement: null,
+  });
+  const [isPayingOff, setIsPayingOff] = useState(false);
 
   const viewStatement = async (disbId: string) => {
     try {
@@ -1220,6 +1231,42 @@ function DisbursementsTab({ disbursements }: { disbursements: LoanDisbursement[]
       setShowStatementModal(true);
     } catch (error) {
       console.error('Error loading statement:', error);
+    }
+  };
+
+  const openPayoffModal = (disbursement: LoanDisbursement) => {
+    setPayoffModal({ open: true, disbursement });
+  };
+
+  const closePayoffModal = () => {
+    if (isPayingOff) return;
+    setPayoffModal({ open: false, disbursement: null });
+  };
+
+  const handlePayOff = async () => {
+    const disbursement = payoffModal.disbursement;
+    if (!disbursement) return;
+
+    const outstanding = Number(disbursement.balance_outstanding || 0);
+    if (outstanding <= 0) {
+      showToast.error('This loan has no outstanding balance.');
+      closePayoffModal();
+      return;
+    }
+
+    try {
+      setIsPayingOff(true);
+      await repaymentAPI.payOff({
+        disbursementId: disbursement.id,
+        amount: outstanding,
+      });
+      showToast.success('Loan paid off and closed successfully.');
+      closePayoffModal();
+      await onRefresh();
+    } catch (error: any) {
+      showToast.error(error?.message || 'Failed to pay off loan');
+    } finally {
+      setIsPayingOff(false);
     }
   };
 
@@ -1281,12 +1328,22 @@ function DisbursementsTab({ disbursements }: { disbursements: LoanDisbursement[]
                       </span>
                     </td>
                     <td className="px-6 py-4 text-center">
-                      <button
-                        onClick={() => viewStatement(disb.id)}
-                        className="px-3 py-1 bg-primary hover:bg-primary/90 text-primary-foreground rounded text-sm transition-colors"
-                      >
-                        Statement
-                      </button>
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          onClick={() => viewStatement(disb.id)}
+                          className="px-3 py-1 bg-primary hover:bg-primary/90 text-primary-foreground rounded text-sm transition-colors"
+                        >
+                          Statement
+                        </button>
+                        {disb.status === 'active' && Number(disb.balance_outstanding || 0) > 0 && (
+                          <button
+                            onClick={() => openPayoffModal(disb)}
+                            className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-sm transition-colors"
+                          >
+                            Pay Off
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -1349,6 +1406,51 @@ function DisbursementsTab({ disbursements }: { disbursements: LoanDisbursement[]
             </div>
           </div>
         </div>
+      )}
+
+      {payoffModal.open && payoffModal.disbursement && (
+        <Modal
+          isOpen={payoffModal.open}
+          onClose={closePayoffModal}
+          title="Pay Off Loan"
+          size="md"
+        >
+          <div className="space-y-4">
+            <div className="rounded-lg bg-muted p-4 space-y-2">
+              <div className="text-sm text-muted-foreground">Staff</div>
+              <div className="text-sm text-card-foreground">
+                {payoffModal.disbursement.staff_name} ({payoffModal.disbursement.staff_number})
+              </div>
+              <div className="text-sm text-muted-foreground mt-2">Outstanding Balance</div>
+              <div className="text-lg font-semibold text-card-foreground">
+                {formatCurrency(Number(payoffModal.disbursement.balance_outstanding || 0))}
+              </div>
+            </div>
+
+            <p className="text-sm text-muted-foreground">
+              This will record a full repayment for the outstanding balance and close the loan.
+            </p>
+
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closePayoffModal}
+                disabled={isPayingOff}
+                className="px-4 py-2 rounded-lg border border-border hover:bg-accent disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handlePayOff}
+                disabled={isPayingOff}
+                className="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
+              >
+                {isPayingOff ? 'Processing...' : 'Confirm Pay Off'}
+              </button>
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   );
