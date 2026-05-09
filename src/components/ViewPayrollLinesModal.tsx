@@ -105,7 +105,13 @@ export function ViewPayrollLinesModal({
     return getBankByName(raw)?.code || '';
   };
 
-  const gradeStepText = (line: PayrollLine) => `${String(line.grade_level ?? '').trim()}/${String(line.step ?? '').trim()}`;
+  const gradeStepText = (line: PayrollLine) => {
+    let gl = String(line.grade_level ?? '').trim();
+    if (gl && !gl.toUpperCase().startsWith('GL') && !gl.toUpperCase().startsWith('CAT')) {
+      gl = `GL ${gl}`;
+    }
+    return `${gl}/${String(line.step ?? '').trim()}`;
+  };
 
   const itemKey = (item: any) => {
     const code = String(item?.code ?? '').trim();
@@ -191,22 +197,35 @@ export function ViewPayrollLinesModal({
       { id: 'staff_number', header: 'Staff Number', isMoney: false, get: (line) => String(line.staff_number ?? '') },
       { id: 'staff_name', header: 'Staff Name', isMoney: false, get: (line) => String(line.staff_name ?? '') },
       { id: 'grade_step', header: 'Grade/Step', isMoney: false, get: (line) => gradeStepText(line) },
-      { id: 'basic_salary', header: 'Basic Salary', isMoney: true, get: (line) => toCsvMoney(line.basic_salary) },
-      ...allowanceKeys.map((key) => ({
-        id: `allowance:${key}`,
-        header: allowanceKeyToLabel.get(key) ?? key,
-        isMoney: true,
-        get: (line: PayrollLine) => toCsvMoney(getItemAmount((line as any).allowances, key)),
-      })),
-      { id: 'total_allowances', header: 'Total Allowances', isMoney: true, get: (line) => toCsvMoney(lineTotalAllowances(line)) },
+      { id: 'basic_salary', header: 'Basic', isMoney: true, get: (line) => toCsvMoney(line.basic_salary) },
+      ...allowanceKeys.map((key) => {
+        let header = allowanceKeyToLabel.get(key) ?? key;
+        if (header.includes('Consolidated All.')) header = 'Allowances';
+        return {
+          id: `allowance:${key}`,
+          header,
+          isMoney: true,
+          get: (line: PayrollLine) => toCsvMoney(getItemAmount((line as any).allowances, key)),
+        };
+      }),
+      { id: 'total_allowances', header: 'Tot. All.', isMoney: true, get: (line) => toCsvMoney(lineTotalAllowances(line)) },
       { id: 'gross_pay', header: 'Gross Pay', isMoney: true, get: (line) => toCsvMoney(line.gross_pay) },
-      ...deductionKeys.map((key) => ({
-        id: `deduction:${key}`,
-        header: deductionKeyToLabel.get(key) ?? key,
-        isMoney: true,
-        get: (line: PayrollLine) => toCsvMoney(getItemAmount((line as any).deductions, key)),
-      })),
-      { id: 'total_deductions', header: 'Total Deductions', isMoney: true, get: (line) => toCsvMoney(line.total_deductions) },
+      ...deductionKeys.map((key) => {
+        let header = deductionKeyToLabel.get(key) ?? key;
+        if (header.includes('PAYE') || header.includes('Paye') || header.toLowerCase() === 'paye tax' || header.toLowerCase() === 'tax') header = 'Paye';
+        else if (header.includes('Pension') || header.includes('PENSION')) header = 'Pension';
+        else if (header.includes('Union') || header.includes('UNION')) header = 'Union';
+        else if (header.includes('NHF')) header = 'NHF';
+        else if (header.includes('NHIS') || header.includes('NHIA')) header = 'NHIA';
+
+        return {
+          id: `deduction:${key}`,
+          header,
+          isMoney: true,
+          get: (line: PayrollLine) => toCsvMoney(getItemAmount((line as any).deductions, key)),
+        };
+      }),
+      { id: 'total_deductions', header: 'Total Ded.', isMoney: true, get: (line) => toCsvMoney(line.total_deductions) },
       { id: 'net_pay', header: 'Net Pay', isMoney: true, get: (line) => toCsvMoney(line.net_pay) },
       { id: 'bank_code', header: 'Bank Code', isMoney: false, get: (line) => getBankCode((line as any).bank_name) },
       { id: 'account_number', header: 'Account Number', isMoney: false, get: (line) => String((line as any).account_number ?? '') },
