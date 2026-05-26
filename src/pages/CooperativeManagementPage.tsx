@@ -4,19 +4,22 @@ import {
   Search, Filter, RefreshCw, X, Trash2, Eye, UserPlus,
   Receipt, FileText, AlertCircle, CheckCircle, XCircle,
   Calendar, CreditCard, Shield, Mail, Phone, Wallet, Loader2,
-  Minus, PieChart, Download, Upload
+  Minus, PieChart, Download, Upload, MoreVertical
 } from 'lucide-react';
 import { cooperativeAPI, loanMigrationAPI } from '../lib/loanAPI';
 import { staffAPI } from '../lib/api-client';
 import { PageSkeleton } from '../components/PageLoader';
 import { Modal } from '../components/Modal';
 import { StatusBadge } from '../components/StatusBadge';
-import type { 
-  Cooperative, 
-  CooperativeMember, 
-  CooperativeContribution,
-  Staff 
-} from '../types/entities';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu';
+import type { Cooperative, CooperativeMember, CooperativeContribution, Staff } from '../types/entities';
+import { formatStaffLabelWithId } from '../lib/name-utils';
 import { toast } from 'sonner';
 
 type ViewMode = 'cooperatives' | 'members' | 'contributions';
@@ -117,6 +120,7 @@ export function CooperativeManagementPage() {
   const [showMigrationModal, setShowMigrationModal] = useState(false);
   const [showStatsModal, setShowStatsModal] = useState(false);
   const [editingCooperative, setEditingCooperative] = useState<Cooperative | null>(null);
+  const [editingMember, setEditingMember] = useState<CooperativeMember | null>(null);
   const [cooperativeStats, setCooperativeStats] = useState<any>(null);
   const [memberToDelete, setMemberToDelete] = useState<CooperativeMember | null>(null);
   const [cooperativeToDelete, setCooperativeToDelete] = useState<Cooperative | null>(null);
@@ -332,9 +336,28 @@ export function CooperativeManagementPage() {
       });
       toast.success('Member registered successfully');
       setShowMemberModal(false);
+      setEditingMember(null);
       reloadDashboardData();
     } catch (error: any) {
       toast.error(error.message || 'Failed to register member');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleUpdateMember = async (memberId: string, formData: MemberFormData) => {
+    try {
+      setIsSubmitting(true);
+      await cooperativeAPI.updateMember(memberId, {
+        monthly_contribution: formData.monthly_contribution,
+        shares_owned: toOptionalNumber(formData.shares_owned),
+      });
+      toast.success('Member updated successfully');
+      setShowMemberModal(false);
+      setEditingMember(null);
+      reloadDashboardData();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to update member');
     } finally {
       setIsSubmitting(false);
     }
@@ -638,7 +661,10 @@ export function CooperativeManagementPage() {
           )}
           {viewMode === 'members' && (
             <button
-              onClick={() => setShowMemberModal(true)}
+              onClick={() => {
+                setEditingMember(null);
+                setShowMemberModal(true);
+              }}
               className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground transition-colors"
             >
               <UserPlus className="w-4 h-4" />
@@ -735,6 +761,10 @@ export function CooperativeManagementPage() {
       {viewMode === 'members' && (
         <MembersView
           members={filteredMembers}
+          onEdit={(member) => {
+            setEditingMember(member);
+            setShowMemberModal(true);
+          }}
           onUpdateStatus={handleUpdateMemberStatus}
           onWithdraw={(member) => {
             setSelectedMember(member);
@@ -775,10 +805,20 @@ export function CooperativeManagementPage() {
 
       {showMemberModal && (
         <MemberFormModal
+          member={editingMember}
           cooperatives={cooperatives.filter(c => c.status === 'active')}
           staff={allStaff}
-          onClose={() => setShowMemberModal(false)}
-          onSubmit={handleRegisterMember}
+          onClose={() => {
+            setShowMemberModal(false);
+            setEditingMember(null);
+          }}
+          onSubmit={(data) => {
+            if (editingMember) {
+              handleUpdateMember(editingMember.id, data);
+              return;
+            }
+            handleRegisterMember(data);
+          }}
           isSubmitting={isSubmitting}
         />
       )}
@@ -1092,6 +1132,7 @@ function CooperativesView({
 // Members View Component
 function MembersView({
   members,
+  onEdit,
   onUpdateStatus,
   onWithdraw,
   onViewStatement,
@@ -1099,6 +1140,7 @@ function MembersView({
   updatingStatusId,
 }: {
   members: CooperativeMember[];
+  onEdit: (member: CooperativeMember) => void;
   onUpdateStatus: (memberId: string, status: 'active' | 'inactive' | 'suspended', reason?: string) => void;
   onWithdraw: (member: CooperativeMember) => void;
   onViewStatement: (member: CooperativeMember) => void;
@@ -1145,62 +1187,63 @@ function MembersView({
                   <StatusBadge status={member.status} />
                 </td>
                 <td className="px-4 py-3 text-center">
-                  <div className="flex items-center justify-center gap-2">
-                    {member.status === 'active' && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
                       <button
-                        onClick={() => onUpdateStatus(member.id, 'suspended', 'Admin action')}
                         className="p-1 hover:bg-accent rounded"
-                        title="Suspend"
+                        title="Actions"
                         disabled={updatingStatusId === member.id}
                       >
                         {updatingStatusId === member.id ? (
-                          <Loader2 className="w-4 h-4 animate-spin text-orange-500" />
+                          <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
                         ) : (
+                          <MoreVertical className="w-4 h-4 text-muted-foreground" />
+                        )}
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => onEdit(member)}>
+                        <Edit className="w-4 h-4" />
+                        Edit
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      {member.status === 'active' && (
+                        <DropdownMenuItem
+                          onClick={() => onUpdateStatus(member.id, 'suspended', 'Admin action')}
+                          disabled={updatingStatusId === member.id}
+                        >
                           <XCircle className="w-4 h-4 text-orange-500" />
-                        )}
-                      </button>
-                    )}
-                    {member.status === 'suspended' && (
-                      <button
-                        onClick={() => onUpdateStatus(member.id, 'active')}
-                        className="p-1 hover:bg-accent rounded"
-                        title="Reactivate"
+                          Suspend
+                        </DropdownMenuItem>
+                      )}
+                      {member.status === 'suspended' && (
+                        <DropdownMenuItem
+                          onClick={() => onUpdateStatus(member.id, 'active')}
+                          disabled={updatingStatusId === member.id}
+                        >
+                          <CheckCircle className="w-4 h-4 text-green-500" />
+                          Reactivate
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuItem onClick={() => onWithdraw(member)}>
+                        <Minus className="w-4 h-4 text-orange-500" />
+                        Withdraw Funds
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => onViewStatement(member)}>
+                        <FileText className="w-4 h-4 text-blue-500" />
+                        View Statement
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onClick={() => onDelete(member.id)}
                         disabled={updatingStatusId === member.id}
                       >
-                        {updatingStatusId === member.id ? (
-                          <Loader2 className="w-4 h-4 animate-spin text-green-500" />
-                        ) : (
-                          <CheckCircle className="w-4 h-4 text-green-500" />
-                        )}
-                      </button>
-                    )}
-                    <button
-                      onClick={() => onWithdraw(member)}
-                      className="p-1 hover:bg-accent rounded"
-                      title="Withdraw Funds"
-                    >
-                      <Minus className="w-4 h-4 text-orange-500" />
-                    </button>
-                    <button
-                      onClick={() => onViewStatement(member)}
-                      className="p-1 hover:bg-accent rounded"
-                      title="View Statement"
-                    >
-                      <FileText className="w-4 h-4 text-blue-500" />
-                    </button>
-                    <button
-                      onClick={() => onDelete(member.id)}
-                      className="p-1 hover:bg-accent rounded"
-                      title="Delete"
-                      disabled={updatingStatusId === member.id}
-                    >
-                      {updatingStatusId === member.id ? (
-                        <Loader2 className="w-4 h-4 animate-spin text-destructive" />
-                      ) : (
-                        <Trash2 className="w-4 h-4 text-destructive" />
-                      )}
-                    </button>
-                  </div>
+                        <Trash2 className="w-4 h-4" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </td>
               </tr>
             ))}
@@ -1688,24 +1731,27 @@ function CooperativeFormModal({
 
 // Member Form Modal
 function MemberFormModal({
+  member,
   cooperatives,
   staff,
   onClose,
   onSubmit,
   isSubmitting,
 }: {
+  member?: CooperativeMember | null;
   cooperatives: Cooperative[];
   staff: Staff[];
   onClose: () => void;
   onSubmit: (data: MemberFormData) => void;
   isSubmitting?: boolean;
 }) {
-  const [formData, setFormData] = useState<MemberFormData>({
-    cooperative_id: '',
-    staff_id: '',
-    monthly_contribution: 0,
-    shares_owned: '',
-  });
+  const isEditing = Boolean(member);
+  const [formData, setFormData] = useState<MemberFormData>(() => ({
+    cooperative_id: member?.cooperative_id || '',
+    staff_id: member?.staff_id || '',
+    monthly_contribution: typeof member?.monthly_contribution === 'number' ? member.monthly_contribution : 0,
+    shares_owned: typeof member?.shares_owned === 'number' ? member.shares_owned : '',
+  }));
   const [staffSearchTerm, setStaffSearchTerm] = useState('');
 
   const selectedCooperative = cooperatives.find(c => c.id === formData.cooperative_id);
@@ -1714,21 +1760,7 @@ function MemberFormModal({
   const shareCount = Number(formData.shares_owned || 0);
   const shareCapitalTotal = hasShareCapitalValue ? shareCount * shareCapitalValue : 0;
   const getStaffDisplayLabel = (staff: Staff) => {
-    const staffWithFlatName = staff as unknown as {
-      first_name?: string;
-      last_name?: string;
-      full_name?: string;
-      staff_name?: string;
-    };
-    const first = (staffWithFlatName.first_name || staff.bio_data?.first_name || '').trim();
-    const last = (staffWithFlatName.last_name || staff.bio_data?.last_name || '').trim();
-    const fullName = `${first} ${last}`.trim();
-    const fallbackName = staffWithFlatName.full_name
-      || staffWithFlatName.staff_name
-      || 'Unknown Staff';
-    const displayName = fullName || fallbackName;
-    const staffId = staff.staff_number || 'N/A';
-    return `${displayName} (${staffId})`;
+    return formatStaffLabelWithId(staff);
   };
 
   const filteredStaffList = useMemo(() => {
@@ -1743,14 +1775,14 @@ function MemberFormModal({
   }, [staff, staffSearchTerm]);
 
   useEffect(() => {
-    if (selectedCooperative) {
+    if (selectedCooperative && !isEditing) {
       setFormData(prev => ({
         ...prev,
         monthly_contribution: Number(selectedCooperative.monthly_contribution_required),
         shares_owned: hasShareCapitalValue ? (selectedCooperative.minimum_shares ?? '') : '',
       }));
     }
-  }, [selectedCooperative, hasShareCapitalValue]);
+  }, [selectedCooperative, hasShareCapitalValue, isEditing]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1768,7 +1800,7 @@ function MemberFormModal({
         setStaffSearchTerm('');
         onClose();
       }}
-      title="Register New Member"
+      title={member ? 'Edit Member' : 'Register New Member'}
       size="lg"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -1779,6 +1811,7 @@ function MemberFormModal({
             onChange={(e) => setFormData({ ...formData, cooperative_id: e.target.value })}
             className="w-full px-3 py-2 rounded-lg border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             required
+            disabled={isEditing}
           >
             <option value="">Select Cooperative</option>
             {cooperatives.map((coop) => (
@@ -1799,6 +1832,7 @@ function MemberFormModal({
               onChange={(e) => setStaffSearchTerm(e.target.value)}
               placeholder="Search by name or staff ID..."
               className="w-full pl-9 pr-3 py-2 rounded-lg border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              disabled={isEditing}
             />
           </div>
           <select
@@ -1806,6 +1840,7 @@ function MemberFormModal({
             onChange={(e) => setFormData({ ...formData, staff_id: e.target.value })}
             className="w-full px-3 py-2 rounded-lg border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             required
+            disabled={isEditing}
           >
             <option value="">Select Staff</option>
             {filteredStaffList.length === 0 ? (
@@ -1893,10 +1928,10 @@ function MemberFormModal({
             {isSubmitting ? (
               <span className="flex items-center justify-center gap-2">
                 <Loader2 className="w-4 h-4 animate-spin" />
-                Registering...
+                {member ? 'Updating...' : 'Registering...'}
               </span>
             ) : (
-              'Register Member'
+              member ? 'Update Member' : 'Register Member'
             )}
           </button>
         </div>

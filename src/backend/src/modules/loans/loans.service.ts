@@ -298,7 +298,10 @@ export class LoansService {
         appNumber,
         dto.staffId,
         staff.staff_number,
-        `${staff.first_name} ${staff.last_name}`,
+        [staff.first_name, staff.middle_name, staff.last_name]
+          .map((v) => String(v || '').trim())
+          .filter((v) => v.length > 0)
+          .join(' '),
         dto.loanTypeId,
         loanType.name,
         dto.requestedAmount,

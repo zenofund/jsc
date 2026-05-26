@@ -7,6 +7,7 @@ import { useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
 import { PageSkeleton } from '../components/PageLoader';
 import { formatCurrency } from '../utils/format';
+import { formatStaffName } from '../lib/name-utils';
 import { 
   payrollAPI, 
   loanApplicationAPI, 
@@ -182,7 +183,8 @@ export function ApprovalsPageEnhanced() {
         const pendingLeaves = leaves.filter((l: any) => l.status === 'pending');
         
         pendingLeaves.forEach((l: any) => {
-          const staffLabel = l.staff_name || [l.first_name, l.last_name].filter(Boolean).join(' ') || l.staff_number || 'Staff';
+          const composed = formatStaffName(l as any);
+          const staffLabel = composed && composed !== 'Unknown Staff' ? composed : (l.staff_number || 'Staff');
           const leaveTypeLabel = l.leave_type_name || l.leave_type || 'Leave';
           const daysVal = (l.number_of_days ?? l.days_requested);
           const daysLabel = typeof daysVal === 'number' ? `${daysVal} ${daysVal === 1 ? 'day' : 'days'}` : '-';

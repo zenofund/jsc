@@ -16,6 +16,7 @@ import { PageSkeleton } from '../components/PageLoader';
 import { loadPdfMake } from '../utils/loadPdfMake';
 import { Skeleton } from '../components/ui/skeleton';
 import { Button } from '../components/ui/button';
+import { formatStaffName } from '../lib/name-utils';
 import Papa from 'papaparse';
 
 export const normalizeGrade = (value: any) => String(value || '').trim().toUpperCase().replace(/[\s-]+/g, '');
@@ -1020,7 +1021,7 @@ export function StaffListPage() {
     },
     {
       header: 'Name',
-      accessor: (row: Staff) => `${row.bio_data.first_name} ${row.bio_data.last_name}`,
+      accessor: (row: Staff) => formatStaffName(row),
     },
     {
       header: 'Designation',
@@ -2061,7 +2062,7 @@ export function StaffListPage() {
             <div className="flex items-center justify-between p-4 bg-muted/30 rounded-lg">
               <div>
                 <h3 className="font-semibold text-foreground">
-                  {viewingStaff.bio_data.first_name} {viewingStaff.bio_data.last_name}
+                  {formatStaffName(viewingStaff)}
                 </h3>
                 <p className="text-sm text-muted-foreground">{viewingStaff.appointment.designation}</p>
               </div>

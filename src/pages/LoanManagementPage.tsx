@@ -13,6 +13,7 @@ import { PageSkeleton } from '../components/PageLoader';
 import { showToast } from '../utils/toast';
 import { formatCompactCurrency, formatCurrency } from '../utils/format';
 import { Modal } from '../components/Modal';
+import { formatStaffLabelWithId } from '../lib/name-utils';
 
 type TabType = 'overview' | 'applications' | 'loan-types' | 'disbursements' | 'reports';
 
@@ -230,21 +231,7 @@ function ApplicationsTab({
   }, [showAssignModal]);
 
   const getStaffDisplayLabel = (staff: Staff) => {
-    const staffWithFlatName = staff as unknown as {
-      first_name?: string;
-      last_name?: string;
-      full_name?: string;
-      staff_name?: string;
-    };
-    const first = (staffWithFlatName.first_name || staff.bio_data?.first_name || '').trim();
-    const last = (staffWithFlatName.last_name || staff.bio_data?.last_name || '').trim();
-    const fullName = `${first} ${last}`.trim();
-    const fallbackName = staffWithFlatName.full_name
-      || staffWithFlatName.staff_name
-      || 'Unknown Staff';
-    const displayName = fullName || fallbackName;
-    const staffId = staff.staff_number || 'N/A';
-    return `${displayName} (${staffId})`;
+    return formatStaffLabelWithId(staff);
   };
 
   const filteredStaffList = useMemo(() => {

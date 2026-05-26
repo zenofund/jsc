@@ -14,6 +14,7 @@ import type {
   LoanApproval,
   Staff,
 } from '../types/entities';
+import { formatStaffName } from './name-utils';
 
 // Helper function to make API requests
 const API_BASE_URL = import.meta.env?.VITE_API_URL || 'http://localhost:3000/api/v1';
@@ -169,7 +170,7 @@ export const loanApplicationAPI = {
         loan_application_id: id,
         guarantor_staff_id: guarantor.staff_id,
         guarantor_staff_number: guarantorStaff.staff_number,
-        guarantor_name: `${guarantorStaff.bio_data.first_name} ${guarantorStaff.bio_data.last_name}`,
+        guarantor_name: formatStaffName(guarantorStaff),
         guarantor_designation: guarantorStaff.appointment.designation,
         guarantor_department: guarantorStaff.appointment.department,
         consent_status: 'pending',
@@ -717,6 +718,32 @@ export const cooperativeAPI = {
       method: 'POST',
       body: JSON.stringify(data),
     });
+  },
+
+  async updateMember(
+    memberId: string,
+    data: {
+      monthly_contribution?: number;
+      shares_owned?: number;
+      monthlyContribution?: number;
+      sharesOwned?: number;
+    },
+  ) {
+    const member = await makeApiRequest(`/cooperatives/members/${memberId}`, { method: 'GET' });
+    if (!member) throw new Error('Member not found');
+
+    const nextMonthly =
+      data.monthly_contribution ?? data.monthlyContribution ?? member.monthly_contribution;
+    const nextShares = data.shares_owned ?? data.sharesOwned ?? member.shares_owned;
+
+    const updated: CooperativeMember = {
+      ...member,
+      monthly_contribution: nextMonthly,
+      shares_owned: nextShares,
+      updated_at: new Date().toISOString(),
+    };
+
+    return makeApiRequest(`/cooperatives/members/${memberId}`, { method: 'PUT', body: JSON.stringify(updated) });
   },
 
   // Update member status

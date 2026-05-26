@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, Loader2, User } from 'lucide-react';
 import { staffAPI } from '../../lib/api-client';
+import { formatStaffName } from '../../lib/name-utils';
 import { Staff } from '../../types/entities';
 
 interface StaffSearchProps {
@@ -95,7 +96,7 @@ export function StaffSearch({ onSelect, selectedStaff }: StaffSearchProps) {
           type="text"
           placeholder="Search by Name, Staff Number, or Department..."
           className="w-full pl-9 pr-4 py-2 border border-border rounded-md bg-background text-foreground focus:ring-2 focus:ring-primary/50 outline-none"
-          value={selectedStaff && !isOpen ? `${selectedStaff.staff_number} - ${selectedStaff.bio_data.first_name} ${selectedStaff.bio_data.last_name}` : query}
+          value={selectedStaff && !isOpen ? `${selectedStaff.staff_number} - ${formatStaffName(selectedStaff)}` : query}
           onChange={(e) => {
             setQuery(e.target.value);
             if (selectedStaff) {
@@ -129,7 +130,7 @@ export function StaffSearch({ onSelect, selectedStaff }: StaffSearchProps) {
               }}
             >
               <div className="font-medium text-foreground">
-                {staff.bio_data.first_name} {staff.bio_data.last_name}
+                {formatStaffName(staff)}
               </div>
               <div className="text-xs text-muted-foreground flex justify-between">
                 <span>{staff.staff_number}</span>

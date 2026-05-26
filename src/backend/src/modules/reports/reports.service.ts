@@ -236,7 +236,7 @@ export class ReportsService {
       this.logger.log(`Found batch ${batch.id} for month ${month}`);
 
       const lines = await this.databaseService.query(
-        `SELECT pl.*, s.staff_number, s.first_name, s.last_name
+        `SELECT pl.*, s.staff_number, s.first_name, s.middle_name, s.last_name
          FROM payroll_lines pl
          JOIN staff s ON pl.staff_id = s.id
          WHERE pl.payroll_batch_id = $1`,
@@ -258,7 +258,7 @@ export class ReportsService {
           const grossPay = parseFloat(l.gross_pay || '0');
           return {
             staff_number: l.staff_number,
-            staff_name: `${l.first_name} ${l.last_name}`,
+            staff_name: [l.first_name, l.middle_name, l.last_name].filter(Boolean).join(' ').trim(),
             basic_salary: basicSalary,
             total_allowances: grossPay - basicSalary,
             gross_pay: grossPay,
@@ -290,6 +290,7 @@ export class ReportsService {
         pl.net_pay,
         s.staff_number,
         s.first_name,
+        s.middle_name,
         s.last_name
       FROM payroll_lines pl
       JOIN staff s ON pl.staff_id = s.id
@@ -305,7 +306,7 @@ export class ReportsService {
       return {
         bank_name: bankName,
         staff_number: l.staff_number,
-        staff_name: `${l.first_name} ${l.last_name}`.trim(),
+        staff_name: [l.first_name, l.middle_name, l.last_name].filter(Boolean).join(' ').trim(),
         account_number: accountNumber,
         net_pay: Number.isFinite(amount) ? amount : 0,
         has_bank_details: Boolean(bankName && accountNumber),

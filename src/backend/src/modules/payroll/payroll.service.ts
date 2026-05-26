@@ -615,7 +615,10 @@ export class PayrollService {
         payroll_batch_id: batchId,
         staff_id: staffMember.id,
         staff_number: staffMember.staff_number,
-        staff_name: `${staffMember.first_name} ${staffMember.last_name}`,
+        staff_name: [staffMember.first_name, staffMember.middle_name, staffMember.last_name]
+          .map((v) => String(v || '').trim())
+          .filter((v) => v.length > 0)
+          .join(' '),
         grade_level: staffMember.grade_level,
         step: staffMember.step,
         basic_salary: adjustedBasicSalary,

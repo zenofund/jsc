@@ -36,6 +36,7 @@ import { formatCurrency } from '../utils/format';
 import { PayslipTemplate } from '../components/PayslipTemplate';
 import { generatePayslipPDF } from '../utils/payslipGenerator';
 import { loadPdfMake } from '../utils/loadPdfMake';
+import { formatStaffName } from '../lib/name-utils';
 
 export function StaffPortalPage() {
   const { user } = useAuth();
@@ -788,7 +789,7 @@ export function StaffPortalPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <p className="text-sm text-muted-foreground mb-1">Full Name</p>
-              <p className="text-card-foreground font-medium">{staff.bio_data.first_name} {staff.bio_data.middle_name} {staff.bio_data.last_name}</p>
+              <p className="text-card-foreground font-medium">{formatStaffName(staff)}</p>
             </div>
             <div>
               <p className="text-sm text-muted-foreground mb-1">Staff Number</p>
