@@ -632,7 +632,7 @@ export function CooperativeManagementPage() {
         </div>
         <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
           <button
-            onClick={reloadDashboardData}
+            onClick={() => reloadDashboardData()}
             className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-card hover:bg-accent border border-border transition-colors"
           >
             <RefreshCw className="w-4 h-4" />
