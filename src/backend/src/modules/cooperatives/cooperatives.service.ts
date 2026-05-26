@@ -699,9 +699,14 @@ export class CooperativesService {
     const values = [];
     let paramIndex = 1;
 
-    if (dto.monthlyContribution) {
+    if (dto.monthlyContribution !== undefined) {
       updates.push(`monthly_contribution = $${paramIndex++}`);
       values.push(dto.monthlyContribution);
+    }
+
+    if (dto.shares_owned !== undefined) {
+      updates.push(`shares_owned = $${paramIndex++}`);
+      values.push(dto.shares_owned);
     }
 
     // Add status update logic

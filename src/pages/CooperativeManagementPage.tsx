@@ -138,7 +138,7 @@ export function CooperativeManagementPage() {
   });
 
   useEffect(() => {
-    reloadDashboardData();
+    reloadDashboardData(cooperatives.length > 0);
   }, [viewMode]);
 
   const loadStats = async () => {
@@ -156,9 +156,9 @@ export function CooperativeManagementPage() {
     }
   };
 
-  const loadData = async () => {
+  const loadData = async (isRefresh = false) => {
     try {
-      setLoading(true);
+      if (!isRefresh) setLoading(true);
       const coops = await cooperativeAPI.getAll();
       setCooperatives(coops);
 
@@ -235,8 +235,8 @@ export function CooperativeManagementPage() {
     }
   };
 
-  const reloadDashboardData = async () => {
-    await Promise.all([loadData(), loadStats()]);
+  const reloadDashboardData = async (isRefresh = true) => {
+    await Promise.all([loadData(isRefresh), loadStats()]);
   };
 
   const handleCreateCooperative = async (formData: CooperativeFormData) => {
@@ -1749,10 +1749,29 @@ function MemberFormModal({
   const [formData, setFormData] = useState<MemberFormData>(() => ({
     cooperative_id: member?.cooperative_id || '',
     staff_id: member?.staff_id || '',
-    monthly_contribution: typeof member?.monthly_contribution === 'number' ? member.monthly_contribution : 0,
-    shares_owned: typeof member?.shares_owned === 'number' ? member.shares_owned : '',
+    monthly_contribution: Number(member?.monthly_contribution ?? (member as any)?.monthlyContribution ?? 0),
+    shares_owned: member?.shares_owned !== undefined && member?.shares_owned !== null 
+      ? Number(member.shares_owned) 
+      : (member as any)?.sharesOwned !== undefined && (member as any)?.sharesOwned !== null
+        ? Number((member as any).sharesOwned)
+        : '',
   }));
   const [staffSearchTerm, setStaffSearchTerm] = useState('');
+
+  useEffect(() => {
+    if (member) {
+      setFormData({
+        cooperative_id: member.cooperative_id || '',
+        staff_id: member.staff_id || '',
+        monthly_contribution: Number(member.monthly_contribution ?? (member as any).monthlyContribution ?? 0),
+        shares_owned: member.shares_owned !== undefined && member.shares_owned !== null 
+          ? Number(member.shares_owned) 
+          : (member as any).sharesOwned !== undefined && (member as any).sharesOwned !== null
+            ? Number((member as any).sharesOwned)
+            : '',
+      });
+    }
+  }, [member]);
 
   const selectedCooperative = cooperatives.find(c => c.id === formData.cooperative_id);
   const shareCapitalValue = Number(selectedCooperative?.share_capital_value || 0);
