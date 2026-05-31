@@ -142,6 +142,55 @@ export function StaffListPage() {
 
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
+  const requiredFields = [
+    'staff_number',
+    'first_name',
+    'last_name',
+    'gender',
+    'date_of_birth',
+    'state_of_origin',
+    'lga',
+    'zone',
+    'qualification',
+    'post_on_first_appointment',
+    'appointment_date',
+    'present_appointment',
+    'date_of_present_appointment',
+    'grade_level',
+    'step',
+    'exit_date',
+  ];
+
+  const fieldLabels: Record<string, string> = {
+    staff_number: 'File No (Staff Number)',
+    first_name: 'First Name',
+    last_name: 'Surname',
+    gender: 'Sex',
+    date_of_birth: 'Date of Birth',
+    state_of_origin: 'State of Origin',
+    lga: 'LGA',
+    zone: 'Zone',
+    qualification: 'Qualification',
+    post_on_first_appointment: 'Post on 1st Appointment',
+    appointment_date: 'Date of 1st Appointment',
+    present_appointment: 'Present Appointment',
+    date_of_present_appointment: 'Date of Present Appointment',
+    grade_level: 'Grade Level',
+    step: 'Step',
+    exit_date: 'Date of Exit',
+    email: 'Email Address',
+    phone: 'Phone Number',
+    nok_phone: 'Next of Kin Phone Number',
+    account_number: 'Account Number',
+  };
+
+  const stepFields: Record<number, string[]> = {
+    1: ['staff_number', 'last_name', 'first_name', 'gender', 'date_of_birth', 'state_of_origin', 'lga', 'zone', 'qualification', 'marital_status', 'phone', 'email', 'nationality', 'address'],
+    2: ['nok_name', 'nok_relationship', 'nok_phone', 'nok_address'],
+    3: ['post_on_first_appointment', 'appointment_date', 'confirmation_date', 'present_appointment', 'date_of_present_appointment', 'exit_date', 'exit_reason', 'appointment_type', 'employment_date', 'retirement_date', 'department', 'unit', 'cadre', 'designation'],
+    4: ['grade_level', 'step', 'bank_code', 'bank_name', 'account_number', 'account_name', 'pension_pin', 'tax_id', 'bvn', 'nhf_number'],
+  };
+
   const dateFields = [
     'date_of_birth',
     'appointment_date',
@@ -157,27 +206,7 @@ export function StaffListPage() {
   const validateField = (name: string, value: any) => {
     let error = '';
     
-    // Required fields check
-    const requiredFields = [
-      'staff_number',
-      'first_name',
-      'last_name',
-      'gender',
-      'date_of_birth',
-      'state_of_origin',
-      'lga',
-      'zone',
-      'qualification',
-      'post_on_first_appointment',
-      'appointment_date',
-      'present_appointment',
-      'date_of_present_appointment',
-      'grade_level',
-      'step',
-      'exit_date',
-    ];
-
-    if (requiredFields.includes(name) && !value) {
+    if (requiredFields.includes(name) && (value === undefined || value === null || String(value).trim() === '')) {
       error = 'This field is required';
     }
 
@@ -220,6 +249,38 @@ export function StaffListPage() {
 
     setFormErrors(prev => ({ ...prev, [name]: error }));
     return error;
+  };
+
+  const validateFields = (fieldNames: string[]) => {
+    const nextErrors: Record<string, string> = {};
+
+    fieldNames.forEach((name) => {
+      const error = validateField(name, (formData as any)[name]);
+      if (error) nextErrors[name] = error;
+    });
+
+    return nextErrors;
+  };
+
+  const validateCurrentStep = () => validateFields(stepFields[currentStep] || []);
+
+  const getStepForField = (fieldName: string) => {
+    const match = Object.entries(stepFields).find(([, fields]) => fields.includes(fieldName));
+    return match ? Number(match[0]) : currentStep;
+  };
+
+  const validateStaffForm = () => {
+    const fields = Array.from(new Set(Object.values(stepFields).flat()));
+    const errors = validateFields(fields);
+    const firstErrorField = Object.keys(errors)[0];
+
+    if (firstErrorField) {
+      setCurrentStep(getStepForField(firstErrorField));
+      showToast('error', `${Object.keys(errors).length} field(s) need attention. Start with ${fieldLabels[firstErrorField] || firstErrorField}.`);
+      return false;
+    }
+
+    return true;
   };
 
   const formatDateForInput = (dateString: string) => {
@@ -270,6 +331,13 @@ export function StaffListPage() {
       setFormData(prev => ({ ...prev, lga: '' }));
       setAvailableLGAs(getLGAsByState(value));
     }
+  };
+
+  const handleFieldBlur = (e: React.FocusEvent<HTMLElement>) => {
+    const target = e.target as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+    const { name, value } = target;
+    if (!name) return;
+    validateField(name, isDateField(name) ? normalizeDateInput(value) : value);
   };
 
   useEffect(() => {
@@ -554,6 +622,7 @@ export function StaffListPage() {
 
   const openEditModal = (staffMember: Staff) => {
     setEditingStaff(staffMember);
+    setFormErrors({});
     populateFormWithStaff(staffMember);
     setShowFormModal(true);
   };
@@ -606,6 +675,7 @@ export function StaffListPage() {
       status: staffMember.status || 'active',
     });
     setAvailableLGAs(getLGAsByState(staffMember.bio_data.state_of_origin || ''));
+    setFormErrors({});
   };
 
   const formatDateDisplay = (dateString?: string) => {
@@ -755,26 +825,7 @@ export function StaffListPage() {
   };
 
   const handleCreateStaff = async () => {
-    // Validate required fields
-    if (
-      !formData.staff_number ||
-      !formData.first_name ||
-      !formData.last_name ||
-      !formData.date_of_birth ||
-      !formData.gender ||
-      !formData.state_of_origin ||
-      !formData.lga ||
-      !formData.zone ||
-      !formData.qualification ||
-      !formData.post_on_first_appointment ||
-      !formData.appointment_date ||
-      !formData.present_appointment ||
-      !formData.date_of_present_appointment ||
-      !formData.exit_date ||
-      !formData.grade_level ||
-      !formData.step
-    ) {
-      showToast('error', 'Please fill in all required fields');
+    if (!validateStaffForm()) {
       return;
     }
 
@@ -862,26 +913,7 @@ export function StaffListPage() {
   const handleUpdateStaff = async () => {
     if (!editingStaff) return;
 
-    // Validate required fields
-    if (
-      !formData.staff_number ||
-      !formData.first_name ||
-      !formData.last_name ||
-      !formData.date_of_birth ||
-      !formData.gender ||
-      !formData.state_of_origin ||
-      !formData.lga ||
-      !formData.zone ||
-      !formData.qualification ||
-      !formData.post_on_first_appointment ||
-      !formData.appointment_date ||
-      !formData.present_appointment ||
-      !formData.date_of_present_appointment ||
-      !formData.exit_date ||
-      !formData.grade_level ||
-      !formData.step
-    ) {
-      showToast('error', 'Please fill in all required fields');
+    if (!validateStaffForm()) {
       return;
     }
 
@@ -1011,6 +1043,7 @@ export function StaffListPage() {
       status: 'active',
     } as any);
     setAvailableLGAs([]);
+    setFormErrors({});
   };
 
   const columns = [
@@ -1151,7 +1184,15 @@ export function StaffListPage() {
             </button>
             {currentStep < 4 ? (
               <button
-                onClick={() => setCurrentStep(currentStep + 1)}
+                onClick={() => {
+                  const errors = validateCurrentStep();
+                  if (Object.keys(errors).length > 0) {
+                    const firstErrorField = Object.keys(errors)[0];
+                    showToast('error', `Please fix ${fieldLabels[firstErrorField] || firstErrorField} before continuing.`);
+                    return;
+                  }
+                  setCurrentStep(currentStep + 1);
+                }}
                 className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
               >
                 Next
@@ -1170,9 +1211,14 @@ export function StaffListPage() {
         <Stepper steps={steps} currentStep={currentStep} />
 
         <div className="mt-6">
+          {Object.entries(formErrors).some(([field, message]) => Boolean(message) && (stepFields[currentStep] || []).includes(field)) && (
+            <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
+              Fix the highlighted field(s) before continuing.
+            </div>
+          )}
           {/* Step 1: Bio Data */}
           {currentStep === 1 && (
-            <div className="space-y-4">
+            <div className="space-y-4" onBlur={handleFieldBlur}>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">
@@ -1457,7 +1503,7 @@ export function StaffListPage() {
 
           {/* Step 2: Next of Kin */}
           {currentStep === 2 && (
-            <div className="space-y-4">
+            <div className="space-y-4" onBlur={handleFieldBlur}>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">
@@ -1520,7 +1566,7 @@ export function StaffListPage() {
 
           {/* Step 3: Appointment */}
           {currentStep === 3 && (
-            <div className="space-y-4">
+            <div className="space-y-4" onBlur={handleFieldBlur}>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">
@@ -1759,7 +1805,7 @@ export function StaffListPage() {
 
           {/* Step 4: Salary & Bank */}
           {currentStep === 4 && (
-            <div className="space-y-4">
+            <div className="space-y-4" onBlur={handleFieldBlur}>
               {/* Info box about auto-calculated salary */}
               <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
                 <div className="flex items-start gap-2">
