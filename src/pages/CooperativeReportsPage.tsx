@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   BarChart3, 
   PieChart, 
@@ -11,14 +11,44 @@ import {
   RefreshCw,
   Building2,
   Wallet,
-  CreditCard
+  CreditCard,
+  Loader2
 } from 'lucide-react';
 import { formatCompactCurrency, formatCurrency } from '../utils/format';
 import { PageSkeleton } from '../components/PageLoader';
 import { cooperativeAPI, disbursementAPI } from '../lib/loanAPI';
 import type { Cooperative, CooperativeMember, CooperativeContribution, LoanDisbursement } from '../types/entities';
+import { toast } from 'sonner';
 
 type ReportType = 'overview' | 'contributions' | 'loans' | 'members' | 'financial' | 'cross-cooperative';
+
+type ExportRow = Record<string, string | number | null | undefined>;
+
+const reportLabels: Record<ReportType, string> = {
+  overview: 'Overview',
+  contributions: 'Contributions',
+  loans: 'Loans',
+  members: 'Members',
+  financial: 'Financial Statements',
+  'cross-cooperative': 'Cross-Cooperative Analysis',
+};
+
+const parseReportDate = (value?: string | null) => {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const isWithinDateRange = (value: string | null | undefined, dateRange: { from: string; to: string }) => {
+  const reportDate = parseReportDate(value);
+  if (!reportDate) return false;
+
+  const from = new Date(`${dateRange.from}T00:00:00`);
+  const to = new Date(`${dateRange.to}T23:59:59`);
+  return reportDate >= from && reportDate <= to;
+};
+
+const toNumber = (value: unknown) => Number(value || 0);
 
 export function CooperativeReportsPage() {
   const [activeReport, setActiveReport] = useState<ReportType>('overview');
@@ -29,26 +59,205 @@ export function CooperativeReportsPage() {
     to: new Date().toISOString().split('T')[0],
   });
   const [loading, setLoading] = useState(true);
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
-    loadCooperatives();
+    loadInitialData();
   }, []);
 
-  const loadCooperatives = async () => {
+  const loadInitialData = async () => {
     try {
       setLoading(true);
       const coops = await cooperativeAPI.getAll({ status: 'active' });
       setCooperatives(coops);
     } catch (error) {
-      console.error('Error loading cooperatives:', error);
+      console.error('Error loading initial data:', error);
+      toast.error('Failed to load initial report data.');
     } finally {
       setLoading(false);
     }
   };
 
-  if (loading) {
-    return <PageSkeleton mode="grid" />;
-  }
+  const loadCooperatives = async () => {
+    try {
+      // setLoading(true); // Don't set loading here to avoid flickering if only refreshing cooperatives
+      const coops = await cooperativeAPI.getAll({ status: 'active' });
+      setCooperatives(coops);
+    } catch (error) {
+      console.error('Error loading cooperatives:', error);
+      toast.error('Failed to refresh cooperatives.');
+    }
+    // finally {
+    //   setLoading(false);
+    // }
+  };
+
+  const handleExportReport = async () => {
+    setIsExporting(true);
+    try {
+      const rows = await buildExportRows();
+
+      if (rows.length === 0) {
+        toast.info('No report data found for the current filters.');
+        return;
+      }
+
+      const csv = convertToCsv(rows);
+      const timestamp = new Date().toISOString().slice(0, 10);
+      downloadCsv(csv, `cooperative_${activeReport}_report_${timestamp}.csv`);
+      toast.success(`${reportLabels[activeReport]} report downloaded successfully.`);
+    } catch (error: any) {
+      console.error('Error exporting report:', error);
+      toast.error(error.message || 'Failed to export report.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const buildExportRows = async (): Promise<ExportRow[]> => {
+    const scopedCooperatives =
+      selectedCooperative === 'all'
+        ? cooperatives
+        : cooperatives.filter((coop) => coop.id === selectedCooperative);
+
+    if (activeReport === 'overview' || activeReport === 'financial') {
+      const stats = await Promise.all(
+        scopedCooperatives.map((coop) => cooperativeAPI.getCooperativeStats(coop.id)),
+      );
+
+      return stats.map((stat: any) => ({
+        cooperative_name: stat?.cooperative?.name || '',
+        cooperative_code: stat?.cooperative?.code || '',
+        total_members: toNumber(stat?.total_members),
+        active_members: toNumber(stat?.active_members),
+        total_contributions: toNumber(stat?.total_contributions),
+        total_share_capital: toNumber(stat?.total_share_capital),
+        total_loans_disbursed: toNumber(stat?.total_loans_disbursed),
+        total_outstanding: toNumber(stat?.total_outstanding),
+      }));
+    }
+
+    if (activeReport === 'contributions') {
+      const filters: any = {};
+      if (selectedCooperative !== 'all') filters.cooperative_id = selectedCooperative;
+
+      const contributions = await cooperativeAPI.getContributions(filters);
+      return contributions
+        .filter((contribution: CooperativeContribution) =>
+          isWithinDateRange(contribution.payment_date, dateRange),
+        )
+        .map((contribution: CooperativeContribution) => ({
+          payment_date: contribution.payment_date,
+          staff_name: contribution.staff_name,
+          staff_number: contribution.staff_number,
+          cooperative_name: contribution.cooperative_name,
+          contribution_type: contribution.contribution_type,
+          amount: toNumber(contribution.amount),
+          payment_method: contribution.payment_method,
+        }));
+    }
+
+    if (activeReport === 'loans') {
+      let loans = await disbursementAPI.getAll();
+      loans = loans
+        .filter((loan: any) =>
+          selectedCooperative === 'all'
+            ? Boolean(loan.cooperative_id)
+            : loan.cooperative_id === selectedCooperative,
+        )
+        .filter((loan: any) => isWithinDateRange(loan.disbursement_date, dateRange));
+
+      return loans.map((loan: any) => ({
+        disbursement_date: loan.disbursement_date,
+        staff_name: loan.staff_name,
+        staff_number: loan.staff_number,
+        cooperative_name: loan.cooperative_name,
+        principal_amount: toNumber(loan.principal_amount),
+        total_repaid: toNumber(loan.total_repaid),
+        balance_outstanding: toNumber(loan.balance_outstanding),
+        status: loan.status,
+      }));
+    }
+
+    if (activeReport === 'members') {
+      const filters: any = {};
+      if (selectedCooperative !== 'all') filters.cooperative_id = selectedCooperative;
+
+      const members = await cooperativeAPI.getAllMembers(filters);
+      return members.map((member: CooperativeMember) => ({
+        member_number: member.member_number,
+        staff_name: member.staff_name,
+        staff_number: member.staff_number,
+        cooperative_name: member.cooperative_name,
+        monthly_contribution: toNumber(member.monthly_contribution),
+        total_contributions: toNumber(member.total_contributions),
+        shares_owned: toNumber(member.shares_owned),
+        status: member.status,
+      }));
+    }
+
+    const members = (await cooperativeAPI.getAllMembers()) as CooperativeMember[];
+    const scopedMembers: CooperativeMember[] =
+      selectedCooperative === 'all'
+        ? members
+        : members.filter((member: CooperativeMember) => member.cooperative_id === selectedCooperative);
+    const membershipsByStaff = scopedMembers.reduce((map: Map<string, CooperativeMember[]>, member: CooperativeMember) => {
+      const staffMemberships = map.get(member.staff_id) || [];
+      map.set(member.staff_id, [...staffMemberships, member]);
+      return map;
+    }, new Map<string, CooperativeMember[]>());
+
+    return Array.from(membershipsByStaff.entries())
+      .filter(([, memberships]) => memberships.length > 1)
+      .map(([staffId, memberships]) => ({
+        staff_id: staffId,
+        staff_name: memberships[0]?.staff_name,
+        staff_number: memberships[0]?.staff_number,
+        cooperative_count: memberships.length,
+        cooperative_names: memberships.map((member: CooperativeMember) => member.cooperative_name).join('; '),
+        total_monthly_contribution: memberships.reduce(
+          (sum: number, member: CooperativeMember) => sum + toNumber(member.monthly_contribution),
+          0,
+        ),
+      }));
+  };
+
+  const convertToCsv = (data: ExportRow[]): string => {
+    if (data.length === 0) return '';
+
+    const headers = Array.from(
+      data.reduce((set, row) => {
+        Object.keys(row).forEach((key) => set.add(key));
+        return set;
+      }, new Set<string>()),
+    );
+    const csvRows = [
+      headers.join(','),
+      ...data.map(row =>
+        headers
+          .map((fieldName) => {
+            const value = row[fieldName] ?? '';
+            return JSON.stringify(String(value));
+          })
+          .join(','),
+      ),
+    ];
+    return csvRows.join('\n');
+  };
+
+  const downloadCsv = (csvContent: string, fileName: string) => {
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    if (link.download !== undefined) { // feature detection
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', fileName);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  };
 
   const reportTabs = [
     { id: 'overview', label: 'Overview', icon: TrendingUp },
@@ -77,9 +286,17 @@ export function CooperativeReportsPage() {
             <RefreshCw className="w-4 h-4" />
             Refresh
           </button>
-          <button className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground transition-colors">
-            <Download className="w-4 h-4" />
-            Export Report
+          <button
+            onClick={handleExportReport}
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground transition-colors"
+            disabled={isExporting}
+          >
+            {isExporting ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Download className="w-4 h-4" />
+            )}
+            {isExporting ? 'Exporting...' : 'Export Report'}
           </button>
         </div>
       </div>
@@ -678,9 +895,12 @@ function LoansReport({
 // Members Report Component
 function MembersReport({ cooperatives, selectedCooperativeId }: { cooperatives: Cooperative[]; selectedCooperativeId: string }) {
   const [members, setMembers] = useState<CooperativeMember[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const membersPerPage = 25;
 
   useEffect(() => {
     loadMembers();
+    setCurrentPage(1);
   }, [selectedCooperativeId]);
 
   const loadMembers = async () => {
@@ -699,6 +919,15 @@ function MembersReport({ cooperatives, selectedCooperativeId }: { cooperatives: 
   const activeMembers = members.filter(m => m.status === 'active');
   const inactiveMembers = members.filter(m => m.status === 'inactive');
   const suspendedMembers = members.filter(m => m.status === 'suspended');
+  const totalMemberPages = Math.ceil(members.length / membersPerPage);
+  const paginatedMembers = useMemo(() => {
+    const startIndex = (currentPage - 1) * membersPerPage;
+    return members.slice(startIndex, startIndex + membersPerPage);
+  }, [members, currentPage]);
+
+  const handlePageChange = (pageNumber: number) => {
+    setCurrentPage(Math.min(Math.max(pageNumber, 1), Math.max(totalMemberPages, 1)));
+  };
 
   return (
     <div className="space-y-6">
@@ -741,7 +970,7 @@ function MembersReport({ cooperatives, selectedCooperativeId }: { cooperatives: 
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {members.map((member) => (
+              {paginatedMembers.map((member) => (
                 <tr key={member.id} className="hover:bg-accent transition-colors">
                   <td className="px-6 py-4 text-sm text-card-foreground">{member.member_number}</td>
                   <td className="px-6 py-4">
@@ -770,6 +999,29 @@ function MembersReport({ cooperatives, selectedCooperativeId }: { cooperatives: 
             </tbody>
           </table>
         </div>
+        {totalMemberPages > 1 && (
+          <div className="flex items-center justify-center gap-3 p-4 border-t border-border">
+            <button
+              type="button"
+              onClick={() => handlePageChange(currentPage - 1)}
+              disabled={currentPage === 1}
+              className="px-3 py-2 rounded-lg border border-border bg-card hover:bg-accent disabled:opacity-50 disabled:pointer-events-none text-sm transition-colors"
+            >
+              Previous
+            </button>
+            <span className="min-w-[96px] text-center text-sm text-muted-foreground">
+              Page {currentPage} of {totalMemberPages}
+            </span>
+            <button
+              type="button"
+              onClick={() => handlePageChange(currentPage + 1)}
+              disabled={currentPage === totalMemberPages}
+              className="px-3 py-2 rounded-lg border border-border bg-card hover:bg-accent disabled:opacity-50 disabled:pointer-events-none text-sm transition-colors"
+            >
+              Next
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

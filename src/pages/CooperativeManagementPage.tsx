@@ -109,6 +109,10 @@ export function CooperativeManagementPage() {
   const [selectedMember, setSelectedMember] = useState<CooperativeMember | null>(null);
   const [dbError, setDbError] = useState(false);
 
+  // Pagination states for members
+  const [currentPage, setCurrentPage] = useState(1);
+  const [membersPerPage] = useState(25);
+
   // Loading states
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
@@ -140,6 +144,10 @@ export function CooperativeManagementPage() {
   useEffect(() => {
     reloadDashboardData(cooperatives.length > 0);
   }, [viewMode]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filterStatus, viewMode]);
 
   const loadStats = async () => {
     try {
@@ -576,15 +584,36 @@ export function CooperativeManagementPage() {
     return matchesSearch && matchesStatus;
   });
 
-  const filteredMembers = members.filter(member => {
-    const matchesSearch = 
+  const filteredMembers = useMemo(() => {
+    const filtered = members.filter(member => {
+      const matchesSearch =
+        (member.staff_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (member.staff_number || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (member.member_number || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (member.cooperative_name || '').toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesStatus = filterStatus === 'all' || member.status === filterStatus;
+      return matchesSearch && matchesStatus;
+    });
+
+    // Apply pagination
+    const indexOfLastMember = currentPage * membersPerPage;
+    const indexOfFirstMember = indexOfLastMember - membersPerPage;
+    return filtered.slice(indexOfFirstMember, indexOfLastMember);
+  }, [members, searchTerm, filterStatus, currentPage, membersPerPage]);
+
+  const totalMemberPages = Math.ceil(members.filter(member => {
+    const matchesSearch =
       (member.staff_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (member.staff_number || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (member.member_number || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (member.cooperative_name || '').toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = filterStatus === 'all' || member.status === filterStatus;
     return matchesSearch && matchesStatus;
-  });
+  }).length / membersPerPage);
+
+  const handlePageChange = (pageNumber: number) => {
+    setCurrentPage(Math.min(Math.max(pageNumber, 1), Math.max(totalMemberPages, 1)));
+  };
 
   const filteredContributions = contributions.filter(contrib => {
     const matchesSearch = 
@@ -759,21 +788,46 @@ export function CooperativeManagementPage() {
       )}
 
       {viewMode === 'members' && (
-        <MembersView
-          members={filteredMembers}
-          onEdit={(member) => {
-            setEditingMember(member);
-            setShowMemberModal(true);
-          }}
-          onUpdateStatus={handleUpdateMemberStatus}
-          onWithdraw={(member) => {
-            setSelectedMember(member);
-            setShowWithdrawalModal(true);
-          }}
-          onViewStatement={handleViewStatement}
-          onDelete={handleDeleteMember}
-          updatingStatusId={updatingStatusId}
-        />
+        <>
+          <MembersView
+            members={filteredMembers}
+            onEdit={(member) => {
+              setEditingMember(member);
+              setShowMemberModal(true);
+            }}
+            onUpdateStatus={handleUpdateMemberStatus}
+            onWithdraw={(member) => {
+              setSelectedMember(member);
+              setShowWithdrawalModal(true);
+            }}
+            onViewStatement={handleViewStatement}
+            onDelete={handleDeleteMember}
+            updatingStatusId={updatingStatusId}
+          />
+          {totalMemberPages > 1 && (
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage === 1}
+                className="px-3 py-2 rounded-lg border border-border bg-card hover:bg-accent disabled:opacity-50 disabled:pointer-events-none text-sm transition-colors"
+              >
+                Previous
+              </button>
+              <span className="min-w-[96px] text-center text-sm text-muted-foreground">
+                Page {currentPage} of {totalMemberPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage === totalMemberPages}
+                className="px-3 py-2 rounded-lg border border-border bg-card hover:bg-accent disabled:opacity-50 disabled:pointer-events-none text-sm transition-colors"
+              >
+                Next
+              </button>
+            </div>
+          )}
+        </>
       )}
 
       {viewMode === 'contributions' && (
