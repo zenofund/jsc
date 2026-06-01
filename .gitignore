@@ -20,3 +20,5 @@ node_modules/
 **/.vite/
 *.log
 *.err.log
+.vscode/
+__gitseed/
