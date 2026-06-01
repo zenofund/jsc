@@ -168,9 +168,10 @@ export class CreateLoanApplicationDto {
   purpose: string;
 
   @IsArray()
+  @IsOptional()
   @ValidateNested({ each: true })
   @Type(() => GuarantorDto)
-  guarantors: GuarantorDto[];
+  guarantors?: GuarantorDto[];
 }
 
 export class ApproveLoanDto {

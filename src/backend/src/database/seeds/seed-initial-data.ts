@@ -248,7 +248,89 @@ async function seedDatabase() {
     }
     console.log('✅ Seeded 3 loan types');
 
-    // ==================== 9. SEED SYSTEM SETTINGS ====================
+    // ==================== 9. SEED REPORT TEMPLATES ====================
+    console.log('\n📝 Seeding report templates...');
+
+    const reportTemplates = [
+      {
+        name: 'Cooperative Overview Report',
+        description: 'High-level overview of all cooperative societies.',
+        category: 'cooperative',
+        is_public: true,
+        config: {
+          fields: [
+            { table: 'cooperatives', field: 'name', alias: 'Cooperative Name' },
+            { table: 'cooperatives', field: 'code', alias: 'Cooperative Code' },
+            { table: 'cooperatives', field: 'status', alias: 'Status' },
+            { table: 'cooperatives', field: 'total_members', alias: 'Total Members' },
+            { table: 'cooperatives', field: 'total_contributions', alias: 'Total Contributions' },
+            { table: 'cooperatives', field: 'total_loans_outstanding', alias: 'Outstanding Loans' },
+          ],
+        },
+      },
+      {
+        name: 'Cooperative Contributions Report',
+        description: 'Detailed report of all member contributions.',
+        category: 'cooperative',
+        is_public: true,
+        config: {
+          fields: [
+            { table: 'contributions', field: 'payment_date', alias: 'Payment Date' },
+            { table: 'contributions', field: 'staff_name', alias: 'Member Name' },
+            { table: 'contributions', field: 'cooperative_name', alias: 'Cooperative' },
+            { table: 'contributions', field: 'amount', alias: 'Amount' },
+            { table: 'contributions', field: 'contribution_type', alias: 'Type' },
+            { table: 'contributions', field: 'payment_method', alias: 'Payment Method' },
+          ],
+        },
+      },
+      {
+        name: 'Cooperative Loans Report',
+        description: 'Detailed report of all loans disbursed to cooperative members.',
+        category: 'cooperative',
+        is_public: true,
+        config: {
+          fields: [
+            { table: 'loans', field: 'disbursement_date', alias: 'Disbursement Date' },
+            { table: 'loans', field: 'staff_name', alias: 'Member Name' },
+            { table: 'loans', field: 'cooperative_name', alias: 'Cooperative' },
+            { table: 'loans', field: 'principal_amount', alias: 'Principal' },
+            { table: 'loans', field: 'total_repaid', alias: 'Total Repaid' },
+            { table: 'loans', field: 'balance_outstanding', alias: 'Outstanding Balance' },
+            { table: 'loans', field: 'status', alias: 'Status' },
+          ],
+        },
+      },
+      {
+        name: 'Cooperative Members Report',
+        description: 'List of all members across all cooperatives.',
+        category: 'cooperative',
+        is_public: true,
+        config: {
+          fields: [
+            { table: 'members', field: 'member_number', alias: 'Member Number' },
+            { table: 'members', field: 'staff_name', alias: 'Member Name' },
+            { table: 'members', field: 'cooperative_name', alias: 'Cooperative' },
+            { table: 'members', field: 'monthly_contribution', alias: 'Monthly Contribution' },
+            { table: 'members', field: 'total_contributions', alias: 'Total Contributions' },
+            { table: 'members', field: 'shares_owned', alias: 'Shares' },
+            { table: 'members', field: 'status', alias: 'Status' },
+          ],
+        },
+      },
+    ];
+
+    for (const rt of reportTemplates) {
+      await client.query(
+        `INSERT INTO report_templates (name, description, category, config, is_public, status, created_by)
+         VALUES ($1, $2, $3, $4, $5, 'active', $6)
+         ON CONFLICT (name) DO NOTHING`,
+        [rt.name, rt.description, rt.category, JSON.stringify(rt.config), rt.is_public, adminUserId]
+      );
+    }
+    console.log(`✅ Seeded ${reportTemplates.length} cooperative report templates`);
+
+    // ==================== 10. SEED SYSTEM SETTINGS ====================
     console.log('\n📝 Seeding system settings...');
     
     // Check if key column exists to determine insert structure

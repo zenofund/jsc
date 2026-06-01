@@ -263,6 +263,18 @@ function ApplicationsTab({
       try {
         setAssigningLoan(true);
         const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+        const selectedLoanType = loanTypesList.find((type) => type.id === assignLoanData.loanTypeId);
+
+        if (selectedLoanType) {
+          if (selectedLoanType.max_amount !== undefined && assignLoanData.requestedAmount > selectedLoanType.max_amount) {
+            showToast.error('Invalid Amount', `Maximum loan amount is ${formatCurrency(selectedLoanType.max_amount)}`);
+            return;
+          }
+          if (selectedLoanType.max_tenure_months !== undefined && assignLoanData.tenureMonths > selectedLoanType.max_tenure_months) {
+            showToast.error('Invalid Tenure', `Maximum tenure is ${selectedLoanType.max_tenure_months} months`);
+            return;
+          }
+        }
         
         // 1. Create Application
         const createPayload = {
@@ -304,7 +316,7 @@ function ApplicationsTab({
           
           showToast.success('Loan assigned, approved, and disbursed successfully');
         } else {
-          showToast.success('Loan assigned successfully (Pending Approval)');
+          showToast.success('Loan assigned successfully', 'It is ready for admin approval');
         }
         
         setShowAssignModal(false);
@@ -410,6 +422,7 @@ function ApplicationsTab({
           className="px-4 py-2 rounded-lg border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
         >
           <option value="all">All Status</option>
+          <option value="draft">Draft</option>
           <option value="pending">Pending</option>
           <option value="guarantor_pending">Guarantor Pending</option>
           <option value="approved">Approved</option>
@@ -471,7 +484,7 @@ function ApplicationsTab({
                     <td className="px-6 py-4 text-center">{getStatusBadge(app.status)}</td>
                     <td className="px-6 py-4">
                       <div className="flex items-center justify-center gap-2">
-                        {(app.status === 'pending' || app.status === 'guarantor_pending') && (
+                        {(['draft', 'pending', 'guarantor_pending'].includes(app.status)) && (
                           <>
                             <button
                               onClick={() => {

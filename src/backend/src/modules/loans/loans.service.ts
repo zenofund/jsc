@@ -313,8 +313,19 @@ export class LoansService {
       ],
     );
 
+    for (const guarantor of dto.guarantors || []) {
+      await this.addGuarantor(
+        {
+          loanApplicationId: application.id,
+          guarantorStaffId: guarantor.staffId,
+          remarks: guarantor.remarks,
+        },
+        userId,
+      );
+    }
+
     this.logger.log(`Loan application ${appNumber} created for staff ${staff.staff_number}`);
-    return application;
+    return this.findOneLoanApplication(application.id);
   }
 
   async findAllLoanApplications(filters: {
@@ -492,8 +503,9 @@ export class LoansService {
   async approveLoanApplication(id: string, dto: ApproveLoanDto, userId: string) {
     const application = await this.findOneLoanApplication(id);
 
-    if (application.status !== 'pending') {
-      throw new BadRequestException('Application must be in pending status');
+    const approvableStatuses = ['draft', 'pending', 'guarantor_pending'];
+    if (!approvableStatuses.includes(application.status)) {
+      throw new BadRequestException('Application must be draft, pending, or awaiting guarantor consent before approval');
     }
 
     const updated = await this.databaseService.queryOne(
@@ -592,8 +604,8 @@ export class LoansService {
     // Get guarantor staff info
     const guarantor = await this.databaseService.queryOne(
       `SELECT id, staff_number, 
-        bio_data->>'first_name' as first_name,
-        bio_data->>'last_name' as last_name
+        first_name,
+        last_name
       FROM staff WHERE id = $1`,
       [dto.guarantorStaffId],
     );
@@ -623,7 +635,7 @@ export class LoansService {
         dto.loanApplicationId,
         dto.guarantorStaffId,
         guarantor.staff_number,
-        `${guarantor.first_name} ${guarantor.last_name}`,
+        [guarantor.first_name, guarantor.last_name].filter(Boolean).join(' '),
         dto.relationship || null,
         dto.remarks || null,
       ],
@@ -778,6 +790,10 @@ export class LoansService {
       [`DISB/${year}/%`],
     );
     const disbNumber = `DISB/${year}/${String(parseInt(count.count) + 1).padStart(5, '0')}`;
+    const approvedAmount = Number(application.amount_approved || application.amount_requested || dto.amount);
+    const totalRepayment = Number(application.total_repayment || approvedAmount);
+    const monthlyDeduction = Number(application.monthly_deduction || Math.round(totalRepayment / application.tenure_months));
+    const startMonth = new Date(dto.disbursementDate).toISOString().slice(0, 7);
 
     const disbursement = await this.databaseService.queryOne(
       `INSERT INTO loan_disbursements (
@@ -796,10 +812,10 @@ export class LoansService {
         dto.amount,
         dto.disbursementDate,
         'bank_transfer',
-        new Date().toISOString().slice(0, 7),
+        startMonth,
         application.tenure_months,
-        application.monthly_deduction,
-        dto.amount,
+        monthlyDeduction,
+        totalRepayment,
         dto.payrollBatchId || null,
         userId,
         dto.remarks || null,
@@ -826,9 +842,28 @@ export class LoansService {
     status?: string;
   }) {
     let query = `
-      SELECT ld.*, la.application_number, la.loan_type_name
+      SELECT ld.*, la.application_number, la.loan_type_name, la.staff_name,
+        lt.cooperative_id, c.name as cooperative_name,
+        COALESCE(la.amount_approved, la.amount_requested, ld.amount_disbursed) as principal_amount,
+        COALESCE(la.interest_amount, 0) as interest_amount,
+        COALESCE(la.total_repayment, ld.amount_disbursed) as total_amount,
+        COALESCE((
+          SELECT SUM(lr.amount)
+          FROM loan_repayments lr
+          WHERE lr.disbursement_id = ld.id
+        ), 0) as total_repaid,
+        ld.start_month as start_deduction_month,
+        COALESCE(
+          ld.end_month,
+          TO_CHAR(
+            TO_DATE(ld.start_month || '-01', 'YYYY-MM-DD') + ((COALESCE(ld.tenure_months, 1) - 1) * INTERVAL '1 month'),
+            'YYYY-MM'
+          )
+        ) as end_deduction_month
       FROM loan_disbursements ld
       LEFT JOIN loan_applications la ON ld.loan_application_id = la.id
+      LEFT JOIN loan_types lt ON la.loan_type_id = lt.id
+      LEFT JOIN cooperatives c ON lt.cooperative_id = c.id
     `;
     const conditions = [];
     const params = [];
@@ -854,9 +889,28 @@ export class LoansService {
 
   async findOneDisbursement(id: string) {
     const disbursement = await this.databaseService.queryOne(
-      `SELECT ld.*, la.application_number, la.loan_type_name
+      `SELECT ld.*, la.application_number, la.loan_type_name, la.staff_name,
+        lt.cooperative_id, c.name as cooperative_name,
+        COALESCE(la.amount_approved, la.amount_requested, ld.amount_disbursed) as principal_amount,
+        COALESCE(la.interest_amount, 0) as interest_amount,
+        COALESCE(la.total_repayment, ld.amount_disbursed) as total_amount,
+        COALESCE((
+          SELECT SUM(lr.amount)
+          FROM loan_repayments lr
+          WHERE lr.disbursement_id = ld.id
+        ), 0) as total_repaid,
+        ld.start_month as start_deduction_month,
+        COALESCE(
+          ld.end_month,
+          TO_CHAR(
+            TO_DATE(ld.start_month || '-01', 'YYYY-MM-DD') + ((COALESCE(ld.tenure_months, 1) - 1) * INTERVAL '1 month'),
+            'YYYY-MM'
+          )
+        ) as end_deduction_month
       FROM loan_disbursements ld
       LEFT JOIN loan_applications la ON ld.loan_application_id = la.id
+      LEFT JOIN loan_types lt ON la.loan_type_id = lt.id
+      LEFT JOIN cooperatives c ON lt.cooperative_id = c.id
       WHERE ld.id = $1`,
       [id],
     );
@@ -872,8 +926,18 @@ export class LoansService {
     const disbursement = await this.findOneDisbursement(id);
 
     return this.databaseService.query(
-      `SELECT * FROM loan_repayments 
-       WHERE disbursement_id = $1 
+      `SELECT lr.*,
+        lr.month as repayment_month,
+        lr.amount as amount_paid,
+        lr.repayment_date as payment_date,
+        COALESCE(lr.payment_method, CASE WHEN lr.payroll_batch_id IS NULL THEN 'direct_payment' ELSE 'payroll_deduction' END) as payment_method,
+        GREATEST(
+          ld.balance_outstanding,
+          0
+        ) as balance_after_payment
+       FROM loan_repayments lr
+       LEFT JOIN loan_disbursements ld ON lr.disbursement_id = ld.id
+       WHERE lr.disbursement_id = $1 
        ORDER BY repayment_date DESC`,
       [id],
     );
@@ -912,7 +976,11 @@ export class LoansService {
         disbursement_id, staff_id, amount, repayment_date, 
         month, payroll_batch_id, recorded_by
       ) VALUES ($1, $2, $3, NOW(), $4, $5, $6)
-      RETURNING *`,
+      RETURNING *,
+        month as repayment_month,
+        amount as amount_paid,
+        repayment_date as payment_date,
+        CASE WHEN payroll_batch_id IS NULL THEN 'direct_payment' ELSE 'payroll_deduction' END as payment_method`,
       [
         dto.disbursementId,
         disbursement.staff_id,
@@ -924,7 +992,7 @@ export class LoansService {
     );
 
     // Update disbursement balance
-    const newBalance = disbursement.balance_outstanding - dto.amount;
+    const newBalance = Number(disbursement.balance_outstanding || 0) - dto.amount;
     await this.databaseService.query(
       `UPDATE loan_disbursements 
        SET balance_outstanding = $1, 
@@ -943,7 +1011,12 @@ export class LoansService {
     staffId?: string;
   }) {
     let query = `
-      SELECT lr.*, ld.disbursement_number, ld.staff_number
+      SELECT lr.*, ld.disbursement_number, ld.staff_number,
+        lr.month as repayment_month,
+        lr.amount as amount_paid,
+        lr.repayment_date as payment_date,
+        COALESCE(lr.payment_method, CASE WHEN lr.payroll_batch_id IS NULL THEN 'direct_payment' ELSE 'payroll_deduction' END) as payment_method,
+        GREATEST(ld.balance_outstanding, 0) as balance_after_payment
       FROM loan_repayments lr
       LEFT JOIN loan_disbursements ld ON lr.disbursement_id = ld.id
     `;
@@ -971,7 +1044,12 @@ export class LoansService {
 
   async findOneRepayment(id: string) {
     const repayment = await this.databaseService.queryOne(
-      `SELECT lr.*, ld.disbursement_number, ld.staff_number
+      `SELECT lr.*, ld.disbursement_number, ld.staff_number,
+        lr.month as repayment_month,
+        lr.amount as amount_paid,
+        lr.repayment_date as payment_date,
+        COALESCE(lr.payment_method, CASE WHEN lr.payroll_batch_id IS NULL THEN 'direct_payment' ELSE 'payroll_deduction' END) as payment_method,
+        GREATEST(ld.balance_outstanding, 0) as balance_after_payment
       FROM loan_repayments lr
       LEFT JOIN loan_disbursements ld ON lr.disbursement_id = ld.id
       WHERE lr.id = $1`,
@@ -990,13 +1068,16 @@ export class LoansService {
   async getLoanStats() {
     const stats = await this.databaseService.queryOne(
       `SELECT 
-        COUNT(DISTINCT CASE WHEN la.status IN ('pending', 'guarantor_pending') THEN la.id END) as pending_applications,
-        COUNT(DISTINCT CASE WHEN la.status = 'approved' THEN la.id END) as approved_applications,
-        COUNT(DISTINCT CASE WHEN ld.status = 'active' THEN ld.id END) as active_disbursements,
-        COALESCE(SUM(CASE WHEN ld.status = 'active' THEN ld.balance_outstanding ELSE 0 END), 0) as total_outstanding,
-        COALESCE(SUM(ld.amount_disbursed), 0) as total_disbursed
-      FROM loan_applications la
-      LEFT JOIN loan_disbursements ld ON la.id = ld.loan_application_id`,
+        (SELECT COUNT(*) FROM loan_applications) as total_applications,
+        (SELECT COUNT(*) FROM loan_applications WHERE status IN ('draft', 'pending', 'guarantor_pending')) as pending_applications,
+        (SELECT COUNT(*) FROM loan_applications WHERE status = 'approved') as approved_applications,
+        (SELECT COUNT(*) FROM loan_disbursements WHERE status = 'active') as active_loans,
+        (SELECT COUNT(*) FROM loan_disbursements WHERE status = 'active') as active_disbursements,
+        (SELECT COALESCE(SUM(balance_outstanding), 0) FROM loan_disbursements WHERE status = 'active') as total_outstanding,
+        (SELECT COALESCE(SUM(amount_disbursed), 0) FROM loan_disbursements) as total_disbursed,
+        (SELECT COALESCE(SUM(amount), 0) FROM loan_repayments) as total_repaid,
+        (SELECT COUNT(*) FROM cooperative_members WHERE status = 'active') as cooperative_members,
+        (SELECT COALESCE(SUM(amount), 0) FROM cooperative_contributions) as total_contributions`,
     );
 
     return stats;

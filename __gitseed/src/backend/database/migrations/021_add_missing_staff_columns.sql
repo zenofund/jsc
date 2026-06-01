@@ -1,0 +1,6 @@
+-- Add missing columns to staff table
+ALTER TABLE staff 
+ADD COLUMN IF NOT EXISTS account_name VARCHAR(255),
+ADD COLUMN IF NOT EXISTS pension_pin VARCHAR(50),
+ADD COLUMN IF NOT EXISTS tax_id VARCHAR(50),
+ADD COLUMN IF NOT EXISTS nhf_number VARCHAR(50);

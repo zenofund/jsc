@@ -5,16 +5,10 @@
 import type {
   LoanType,
   LoanApplication,
-  LoanGuarantor,
-  LoanDisbursement,
-  LoanRepayment,
   Cooperative,
   CooperativeMember,
   CooperativeContribution,
-  LoanApproval,
-  Staff,
 } from '../types/entities';
-import { formatStaffName } from './name-utils';
 
 // Helper function to make API requests
 const API_BASE_URL = import.meta.env?.VITE_API_URL || 'http://localhost:3000/api/v1';
@@ -160,25 +154,15 @@ export const loanApplicationAPI = {
       throw new Error(`Minimum ${loanType.min_guarantors} guarantors required`);
     }
 
-    // Create guarantor records
+    // Create guarantor records using the backend DTO shape.
     for (const guarantor of guarantors) {
-      const guarantorStaff = await makeApiRequest(`/staff/${guarantor.staff_id}`, { method: 'GET' });
-      if (!guarantorStaff) continue;
-
-      const guarantorRecord: LoanGuarantor = {
-        id: crypto.randomUUID(),
-        loan_application_id: id,
-        guarantor_staff_id: guarantor.staff_id,
-        guarantor_staff_number: guarantorStaff.staff_number,
-        guarantor_name: formatStaffName(guarantorStaff),
-        guarantor_designation: guarantorStaff.appointment.designation,
-        guarantor_department: guarantorStaff.appointment.department,
-        consent_status: 'pending',
-        liability_amount: application.amount_requested / guarantors.length,
-        created_at: new Date().toISOString(),
-      };
-
-      await makeApiRequest('/loans/guarantors', { method: 'POST', body: JSON.stringify(guarantorRecord) });
+      await makeApiRequest('/loans/guarantors', {
+        method: 'POST',
+        body: JSON.stringify({
+          loanApplicationId: id,
+          guarantorStaffId: guarantor.staff_id,
+        }),
+      });
     }
 
     return makeApiRequest(`/loans/applications/${id}/submit`, { method: 'PUT' });
@@ -306,45 +290,14 @@ export const guarantorAPI = {
     const guarantor = await makeApiRequest(`/loans/guarantors/${id}`, { method: 'GET' });
     if (!guarantor) throw new Error('Guarantor request not found');
 
-    const updated: LoanGuarantor = {
-      ...guarantor,
-      consent_status: action,
-      consent_date: new Date().toISOString(),
-      consent_comments: comments,
-    };
-
-    await makeApiRequest(`/loans/guarantors/${id}`, { method: 'PUT', body: JSON.stringify(updated) });
-
-    // Check if all guarantors have responded
-    const allGuarantors = await makeApiRequest(
-      `/loans/guarantors?loan_application_id=${guarantor.loan_application_id}`,
-      { method: 'GET' }
-    );
-
-    const allAccepted = allGuarantors.every((g: any) => g.consent_status === 'accepted');
-    const anyDeclined = allGuarantors.some((g: any) => g.consent_status === 'declined');
-
-    // Update loan application status
-    const application = await makeApiRequest(`/loans/applications/${guarantor.loan_application_id}`, { method: 'GET' });
-    if (application && application.status === 'guarantor_pending') {
-      let newStatus = application.status;
-      if (allAccepted) {
-        newStatus = 'pending';
-      } else if (anyDeclined) {
-        newStatus = 'rejected';
-      }
-
-      const updatedApp: LoanApplication = {
-        ...application,
-        status: newStatus,
-        rejection_reason: anyDeclined ? 'Guarantor declined to stand as guarantor' : undefined,
-        updated_at: new Date().toISOString(),
-      };
-
-      await makeApiRequest(`/loans/applications/${guarantor.loan_application_id}`, { method: 'PUT', body: JSON.stringify(updatedApp) });
-    }
-
-    return updated;
+    return makeApiRequest(`/loans/guarantors/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        consentStatus: action,
+        consentDate: new Date().toISOString(),
+        consentComments: comments,
+      }),
+    });
   },
 };
 
@@ -410,16 +363,24 @@ export const disbursementAPI = {
     const totalRepaid = disbursement.total_repaid ?? 0;
     const balanceOutstanding = disbursement.balance_outstanding ?? 0;
     const tenureMonths = disbursement.tenure_months ?? 0;
+    const normalizedRepayments = repayments.map((repayment: any) => ({
+      ...repayment,
+      repayment_month: repayment.repayment_month ?? repayment.month,
+      amount_paid: repayment.amount_paid ?? repayment.amount,
+      balance_after_payment: repayment.balance_after_payment ?? 0,
+      payment_method: repayment.payment_method ?? (repayment.payroll_batch_id ? 'payroll_deduction' : 'direct_payment'),
+      payment_date: repayment.payment_date ?? repayment.repayment_date,
+    }));
 
     return {
       disbursement,
-      repayments: repayments.sort((a: any, b: any) => a.repayment_month.localeCompare(b.repayment_month)),
+      repayments: normalizedRepayments.sort((a: any, b: any) => a.repayment_month.localeCompare(b.repayment_month)),
       summary: {
         total_amount: totalAmount,
         total_repaid: totalRepaid,
         balance_outstanding: balanceOutstanding,
-        months_paid: repayments.length,
-        months_remaining: Math.max(0, tenureMonths - repayments.length),
+        months_paid: normalizedRepayments.length,
+        months_remaining: Math.max(0, tenureMonths - normalizedRepayments.length),
       },
     };
   },
@@ -470,40 +431,15 @@ export const repaymentAPI = {
     const disbursement = await makeApiRequest(`/loans/disbursements/${data.disbursement_id}`, { method: 'GET' });
     if (!disbursement) throw new Error('Disbursement not found');
 
-    // Calculate principal and interest portions
-    const interestPortion = (disbursement.interest_amount / disbursement.tenure_months);
-    const principalPortion = data.amount_paid - interestPortion;
-
-    const repayment: LoanRepayment = {
-      id: crypto.randomUUID(),
-      disbursement_id: data.disbursement_id,
-      staff_id: disbursement.staff_id,
-      staff_number: disbursement.staff_number,
-      payroll_batch_id: data.payroll_batch_id,
-      repayment_month: data.repayment_month,
-      amount_paid: data.amount_paid,
-      principal_paid: Math.round(principalPortion),
-      interest_paid: Math.round(interestPortion),
-      balance_after_payment: disbursement.balance_outstanding - data.amount_paid,
-      payment_method: data.payment_method,
-      payment_reference: data.payment_reference,
-      payment_date: new Date().toISOString(),
-      created_at: new Date().toISOString(),
-    };
-
-    await makeApiRequest('/loans/repayments', { method: 'POST', body: JSON.stringify(repayment) });
-
-    // Update disbursement
-    const newBalance = disbursement.balance_outstanding - data.amount_paid;
-    const updatedDisbursement: LoanDisbursement = {
-      ...disbursement,
-      balance_outstanding: Math.max(0, newBalance),
-      total_repaid: disbursement.total_repaid + data.amount_paid,
-      status: newBalance <= 0 ? 'completed' : 'active',
-    };
-    await makeApiRequest(`/loans/disbursements/${data.disbursement_id}`, { method: 'PUT', body: JSON.stringify(updatedDisbursement) });
-
-    return repayment;
+    return makeApiRequest('/loans/repayments', {
+      method: 'POST',
+      body: JSON.stringify({
+        disbursementId: data.disbursement_id,
+        amount: data.amount_paid,
+        month: data.repayment_month,
+        payrollBatchId: data.payroll_batch_id,
+      }),
+    });
   },
 
   // Get staff repayments
@@ -729,21 +665,16 @@ export const cooperativeAPI = {
       sharesOwned?: number;
     },
   ) {
-    const member = await makeApiRequest(`/cooperatives/members/${memberId}`, { method: 'GET' });
-    if (!member) throw new Error('Member not found');
+    const monthlyContribution = data.monthlyContribution ?? data.monthly_contribution;
+    const shares_owned = data.shares_owned ?? data.sharesOwned;
+    const payload: any = {};
+    if (monthlyContribution !== undefined) payload.monthlyContribution = monthlyContribution;
+    if (shares_owned !== undefined) payload.shares_owned = shares_owned;
 
-    const nextMonthly =
-      data.monthly_contribution ?? data.monthlyContribution ?? member.monthly_contribution;
-    const nextShares = data.shares_owned ?? data.sharesOwned ?? member.shares_owned;
-
-    const updated: CooperativeMember = {
-      ...member,
-      monthly_contribution: nextMonthly,
-      shares_owned: nextShares,
-      updated_at: new Date().toISOString(),
-    };
-
-    return makeApiRequest(`/cooperatives/members/${memberId}`, { method: 'PUT', body: JSON.stringify(updated) });
+    return makeApiRequest(`/cooperatives/members/${memberId}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
   },
 
   // Update member status
