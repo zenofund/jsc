@@ -7,6 +7,12 @@ export class AllowancesService {
 
   constructor(private databaseService: DatabaseService) {}
 
+  private toMonthStart(value: any): string | null | undefined {
+    if (value === undefined) return undefined;
+    if (value === null || value === '') return null;
+    return `${String(value).substring(0, 7)}-01`;
+  }
+
   // ==================== GLOBAL ALLOWANCES ====================
 
   async createGlobalAllowance(dto: any, userId: string) {
@@ -136,13 +142,13 @@ export class AllowancesService {
       throw new NotFoundException(`Allowance with ID ${id} not found`);
     }
 
-    await this.databaseService.query(
-      `UPDATE allowances SET status = 'inactive', updated_at = NOW() WHERE id = $1`,
-      [id],
-    );
+    await this.databaseService.transaction(async (client) => {
+      await client.query('DELETE FROM staff_allowances WHERE allowance_id = $1', [id]);
+      await client.query('DELETE FROM allowances WHERE id = $1', [id]);
+    });
 
-    this.logger.log(`Global allowance ${id} deactivated by user ${userId}`);
-    return { message: 'Allowance deactivated successfully' };
+    this.logger.log(`Global allowance ${id} deleted by user ${userId}`);
+    return { message: 'Allowance deleted successfully' };
   }
 
   // ==================== STAFF-SPECIFIC ALLOWANCES ====================
@@ -194,9 +200,9 @@ export class AllowancesService {
         allowance.id,
         allowance.type === 'fixed' ? (dto.amount || null) : null,
         allowance.type === 'percentage' ? (dto.percentage || null) : null,
-        (dto.effective_from || dto.startMonth) ? `${(dto.effective_from || dto.startMonth).substring(0, 7)}-01` : null,
-        (dto.effective_to || dto.endMonth) ? `${(dto.effective_to || dto.endMonth).substring(0, 7)}-01` : null,
-        dto.frequency || 'monthly',
+        this.toMonthStart(dto.effective_from || dto.startMonth),
+        this.toMonthStart(dto.effective_to || dto.endMonth),
+        dto.frequency || 'recurring',
         initialStatus,
         userId,
       ],
@@ -207,14 +213,21 @@ export class AllowancesService {
   }
 
   async findStaffAllowances(staffId: string, query: any) {
-    const { status } = query;
+    const { status, month } = query;
 
     let whereClause = 'WHERE staff_id = $1';
     const params = [staffId];
 
     if (status) {
-      whereClause += ' AND status = $2';
+      whereClause += ` AND status = $${params.length + 1}`;
       params.push(status);
+    }
+
+    if (month) {
+      whereClause += ` AND effective_from <= TO_DATE($${params.length + 1} || '-01', 'YYYY-MM-DD')`;
+      params.push(month);
+      whereClause += ` AND (effective_to IS NULL OR effective_to >= TO_DATE($${params.length + 1} || '-01', 'YYYY-MM-DD'))`;
+      params.push(month);
     }
 
     const data = await this.databaseService.query(
@@ -309,22 +322,30 @@ export class AllowancesService {
       }
     }
 
+    const effectiveFrom = this.toMonthStart(dto.effective_from ?? dto.startMonth);
+    const effectiveTo = this.toMonthStart(dto.effective_to ?? dto.endMonth);
+
     const updated = await this.databaseService.queryOne(
       `UPDATE staff_allowances
        SET allowance_id = $1,
            amount = COALESCE($2, amount),
            percentage = COALESCE($3, percentage),
-           effective_to = COALESCE($4, effective_to),
-           status = COALESCE($5, status),
+           effective_from = COALESCE($4, effective_from),
+           effective_to = CASE WHEN $5::date IS NULL AND $8::boolean THEN NULL ELSE COALESCE($5, effective_to) END,
+           frequency = COALESCE($6, frequency),
+           status = COALESCE($7, status),
            updated_at = NOW()
-       WHERE id = $6
+       WHERE id = $9
        RETURNING *`,
       [
         allowanceId,
         dto.amount,
         dto.percentage,
-        (dto.effective_to || dto.endMonth) ? `${(dto.effective_to || dto.endMonth).substring(0, 7)}-01` : null,
+        effectiveFrom,
+        effectiveTo,
+        dto.frequency,
         dto.status,
+        dto.effective_to === null || dto.effective_to === '',
         id
       ],
     );
@@ -344,12 +365,12 @@ export class AllowancesService {
     }
 
     await this.databaseService.query(
-      `UPDATE staff_allowances SET status = 'inactive', updated_at = NOW() WHERE id = $1`,
+      `DELETE FROM staff_allowances WHERE id = $1`,
       [id],
     );
 
-    this.logger.log(`Staff allowance ${id} deactivated by user ${userId}`);
-    return { message: 'Staff allowance deactivated successfully' };
+    this.logger.log(`Staff allowance ${id} deleted by user ${userId}`);
+    return { message: 'Staff allowance deleted successfully' };
   }
 
   async bulkUpdateStaffAllowanceStatus(ids: string[], status: string, userId: string) {

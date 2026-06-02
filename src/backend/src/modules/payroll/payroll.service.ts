@@ -298,8 +298,8 @@ export class PayrollService {
        FROM staff_allowances sa
        LEFT JOIN allowances a ON sa.allowance_id = a.id
        WHERE sa.status = 'active' 
-       AND sa.start_month <= $1 
-       AND (sa.end_month IS NULL OR sa.end_month >= $1)`,
+       AND sa.effective_from <= TO_DATE($1 || '-01', 'YYYY-MM-DD')
+       AND (sa.effective_to IS NULL OR sa.effective_to >= TO_DATE($1 || '-01', 'YYYY-MM-DD'))`,
       [batch.payroll_month],
     );
 
@@ -313,8 +313,8 @@ export class PayrollService {
        FROM staff_deductions sd
        LEFT JOIN deductions d ON sd.deduction_id = d.id
        WHERE sd.status = 'active' 
-       AND sd.start_month <= $1 
-       AND (sd.end_month IS NULL OR sd.end_month >= $1)`,
+       AND sd.effective_from <= TO_DATE($1 || '-01', 'YYYY-MM-DD')
+       AND (sd.effective_to IS NULL OR sd.effective_to >= TO_DATE($1 || '-01', 'YYYY-MM-DD'))`,
       [batch.payroll_month],
     );
 

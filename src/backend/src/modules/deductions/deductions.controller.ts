@@ -46,7 +46,7 @@ export class DeductionsController {
 
   @Delete('global/:id')
   @Roles('admin')
-  @ApiOperation({ summary: 'Deactivate global deduction' })
+  @ApiOperation({ summary: 'Delete global deduction' })
   removeGlobalDeduction(@Param('id') id: string, @Request() req) {
     return this.deductionsService.removeGlobalDeduction(id, req.user.userId);
   }
@@ -89,7 +89,7 @@ export class DeductionsController {
 
   @Delete('staff/:id')
   @Roles('admin', 'payroll_officer', 'hr_manager', 'payroll_loader')
-  @ApiOperation({ summary: 'Deactivate staff-specific deduction' })
+  @ApiOperation({ summary: 'Delete staff-specific deduction' })
   removeStaffDeduction(@Param('id') id: string, @Request() req) {
     return this.deductionsService.removeStaffDeduction(id, req.user.userId);
   }

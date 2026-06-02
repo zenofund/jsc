@@ -7,6 +7,12 @@ export class DeductionsService {
 
   constructor(private databaseService: DatabaseService) {}
 
+  private toMonthStart(value: any): string | null | undefined {
+    if (value === undefined) return undefined;
+    if (value === null || value === '') return null;
+    return `${String(value).substring(0, 7)}-01`;
+  }
+
   // ==================== GLOBAL DEDUCTIONS ====================
 
   async createGlobalDeduction(dto: any, userId: string) {
@@ -133,13 +139,13 @@ export class DeductionsService {
       throw new NotFoundException(`Deduction with ID ${id} not found`);
     }
 
-    await this.databaseService.query(
-      `UPDATE deductions SET status = 'inactive', updated_at = NOW() WHERE id = $1`,
-      [id],
-    );
+    await this.databaseService.transaction(async (client) => {
+      await client.query('DELETE FROM staff_deductions WHERE deduction_id = $1', [id]);
+      await client.query('DELETE FROM deductions WHERE id = $1', [id]);
+    });
 
-    this.logger.log(`Global deduction ${id} deactivated by user ${userId}`);
-    return { message: 'Deduction deactivated successfully' };
+    this.logger.log(`Global deduction ${id} deleted by user ${userId}`);
+    return { message: 'Deduction deleted successfully' };
   }
 
   // ==================== STAFF-SPECIFIC DEDUCTIONS ====================
@@ -189,9 +195,9 @@ export class DeductionsService {
         deduction.id,
         deduction.type === 'fixed' ? (dto.amount || null) : null,
         deduction.type === 'percentage' ? (dto.percentage || null) : null,
-        (dto.effective_from || dto.startMonth) ? `${(dto.effective_from || dto.startMonth).substring(0, 7)}-01` : null,
-        (dto.effective_to || dto.endMonth) ? `${(dto.effective_to || dto.endMonth).substring(0, 7)}-01` : null,
-        dto.frequency || 'monthly',
+        this.toMonthStart(dto.effective_from || dto.startMonth),
+        this.toMonthStart(dto.effective_to || dto.endMonth),
+        dto.frequency || 'recurring',
         initialStatus,
         userId,
       ],
@@ -202,14 +208,21 @@ export class DeductionsService {
   }
 
   async findStaffDeductions(staffId: string, query: any) {
-    const { status } = query;
+    const { status, month } = query;
 
     let whereClause = 'WHERE staff_id = $1';
     const params = [staffId];
 
     if (status) {
-      whereClause += ' AND status = $2';
+      whereClause += ` AND status = $${params.length + 1}`;
       params.push(status);
+    }
+
+    if (month) {
+      whereClause += ` AND effective_from <= TO_DATE($${params.length + 1} || '-01', 'YYYY-MM-DD')`;
+      params.push(month);
+      whereClause += ` AND (effective_to IS NULL OR effective_to >= TO_DATE($${params.length + 1} || '-01', 'YYYY-MM-DD'))`;
+      params.push(month);
     }
 
     const data = await this.databaseService.query(
@@ -301,22 +314,30 @@ export class DeductionsService {
       }
     }
 
+    const effectiveFrom = this.toMonthStart(dto.effective_from ?? dto.startMonth);
+    const effectiveTo = this.toMonthStart(dto.effective_to ?? dto.endMonth);
+
     const updated = await this.databaseService.queryOne(
       `UPDATE staff_deductions
        SET deduction_id = $1,
            amount = COALESCE($2, amount),
            percentage = COALESCE($3, percentage),
-           effective_to = COALESCE($4, effective_to),
-           status = COALESCE($5, status),
+           effective_from = COALESCE($4, effective_from),
+           effective_to = CASE WHEN $5::date IS NULL AND $8::boolean THEN NULL ELSE COALESCE($5, effective_to) END,
+           frequency = COALESCE($6, frequency),
+           status = COALESCE($7, status),
            updated_at = NOW()
-       WHERE id = $6
+       WHERE id = $9
        RETURNING *`,
       [
         deductionId,
         dto.amount,
         dto.percentage,
-        (dto.effective_to || dto.endMonth) ? `${(dto.effective_to || dto.endMonth).substring(0, 7)}-01` : null,
+        effectiveFrom,
+        effectiveTo,
+        dto.frequency,
         dto.status,
+        dto.effective_to === null || dto.effective_to === '',
         id
       ],
     );
@@ -336,12 +357,12 @@ export class DeductionsService {
     }
 
     await this.databaseService.query(
-      `UPDATE staff_deductions SET status = 'inactive', updated_at = NOW() WHERE id = $1`,
+      `DELETE FROM staff_deductions WHERE id = $1`,
       [id],
     );
 
-    this.logger.log(`Staff deduction ${id} deactivated by user ${userId}`);
-    return { message: 'Staff deduction deactivated successfully' };
+    this.logger.log(`Staff deduction ${id} deleted by user ${userId}`);
+    return { message: 'Staff deduction deleted successfully' };
   }
 
   async bulkUpdateStaffDeductionStatus(ids: string[], status: string, userId: string) {

@@ -498,7 +498,7 @@ export function StaffAllowancesPage() {
         is_taxable: formData.is_taxable,
         is_pensionable: formData.is_pensionable,
         effective_from: formData.effective_from,
-        effective_to: formData.effective_to || undefined,
+        effective_to: formData.effective_to || (formData.frequency === 'one-time' ? formData.effective_from : null),
         notes: formData.notes,
         created_by: user!.id,
       };
@@ -550,7 +550,7 @@ export function StaffAllowancesPage() {
         percentage: formData.type === 'percentage' ? parseFloat(formData.percentage) : undefined,
         frequency: formData.frequency,
         effective_from: formData.effective_from,
-        effective_to: formData.effective_to || undefined,
+        effective_to: formData.effective_to || (formData.frequency === 'one-time' ? formData.effective_from : null),
         notes: formData.notes,
         created_by: user!.id,
       };

@@ -46,7 +46,7 @@ export class AllowancesController {
 
   @Delete('global/:id')
   @Roles('admin')
-  @ApiOperation({ summary: 'Deactivate global allowance' })
+  @ApiOperation({ summary: 'Delete global allowance' })
   removeGlobalAllowance(@Param('id') id: string, @Request() req) {
     return this.allowancesService.removeGlobalAllowance(id, req.user.userId);
   }
@@ -89,7 +89,7 @@ export class AllowancesController {
 
   @Delete('staff/:id')
   @Roles('admin', 'payroll_officer', 'hr_manager', 'payroll_loader')
-  @ApiOperation({ summary: 'Deactivate staff-specific allowance' })
+  @ApiOperation({ summary: 'Delete staff-specific allowance' })
   removeStaffAllowance(@Param('id') id: string, @Request() req) {
     return this.allowancesService.removeStaffAllowance(id, req.user.userId);
   }
