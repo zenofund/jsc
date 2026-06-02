@@ -1046,7 +1046,8 @@ export const NIGERIAN_STATES: NigerianState[] = [
 
 // Helper function to get LGAs by state name
 export const getLGAsByState = (stateName: string): string[] => {
-  const state = NIGERIAN_STATES.find(s => s.name === stateName);
+  const normalizedStateName = String(stateName || '').trim().toLowerCase();
+  const state = NIGERIAN_STATES.find(s => s.name.trim().toLowerCase() === normalizedStateName);
   return state ? state.lgas : [];
 };
 

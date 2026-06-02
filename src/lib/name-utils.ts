@@ -25,6 +25,12 @@ export function formatStaffName(source: StaffNameSource) {
   return full || String(source.full_name || source.staff_name || '').trim() || 'Unknown Staff';
 }
 
+export function formatStaffFirstLastName(source: StaffNameSource) {
+  const first = source.first_name ?? source.bio_data?.first_name;
+  const last = source.last_name ?? source.surname ?? source.bio_data?.last_name;
+  return joinNameParts([first, last]) || 'Unknown Staff';
+}
+
 export function formatStaffLabelWithId(source: StaffNameSource, staffNumber?: string) {
   const staffId = staffNumber || source.staff_number || 'N/A';
   return `${formatStaffName(source)} (${staffId})`;

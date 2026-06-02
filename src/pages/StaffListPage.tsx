@@ -16,7 +16,7 @@ import { PageSkeleton } from '../components/PageLoader';
 import { loadPdfMake } from '../utils/loadPdfMake';
 import { Skeleton } from '../components/ui/skeleton';
 import { Button } from '../components/ui/button';
-import { formatStaffName } from '../lib/name-utils';
+import { formatStaffName, formatStaffFirstLastName } from '../lib/name-utils';
 import Papa from 'papaparse';
 
 export const normalizeGrade = (value: any) => String(value || '').trim().toUpperCase().replace(/[\s-]+/g, '');
@@ -364,15 +364,21 @@ export function StaffListPage() {
       const nextFormValues = { ...formData, [name]: nextValue } as typeof formData;
       const shouldAutoUpdateRetirement = ['date_of_birth', 'appointment_date', 'employment_date'].includes(name) &&
         (!formData.retirement_date || formData.retirement_date === calculateExpectedRetirementDate(formData.date_of_birth, formData.appointment_date || formData.employment_date));
+      const shouldAutoUpdateExit = ['date_of_birth', 'appointment_date', 'employment_date'].includes(name) &&
+        (!formData.exit_date || formData.exit_date === calculateExpectedRetirementDate(formData.date_of_birth, formData.appointment_date || formData.employment_date));
       const nextRetirementDate = shouldAutoUpdateRetirement
         ? calculateExpectedRetirementDate(nextFormValues.date_of_birth, nextFormValues.appointment_date || nextFormValues.employment_date)
         : formData.retirement_date;
+      const nextExitDate = shouldAutoUpdateExit
+        ? calculateExpectedRetirementDate(nextFormValues.date_of_birth, nextFormValues.appointment_date || nextFormValues.employment_date)
+        : formData.exit_date;
 
-      setFormData(prev => ({ ...prev, ...nextFormValues, retirement_date: nextRetirementDate }));
+      setFormData(prev => ({ ...prev, ...nextFormValues, retirement_date: nextRetirementDate, exit_date: nextExitDate }));
       validateField(name, nextValue);
 
       if (['date_of_birth', 'appointment_date', 'employment_date'].includes(name)) {
         validateField('retirement_date', nextRetirementDate);
+        validateField('exit_date', nextExitDate);
       }
     }
     
@@ -678,6 +684,9 @@ export function StaffListPage() {
   };
 
   const populateFormWithStaff = (staffMember: Staff) => {
+    const lgaOfOrigin = staffMember.bio_data.lga_of_origin || '';
+    const stateOfOrigin = staffMember.bio_data.state_of_origin || '';
+
     setFormData({
       staff_number: staffMember.staff_number || '',
       first_name: staffMember.bio_data.first_name || '',
@@ -687,8 +696,8 @@ export function StaffListPage() {
       gender: staffMember.bio_data.gender || '',
       marital_status: staffMember.bio_data.marital_status || '',
       nationality: staffMember.bio_data.nationality || 'Nigerian',
-      state_of_origin: staffMember.bio_data.state_of_origin || '',
-      lga: staffMember.bio_data.lga_of_origin || '',
+      state_of_origin: stateOfOrigin,
+      lga: lgaOfOrigin,
       zone: staffMember.bio_data.zone || '',
       qualification: staffMember.bio_data.qualification || '',
       phone: staffMember.bio_data.phone || '',
@@ -724,10 +733,10 @@ export function StaffListPage() {
       nhf_number: staffMember.salary_info.nhf_number || '',
       status: staffMember.status || 'active',
     });
-    setAvailableLGAs(getLGAsByState(staffMember.bio_data.state_of_origin || ''));
+    const resolvedLGAs = getLGAsByState(stateOfOrigin);
+    setAvailableLGAs(resolvedLGAs.length ? resolvedLGAs : (lgaOfOrigin ? [lgaOfOrigin] : []));
     setFormErrors({});
   };
-
   const formatDateDisplay = (dateString?: string) => {
     if (!dateString) return 'N/A';
     const d = new Date(dateString);
@@ -1214,7 +1223,11 @@ export function StaffListPage() {
           setEditingStaff(null);
           resetForm();
         }}
-        title={editingStaff ? `Edit Staff - ${editingStaff.staff_number}` : 'Add New Staff'}
+        title={
+          editingStaff
+            ? `Edit Staff - ${editingStaff.staff_number} ${formatStaffFirstLastName(editingStaff)}`
+            : 'Add New Staff'
+        }
         size="lg"
         footer={
           <div className="flex items-center justify-between">
@@ -1708,7 +1721,7 @@ export function StaffListPage() {
                     type="text"
                     name="exit_date"
                     value={formData.exit_date}
-                    onChange={handleInputChange}
+                    readOnly
                     className={`w-full px-3 py-2 border ${formErrors.exit_date ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
                     placeholder="dd/mm/yyyy"
                     inputMode="numeric"
@@ -2151,7 +2164,7 @@ export function StaffListPage() {
             setShowViewModal(false);
             setViewingStaff(null);
           }}
-          title={`Staff Profile - ${viewingStaff.staff_number}`}
+          title={`Staff Profile - ${viewingStaff.staff_number} ${formatStaffFirstLastName(viewingStaff)}`}
           size="lg"
         >
           <div className="space-y-6">
