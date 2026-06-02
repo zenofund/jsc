@@ -48,9 +48,42 @@ export function DataTable<T extends Record<string, any>>({
   const [searchQuery, setSearchQuery] = useState('');
   const [sortConfig, setSortConfig] = useState<{ index: number; direction: 'asc' | 'desc' } | null>(null);
 
+  const getSearchScore = (obj: any, query: string): number => {
+  if (obj === null || obj === undefined) return 0;
+  if (typeof obj === 'string' || typeof obj === 'number' || typeof obj === 'boolean') {
+    const text = String(obj).toLowerCase();
+    if (text === query) return 10;
+    if (text.startsWith(query)) return 8;
+    if (text.includes(query)) return 5;
+    return 0;
+  }
+
+  if (Array.isArray(obj)) {
+    return Math.max(...obj.map((item) => getSearchScore(item, query)), 0);
+  }
+
+  if (typeof obj === 'object') {
+    return Math.max(...Object.values(obj).map((val) => getSearchScore(val, query)), 0);
+  }
+
+  return 0;
+};
+
   // Filter data based on search
+  const searchQueryLower = searchQuery.trim().toLowerCase();
   const filteredData = searchable
-    ? (data || []).filter((row) => deepSearch(row, searchQuery.toLowerCase()))
+    ? (data || [])
+        .map((row, index) => ({
+          row,
+          index,
+          score: searchQueryLower ? getSearchScore(row, searchQueryLower) : 1,
+        }))
+        .filter((item) => item.score > 0)
+        .sort((a, b) => {
+          if (b.score !== a.score) return b.score - a.score;
+          return a.index - b.index;
+        })
+        .map((item) => item.row)
     : (data || []);
 
   // Sort data
