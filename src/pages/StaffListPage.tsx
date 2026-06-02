@@ -296,6 +296,45 @@ export function StaffListPage() {
     return `${day}/${month}/${year}`;
   };
 
+  const parseDateValue = (value: string) => {
+    const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value);
+    if (!match) return undefined;
+    const day = Number(match[1]);
+    const month = Number(match[2]);
+    const year = Number(match[3]);
+    if (!day || !month || !year) return undefined;
+    const date = new Date(year, month - 1, day);
+    return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day
+      ? date
+      : undefined;
+  };
+
+  const formatDateForFormValue = (date: Date) => {
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    return `${day}/${month}/${year}`;
+  };
+
+  const addYears = (date: Date, years: number) => {
+    const nextDate = new Date(date);
+    nextDate.setFullYear(nextDate.getFullYear() + years);
+    return nextDate;
+  };
+
+  const calculateExpectedRetirementDate = (dateOfBirth: string, appointmentDate?: string) => {
+    const dob = parseDateValue(dateOfBirth);
+    if (!dob) return '';
+
+    const retirementByAge = addYears(dob, 60);
+    const serviceStartDate = appointmentDate ? parseDateValue(appointmentDate) : undefined;
+    if (!serviceStartDate) return formatDateForFormValue(retirementByAge);
+
+    const retirementByService = addYears(serviceStartDate, 35);
+    const retirementDate = retirementByAge <= retirementByService ? retirementByAge : retirementByService;
+    return formatDateForFormValue(retirementDate);
+  };
+
   const normalizeDateInput = (value: string) => {
     const isoMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
     if (isoMatch) return `${isoMatch[3]}/${isoMatch[2]}/${isoMatch[1]}`;
@@ -322,8 +361,19 @@ export function StaffListPage() {
       validateField('bank_name', bankName);
     } else {
       const nextValue = isDateField(name) ? normalizeDateInput(value) : value;
-      setFormData(prev => ({ ...prev, [name]: nextValue }));
+      const nextFormValues = { ...formData, [name]: nextValue } as typeof formData;
+      const shouldAutoUpdateRetirement = ['date_of_birth', 'appointment_date', 'employment_date'].includes(name) &&
+        (!formData.retirement_date || formData.retirement_date === calculateExpectedRetirementDate(formData.date_of_birth, formData.appointment_date || formData.employment_date));
+      const nextRetirementDate = shouldAutoUpdateRetirement
+        ? calculateExpectedRetirementDate(nextFormValues.date_of_birth, nextFormValues.appointment_date || nextFormValues.employment_date)
+        : formData.retirement_date;
+
+      setFormData(prev => ({ ...prev, ...nextFormValues, retirement_date: nextRetirementDate }));
       validateField(name, nextValue);
+
+      if (['date_of_birth', 'appointment_date', 'employment_date'].includes(name)) {
+        validateField('retirement_date', nextRetirementDate);
+      }
     }
     
     // Special handling for state of origin
@@ -1728,7 +1778,7 @@ export function StaffListPage() {
                     type="text"
                     name="retirement_date"
                     value={formData.retirement_date}
-                    onChange={handleInputChange}
+                    readOnly
                     className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
                     placeholder="dd/mm/yyyy"
                     inputMode="numeric"
