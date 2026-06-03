@@ -122,7 +122,7 @@ CREATE TABLE staff (
     account_number VARCHAR(20),
     bvn VARCHAR(20),
     
-    status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'suspended', 'on_leave', 'retired', 'terminated')),
+    status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'suspended', 'on_leave', 'retired', 'terminated', 'resigned', 'secondment', 'interdiction')),
     created_by UUID REFERENCES users(id),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
