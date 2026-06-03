@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Logger, BadRequestException, NotFoundException, InternalServerErrorException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { DatabaseService } from '@common/database/database.service';
 import { EmailService } from '@modules/email/email.service';
@@ -421,9 +421,9 @@ export class AuthService {
    * Delete user (Admin only)
    */
   async deleteUser(userId: string, deletedBy?: string) {
-    // Check if user exists
+    // Check if user exists and preserve the deleted user's core details for audit history
     const user = await this.databaseService.queryOne(
-      'SELECT id FROM users WHERE id = $1',
+      'SELECT id, email, full_name, role, permissions, status FROM users WHERE id = $1',
       [userId],
     );
 
@@ -431,36 +431,55 @@ export class AuthService {
       throw new NotFoundException('User not found');
     }
 
-    // Hard delete or soft delete? Let's do soft delete for now to be safe, unless email uniqueness is an issue.
-    // Actually, usually admin expects delete to free up email. But for audit, soft delete is better.
-    // Let's do hard delete for now as per "Delete" button expectation, or update status to 'inactive'.
-    // If we just update status to 'inactive', the email is still taken.
-    // Let's implement hard delete but with checks (e.g. constraints).
-    
+    const oldValues = {
+      email: user.email,
+      full_name: user.full_name,
+      role: user.role,
+      permissions: user.permissions,
+      status: user.status,
+    };
+
     try {
       await this.databaseService.query(
         'DELETE FROM users WHERE id = $1',
         [userId],
       );
       this.logger.log(`User ${userId} deleted`);
-      
+
       await this.auditService.log({
         userId: deletedBy,
         action: AuditAction.DELETE,
         entity: 'user',
         entityId: userId,
         description: 'Deleted user',
+        oldValues,
       });
 
       return { message: 'User deleted successfully' };
     } catch (error) {
       this.logger.error(`Failed to delete user ${userId}: ${error.message}`);
-      // Fallback to soft delete if FK constraints fail
-      await this.databaseService.query(
-        "UPDATE users SET status = 'inactive' WHERE id = $1",
-        [userId],
-      );
-      return { message: 'User deactivated (could not delete due to dependencies)' };
+
+      try {
+        await this.databaseService.query(
+          "UPDATE users SET status = 'inactive' WHERE id = $1",
+          [userId],
+        );
+
+        await this.auditService.log({
+          userId: deletedBy,
+          action: AuditAction.UPDATE,
+          entity: 'user',
+          entityId: userId,
+          description: 'Deactivated user due to dependent records; hard delete failed',
+          oldValues,
+          newValues: { ...oldValues, status: 'inactive' },
+        });
+
+        return { message: 'User deactivated (could not delete due to dependencies)' };
+      } catch (fallbackError) {
+        this.logger.error(`Failed to deactivate user ${userId}: ${fallbackError.message}`);
+        throw new InternalServerErrorException('Failed to delete user');
+      }
     }
   }
 

@@ -256,7 +256,7 @@ export function AdminPage() {
     
     setDeletingUserId(userId);
     try {
-      await userAPI.deleteUser(userId, user!.id, user!.email);
+      await userAPI.deleteUser(userId);
       showToast.success('User deleted successfully');
       loadData();
     } catch (error) {

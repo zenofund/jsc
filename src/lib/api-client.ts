@@ -710,12 +710,9 @@ export const userAPI = {
     });
   },
 
-  async deleteUser(userId: string, deletedBy: string, deletedByEmail: string) {
-    // Note: Backend UsersController::deleteUser takes no body, just the ID.
-    // So body params here are ignored but harmless.
+  async deleteUser(userId: string) {
     return makeApiRequest(`/users/${userId}`, {
       method: 'DELETE',
-      body: JSON.stringify({ deletedBy, deletedByEmail }),
     });
   },
 };
