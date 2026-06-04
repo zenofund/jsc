@@ -90,7 +90,9 @@ export function ViewPayrollLinesModal({
 
   const csvCell = (value: unknown) => {
     const str = value === null || value === undefined ? '' : String(value);
-    return /[",\n\r]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+    // Quote if contains special chars OR if it's numeric/starts with 0 (preserve leading zeros)
+    const needsQuote = /[",\n\r]/.test(str) || /^\d/.test(str);
+    return needsQuote ? `"${str.replace(/"/g, '""')}"` : str;
   };
 
   const smartHeaderLabel = (label: string) => {
@@ -113,13 +115,27 @@ export function ViewPayrollLinesModal({
 
   const formatExportAccountNumber = (value: unknown) => {
     const acc = String(value ?? '').trim();
-    if (!acc) return '';
-    return /^0\d+$/.test(acc) ? `'${acc}` : acc;
+    return acc;
   };
 
   const isCooperativeDeduction = (item: any) => {
     const label = String(item?.name ?? item?.code ?? '').toLowerCase();
     return /coop|cooperative|co-op/.test(label);
+  };
+
+  const getCooperativeGroupKey = (item: any) => {
+    const raw = String(item?.name ?? item?.code ?? '').trim();
+    const cleaned = raw
+      .replace(/\b(?:loan|contribution|deduction|payment|installment|charge|contrib)\b/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const label = cleaned || raw || 'Cooperative';
+    return `coop:${label}`;
+  };
+
+  const getExportKey = (item: any) => {
+    if (isCooperativeDeduction(item)) return getCooperativeGroupKey(item);
+    return itemKey(item);
   };
 
   const toCsvMoney = (value: unknown) => round2(toNumber(value)).toFixed(2);
@@ -160,11 +176,6 @@ export function ViewPayrollLinesModal({
     const code = String(item?.code ?? '').trim();
     const name = String(item?.name ?? '').trim();
     return name || code;
-  };
-
-  const getExportKey = (item: any) => {
-    if (isCooperativeDeduction(item)) return 'coop_total_deduction';
-    return itemKey(item);
   };
 
   const buildItemLabels = (items: any[], keyFn: (item: any) => string = itemKey) => {
@@ -228,7 +239,7 @@ export function ViewPayrollLinesModal({
       if (!Array.isArray(items)) return 0;
       let sum = 0;
       for (const i of items) {
-        const itemKeyValue = isCooperativeDeduction(i) ? 'coop_total_deduction' : itemKey(i);
+        const itemKeyValue = getExportKey(i);
         if (itemKeyValue === key) sum += toNumber(i?.amount);
       }
       return sum;
@@ -241,7 +252,7 @@ export function ViewPayrollLinesModal({
       get: (line: PayrollLine, index: number) => string;
     }> = [
       { id: 'sn', header: 'S/N', isMoney: false, get: (_line, index) => String(index + 1) },
-      { id: 'staff_id', header: 'Staff ID', isMoney: false, get: (line) => String(line.staff_id ?? line.staff_number ?? '') },
+      { id: 'staff_id', header: 'Staff ID', isMoney: false, get: (line) => String(line.staff_number ?? '') },
       { id: 'staff_name', header: 'Staff Name', isMoney: false, get: (line) => String(line.staff_name ?? '') },
       { id: 'grade_step', header: 'Grade/Step', isMoney: false, get: (line) => gradeStepText(line) },
       { id: 'basic_salary', header: 'Basic', isMoney: true, get: (line) => toCsvMoney(line.basic_salary) },
@@ -259,8 +270,8 @@ export function ViewPayrollLinesModal({
       { id: 'gross_pay', header: 'Gross Pay', isMoney: true, get: (line) => toCsvMoney(line.gross_pay) },
       ...deductionKeys.map((key) => {
         let header = deductionKeyToLabel.get(key) ?? key;
-        if (key === 'coop_total_deduction') {
-          header = 'Cooperative Ded.';
+        if (key.startsWith('coop:')) {
+          header = header.replace(/^coop:/i, '').trim();
         } else if (header.includes('PAYE') || header.includes('Paye') || header.toLowerCase() === 'paye tax' || header.toLowerCase() === 'tax') {
           header = 'Paye';
         } else if (header.includes('Pension') || header.includes('PENSION')) {
