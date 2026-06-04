@@ -92,6 +92,33 @@ export function StaffListPage() {
 
   // Form state
   const isNumericGrade = (value: any) => /^\d+$/.test(normalizeGrade(value));
+  const normalizeSelectValue = (value: any) => String(value || '').trim().toLowerCase();
+  const capitalizeSelectValue = (value: any) => {
+    const normalized = String(value || '').trim().toLowerCase();
+    return normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : '';
+  };
+
+  const findDepartmentId = (departmentId?: string, departmentName?: string) => {
+    if (departmentId && departments.some((dept) => String(dept.id) === String(departmentId))) {
+      return String(departmentId);
+    }
+
+    const normalizedName = String(departmentName || '').trim().toLowerCase();
+    if (!normalizedName) return departmentId || '';
+
+    return departments.find((dept) => String(dept.name).trim().toLowerCase() === normalizedName)?.id || departmentId || '';
+  };
+
+  const findBankCode = (bankCode?: string, bankName?: string) => {
+    if (bankCode && supportedBanks.some((bank) => String(bank.code) === String(bankCode))) {
+      return String(bankCode);
+    }
+
+    const normalizedName = String(bankName || '').trim().toLowerCase();
+    if (!normalizedName) return bankCode || '';
+
+    return supportedBanks.find((bank) => String(bank.name).trim().toLowerCase() === normalizedName)?.code || bankCode || '';
+  };
 
   const [formData, setFormData] = useState({
     staff_number: '',
@@ -118,8 +145,8 @@ export function StaffListPage() {
     appointment_type: 'Permanent',
     employment_date: '', // Resumption date
     confirmation_date: '', // Date of confirmation
-    retirement_date: '', // Expected retirement date
-    exit_date: '', // Exit/Resignation date (optional)
+    retirement_date: '',
+    exit_date: '', // Date of retirement
     exit_reason: '', // Reason for exit (optional)
     present_appointment: '',
     date_of_present_appointment: '',
@@ -176,7 +203,7 @@ export function StaffListPage() {
     date_of_present_appointment: 'Date of Present Appointment',
     grade_level: 'Grade Level',
     step: 'Step',
-    exit_date: 'Date of Exit',
+    exit_date: 'Date of Retirement',
     email: 'Email Address',
     phone: 'Phone Number',
     nok_phone: 'Next of Kin Phone Number',
@@ -186,7 +213,7 @@ export function StaffListPage() {
   const stepFields: Record<number, string[]> = {
     1: ['staff_number', 'last_name', 'first_name', 'gender', 'date_of_birth', 'state_of_origin', 'lga', 'zone', 'qualification', 'marital_status', 'phone', 'email', 'nationality', 'address'],
     2: ['nok_name', 'nok_relationship', 'nok_phone', 'nok_address'],
-    3: ['post_on_first_appointment', 'appointment_date', 'confirmation_date', 'present_appointment', 'date_of_present_appointment', 'exit_date', 'exit_reason', 'appointment_type', 'employment_date', 'retirement_date', 'department', 'unit', 'cadre', 'designation'],
+    3: ['post_on_first_appointment', 'appointment_date', 'confirmation_date', 'present_appointment', 'date_of_present_appointment', 'exit_date', 'exit_reason', 'appointment_type', 'employment_date', 'department', 'unit', 'cadre', 'designation'],
     4: ['grade_level', 'step', 'bank_code', 'bank_name', 'account_number', 'account_name', 'pension_pin', 'tax_id', 'bvn', 'nhf_number'],
   };
 
@@ -196,7 +223,6 @@ export function StaffListPage() {
     'confirmation_date',
     'date_of_present_appointment',
     'employment_date',
-    'retirement_date',
     'exit_date',
   ];
 
@@ -295,49 +321,14 @@ export function StaffListPage() {
     return `${day}/${month}/${year}`;
   };
 
-  const parseDateValue = (value: string) => {
-    const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value);
-    if (!match) return undefined;
-    const day = Number(match[1]);
-    const month = Number(match[2]);
-    const year = Number(match[3]);
-    if (!day || !month || !year) return undefined;
-    const date = new Date(year, month - 1, day);
-    return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day
-      ? date
-      : undefined;
-  };
-
-  const formatDateForFormValue = (date: Date) => {
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = date.getFullYear();
-    return `${day}/${month}/${year}`;
-  };
-
-  const addYears = (date: Date, years: number) => {
-    const nextDate = new Date(date);
-    nextDate.setFullYear(nextDate.getFullYear() + years);
-    return nextDate;
-  };
-
-  const calculateExpectedRetirementDate = (dateOfBirth: string, appointmentDate?: string) => {
-    const dob = parseDateValue(dateOfBirth);
-    if (!dob) return '';
-
-    const retirementByAge = addYears(dob, 60);
-    const serviceStartDate = appointmentDate ? parseDateValue(appointmentDate) : undefined;
-    if (!serviceStartDate) return formatDateForFormValue(retirementByAge);
-
-    const retirementByService = addYears(serviceStartDate, 35);
-    const retirementDate = retirementByAge <= retirementByService ? retirementByAge : retirementByService;
-    return formatDateForFormValue(retirementDate);
-  };
-
   const normalizeDateInput = (value: string) => {
     const isoMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
     if (isoMatch) return `${isoMatch[3]}/${isoMatch[2]}/${isoMatch[1]}`;
-    return value;
+
+    const digits = value.replace(/\D/g, '').slice(0, 8);
+    if (digits.length <= 2) return digits;
+    if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+    return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
   };
 
   const toApiDate = (value: string | undefined) => {
@@ -361,18 +352,8 @@ export function StaffListPage() {
     } else {
       const nextValue = isDateField(name) ? normalizeDateInput(value) : value;
       const nextFormValues = { ...formData, [name]: nextValue } as typeof formData;
-      const shouldAutoUpdateRetirement = ['date_of_birth', 'appointment_date', 'employment_date'].includes(name) &&
-        (!formData.retirement_date || formData.retirement_date === calculateExpectedRetirementDate(formData.date_of_birth, formData.appointment_date || formData.employment_date));
-      const nextRetirementDate = shouldAutoUpdateRetirement
-        ? calculateExpectedRetirementDate(nextFormValues.date_of_birth, nextFormValues.appointment_date || nextFormValues.employment_date)
-        : formData.retirement_date;
-
-      setFormData(prev => ({ ...prev, ...nextFormValues, retirement_date: nextRetirementDate }));
+      setFormData(prev => ({ ...prev, ...nextFormValues }));
       validateField(name, nextValue);
-
-      if (['date_of_birth', 'appointment_date', 'employment_date'].includes(name)) {
-        validateField('retirement_date', nextRetirementDate);
-      }
     }
     
     // Special handling for state of origin
@@ -686,8 +667,8 @@ export function StaffListPage() {
       middle_name: staffMember.bio_data.middle_name || '',
       last_name: staffMember.bio_data.last_name || '',
       date_of_birth: formatDateForInput(staffMember.bio_data.date_of_birth || ''),
-      gender: staffMember.bio_data.gender || '',
-      marital_status: staffMember.bio_data.marital_status || '',
+      gender: normalizeSelectValue(staffMember.bio_data.gender),
+      marital_status: normalizeSelectValue(staffMember.bio_data.marital_status),
       nationality: staffMember.bio_data.nationality || 'Nigerian',
       state_of_origin: stateOfOrigin,
       lga: lgaOfOrigin,
@@ -702,21 +683,21 @@ export function StaffListPage() {
       nok_address: staffMember.next_of_kin.address || '',
       post_on_first_appointment: staffMember.appointment.post_on_first_appointment || '',
       appointment_date: formatDateForInput(staffMember.appointment.date_of_first_appointment || ''),
-      appointment_type: staffMember.appointment.appointment_type || 'Permanent',
+      appointment_type: capitalizeSelectValue(staffMember.appointment.appointment_type) || 'Permanent',
       employment_date: formatDateForInput(staffMember.appointment.employment_date || ''),
       confirmation_date: formatDateForInput(staffMember.appointment.confirmation_date || ''),
       retirement_date: formatDateForInput(staffMember.appointment.retirement_date || ''),
       exit_date: formatDateForInput(staffMember.appointment.exit_date || ''),
-      exit_reason: staffMember.appointment.exit_reason || '',
+      exit_reason: normalizeSelectValue(staffMember.appointment.exit_reason),
       present_appointment: staffMember.appointment.present_appointment || '',
       date_of_present_appointment: formatDateForInput(staffMember.appointment.date_of_present_appointment || ''),
-      department: staffMember.appointment.department_id || '',
+      department: findDepartmentId(staffMember.appointment.department_id, staffMember.appointment.department),
       unit: staffMember.appointment.unit || '',
       designation: staffMember.appointment.designation || '',
       cadre: staffMember.appointment.cadre || '',
       grade_level: normalizeGrade(staffMember.salary_info.grade_level) || '7',
       step: staffMember.salary_info.step || 1,
-      bank_code: staffMember.salary_info.bank_code || '',
+      bank_code: findBankCode(staffMember.salary_info.bank_code, staffMember.salary_info.bank_name),
       bank_name: staffMember.salary_info.bank_name || '',
       account_number: staffMember.salary_info.account_number || '',
       account_name: staffMember.salary_info.account_name || '',
@@ -724,12 +705,30 @@ export function StaffListPage() {
       tax_id: staffMember.salary_info.tax_id || '',
       bvn: staffMember.salary_info.bvn || '',
       nhf_number: staffMember.salary_info.nhf_number || '',
-      status: staffMember.status || 'active',
+      status: normalizeSelectValue(staffMember.status) || 'active',
     });
     const resolvedLGAs = getLGAsByState(stateOfOrigin);
     setAvailableLGAs(resolvedLGAs.length ? resolvedLGAs : (lgaOfOrigin ? [lgaOfOrigin] : []));
     setFormErrors({});
   };
+
+  useEffect(() => {
+    if (!editingStaff || !showFormModal) return;
+
+    const resolvedDepartmentId = findDepartmentId(editingStaff.appointment.department_id, editingStaff.appointment.department);
+    if (resolvedDepartmentId && resolvedDepartmentId !== formData.department) {
+      setFormData(prev => ({ ...prev, department: resolvedDepartmentId }));
+    }
+  }, [departments, editingStaff, showFormModal]);
+
+  useEffect(() => {
+    if (!editingStaff || !showFormModal) return;
+
+    const resolvedBankCode = findBankCode(editingStaff.salary_info.bank_code, editingStaff.salary_info.bank_name);
+    if (resolvedBankCode && resolvedBankCode !== formData.bank_code) {
+      setFormData(prev => ({ ...prev, bank_code: resolvedBankCode }));
+    }
+  }, [supportedBanks, editingStaff, showFormModal]);
   const formatDateDisplay = (dateString?: string) => {
     if (!dateString) return 'N/A';
     const d = new Date(dateString);
@@ -833,7 +832,7 @@ export function StaffListPage() {
               ['Appointment Type', viewingStaff.appointment.appointment_type || ''],
               ['Employment Date', formatDateDisplay(viewingStaff.appointment.employment_date)],
               ['Date of First Appointment', formatDateDisplay(viewingStaff.appointment.date_of_first_appointment)],
-              ['Exit Date', formatDateDisplay(viewingStaff.appointment.exit_date)],
+              ['Date of Retirement', formatDateDisplay(viewingStaff.appointment.exit_date)],
               ['Exit Reason', viewingStaff.appointment.exit_reason || ''],
               ['Status', viewingStaff.status || ''],
             ].map((row, i) => {
@@ -920,7 +919,6 @@ export function StaffListPage() {
         presentAppointment: formData.present_appointment,
         dateOfPresentAppointment: toApiDate(formData.date_of_present_appointment),
         confirmationDate: toApiDate(formData.confirmation_date),
-        retirementDate: toApiDate(formData.retirement_date) || undefined,
         exitDate: toApiDate(formData.exit_date),
         exitReason: formData.exit_reason || undefined,
         
@@ -1010,7 +1008,6 @@ export function StaffListPage() {
         presentAppointment: formData.present_appointment,
         dateOfPresentAppointment: toApiDate(formData.date_of_present_appointment),
         confirmationDate: toApiDate(formData.confirmation_date),
-        retirementDate: toApiDate(formData.retirement_date) || undefined,
         exitDate: toApiDate(formData.exit_date),
         exitReason: formData.exit_reason || undefined,
         
@@ -1708,7 +1705,7 @@ export function StaffListPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">
-                    Exit Date
+                    Date of Retirement
                   </label>
                   <input
                     type="text"
@@ -1777,20 +1774,6 @@ export function StaffListPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">
-                    Retirement Date
-                  </label>
-                  <input
-                    type="text"
-                    name="retirement_date"
-                    value={formData.retirement_date}
-                    readOnly
-                    className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-                    placeholder="dd/mm/yyyy"
-                    inputMode="numeric"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-foreground mb-1">
                     Department
                   </label>
                   <select
@@ -1800,6 +1783,11 @@ export function StaffListPage() {
                     className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
                   >
                     <option value="">Select Department</option>
+                    {formData.department && !departments.some((dept) => String(dept.id) === String(formData.department)) && (
+                      <option value={formData.department}>
+                        {editingStaff?.appointment.department || formData.department}
+                      </option>
+                    )}
                     {departments.map((dept) => (
                       <option key={dept.id} value={dept.id}>
                         {dept.name}
@@ -1890,7 +1878,7 @@ export function StaffListPage() {
                     className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
                     required
                   >
-                    {allowedGrades.map((level) => (
+                    {Array.from(new Set([...allowedGrades, normalizeGrade(formData.grade_level)].filter(Boolean))).map((level) => (
                       <option key={level} value={level}>
                         {isNumericGrade(level) ? `GL ${level}` : level}
                       </option>
@@ -1929,6 +1917,11 @@ export function StaffListPage() {
                     className={`w-full px-3 py-2 border ${formErrors.bank_code ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
                   >
                     <option value="">Select Bank</option>
+                    {formData.bank_code && !supportedBanks.some((bank) => String(bank.code) === String(formData.bank_code)) && (
+                      <option value={formData.bank_code}>
+                        {formData.bank_name ? `${formData.bank_name} (${formData.bank_code})` : formData.bank_code}
+                      </option>
+                    )}
                     {Array.isArray(supportedBanks) && supportedBanks.map((bank, index) => (
                       <option key={`${bank.code}-${bank.name}-${index}`} value={bank.code}>
                         {bank.name} ({bank.code})
@@ -2043,9 +2036,9 @@ export function StaffListPage() {
               onClick={() => {
                 const csv =
                   [
-                    'staff_number,first_name,middle_name,last_name,date_of_birth,gender,marital_status,nationality,state_of_origin,lga,zone,qualification,phone,email,address,nok_name,nok_relationship,nok_phone,nok_address,post_on_first_appointment,date_of_first_appointment,confirmation_date,present_appointment,date_of_present_appointment,exit_date,exit_reason,department_name,department_id,designation,unit,cadre,appointment_type,employment_date,retirement_date,grade_level,step,bank_code,bank_name,account_name,account_number,pension_pin,tax_id,bvn,nhf_number,status',
-                    'JSC/2026/0001,Ada,Chioma,Okafor,1988-06-12,female,married,Nigerian,Anambra,Awka,SE,LLB,08012345678,ada.okafor@example.com,"12 Court Rd, GRA, Awka",Chinedu Okafor,Spouse,08087654321,"12 Court Rd, GRA, Awka",Legal Department,2024-04-15,2025-04-15,Senior Legal Officer,2026-01-10,2053-06-12,,Legal Department,,Senior Legal Officer,Prosecution,Legal,Permanent,,,10,3,057,Zenith Bank,Ada Okafor,0123456789,PN12345678,TAX-00921,22334455667,NHF-00231,active',
-                    'JSC/2026/0002,Bello,Musa,Yusuf,1990-11-03,male,single,Nigerian,Kano,Nasarawa,NW,BSc,08123456789,bello.yusuf@example.com,"21 Civic Ave, Kano",Hauwa Yusuf,Parent,08198765432,"21 Civic Ave, Kano",Accounts Department,2024-09-01,2025-09-01,Accounts Officer,2026-02-01,2050-11-03,,Accounts Department,,Accounts Officer,Payments,Administrative,Contract,,,8,2,044,Access Bank,Bello Musa Yusuf,0987654321,PN87654321,TAX-00456,33445566778,NHF-00987,on_leave',
+                    'staff_number,first_name,middle_name,last_name,date_of_birth,gender,marital_status,nationality,state_of_origin,lga,zone,qualification,phone,email,address,nok_name,nok_relationship,nok_phone,nok_address,post_on_first_appointment,date_of_first_appointment,confirmation_date,present_appointment,date_of_present_appointment,exit_date,exit_reason,department_name,department_id,designation,unit,cadre,appointment_type,employment_date,grade_level,step,bank_code,bank_name,account_name,account_number,pension_pin,tax_id,bvn,nhf_number,status',
+                    'JSC/2026/0001,Ada,Chioma,Okafor,1988-06-12,female,married,Nigerian,Anambra,Awka,SE,LLB,08012345678,ada.okafor@example.com,"12 Court Rd, GRA, Awka",Chinedu Okafor,Spouse,08087654321,"12 Court Rd, GRA, Awka",Legal Department,2024-04-15,2025-04-15,Senior Legal Officer,2026-01-10,2053-06-12,,Legal Department,,Senior Legal Officer,Prosecution,Legal,Permanent,,10,3,057,Zenith Bank,Ada Okafor,0123456789,PN12345678,TAX-00921,22334455667,NHF-00231,active',
+                    'JSC/2026/0002,Bello,Musa,Yusuf,1990-11-03,male,single,Nigerian,Kano,Nasarawa,NW,BSc,08123456789,bello.yusuf@example.com,"21 Civic Ave, Kano",Hauwa Yusuf,Parent,08198765432,"21 Civic Ave, Kano",Accounts Department,2024-09-01,2025-09-01,Accounts Officer,2026-02-01,2050-11-03,,Accounts Department,,Accounts Officer,Payments,Administrative,Contract,,8,2,044,Access Bank,Bello Musa Yusuf,0987654321,PN87654321,TAX-00456,33445566778,NHF-00987,on_leave',
                   ].join('\n');
                 const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
                 const url = URL.createObjectURL(blob);
@@ -2279,7 +2272,7 @@ export function StaffListPage() {
                     <dd className="text-foreground">{formatDateDisplay(viewingStaff.appointment.date_of_first_appointment)}</dd>
                   </div>
                   <div className="flex justify-between">
-                    <dt className="text-muted-foreground">Exit Date</dt>
+                    <dt className="text-muted-foreground">Date of Retirement</dt>
                     <dd className="text-foreground">{formatDateDisplay(viewingStaff.appointment.exit_date)}</dd>
                   </div>
                   <div className="flex justify-between">
