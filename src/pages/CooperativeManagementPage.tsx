@@ -20,6 +20,7 @@ import {
 } from '../components/ui/dropdown-menu';
 import type { Cooperative, CooperativeMember, CooperativeContribution, Staff } from '../types/entities';
 import { formatStaffLabelWithId } from '../lib/name-utils';
+import { formatCurrency } from '../utils/format';
 import { toast } from 'sonner';
 
 type ViewMode = 'cooperatives' | 'members' | 'contributions';
@@ -64,16 +65,6 @@ interface ContributionFormData {
   payment_method: 'payroll_deduction' | 'cash' | 'bank_transfer';
   receipt_number: string;
 }
-
-const formatCurrency = (amount: number | string) => {
-  const value = Number(amount);
-  if (isNaN(value)) return '₦0.00';
-  return new Intl.NumberFormat('en-NG', {
-    style: 'currency',
-    currency: 'NGN',
-    minimumFractionDigits: 2
-  }).format(value);
-};
 
 const COOPERATIVE_TYPES = [
   { value: 'thrift_credit', label: 'Thrift & Credit' },

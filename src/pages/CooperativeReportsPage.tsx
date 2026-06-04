@@ -695,7 +695,7 @@ function ContributionsReport({
                     </span>
                   </td>
                   <td className="px-6 py-4 text-right text-sm text-card-foreground">
-                    ₦{contribution.amount.toLocaleString()}
+                    {formatCurrency(contribution.amount)}
                   </td>
                   <td className="px-6 py-4 text-sm text-card-foreground">
                     {contribution.payment_method.replace('_', ' ')}
@@ -1137,7 +1137,7 @@ function CrossCooperativeReport({ cooperatives }: { cooperatives: Cooperative[] 
                       </div>
                     </td>
                     <td className="px-6 py-4 text-right text-sm text-card-foreground">
-                      ₦{totalMonthly.toLocaleString()}
+                      {formatCurrency(totalMonthly)}
                     </td>
                   </tr>
                 );
