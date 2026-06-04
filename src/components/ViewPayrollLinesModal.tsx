@@ -93,12 +93,34 @@ export function ViewPayrollLinesModal({
     return /[",\n\r]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
   };
 
+  const smartHeaderLabel = (label: string) => {
+    const text = String(label || '').trim();
+    if (text.length <= 20) return text;
+    const words = text.split(/\s+/).filter(Boolean);
+    if (words.length >= 3) {
+      const shortened = `${words[0]} ... ${words[words.length - 1]}`;
+      if (shortened.length <= 20) return shortened;
+    }
+    return `${text.slice(0, 17)}...`;
+  };
+
   const toNumber = (value: unknown) => {
     const n = typeof value === 'number' ? value : Number(value);
     return Number.isFinite(n) ? n : 0;
   };
 
   const round2 = (value: number) => Math.round(value * 100) / 100;
+
+  const formatExportAccountNumber = (value: unknown) => {
+    const acc = String(value ?? '').trim();
+    if (!acc) return '';
+    return /^0\d+$/.test(acc) ? `'${acc}` : acc;
+  };
+
+  const isCooperativeDeduction = (item: any) => {
+    const label = String(item?.name ?? item?.code ?? '').toLowerCase();
+    return /coop|cooperative|co-op/.test(label);
+  };
 
   const toCsvMoney = (value: unknown) => round2(toNumber(value)).toFixed(2);
 
@@ -140,11 +162,16 @@ export function ViewPayrollLinesModal({
     return name || code;
   };
 
-  const buildItemLabels = (items: any[]) => {
+  const getExportKey = (item: any) => {
+    if (isCooperativeDeduction(item)) return 'coop_total_deduction';
+    return itemKey(item);
+  };
+
+  const buildItemLabels = (items: any[], keyFn: (item: any) => string = itemKey) => {
     const keyToBase = new Map<string, string>();
     const baseCounts = new Map<string, number>();
     for (const item of items) {
-      const key = itemKey(item);
+      const key = keyFn(item);
       if (!key) continue;
       const base = itemBaseLabel(item);
       keyToBase.set(key, base);
@@ -152,7 +179,7 @@ export function ViewPayrollLinesModal({
     }
     const keyToLabel = new Map<string, string>();
     for (const item of items) {
-      const key = itemKey(item);
+      const key = keyFn(item);
       if (!key) continue;
       const base = keyToBase.get(key) ?? '';
       const count = baseCounts.get(base) ?? 0;
@@ -174,11 +201,17 @@ export function ViewPayrollLinesModal({
       const allowances = Array.isArray((line as any).allowances) ? (line as any).allowances : [];
       const deductions = Array.isArray((line as any).deductions) ? (line as any).deductions : [];
       for (const a of allowances) allowanceItems.push(a);
-      for (const d of deductions) deductionItems.push(d);
+      for (const d of deductions) {
+        if (isCooperativeDeduction(d)) {
+          deductionItems.push({ ...d, _coop_group: true });
+        } else {
+          deductionItems.push(d);
+        }
+      }
     }
 
     const allowanceKeyToLabel = buildItemLabels(allowanceItems);
-    const deductionKeyToLabel = buildItemLabels(deductionItems);
+    const deductionKeyToLabel = buildItemLabels(deductionItems, getExportKey);
 
     const allowanceKeys = Array.from(allowanceKeyToLabel.keys()).sort((a, b) => {
       const la = allowanceKeyToLabel.get(a) ?? a;
@@ -195,7 +228,8 @@ export function ViewPayrollLinesModal({
       if (!Array.isArray(items)) return 0;
       let sum = 0;
       for (const i of items) {
-        if (itemKey(i) === key) sum += toNumber(i?.amount);
+        const itemKeyValue = isCooperativeDeduction(i) ? 'coop_total_deduction' : itemKey(i);
+        if (itemKeyValue === key) sum += toNumber(i?.amount);
       }
       return sum;
     };
@@ -207,7 +241,7 @@ export function ViewPayrollLinesModal({
       get: (line: PayrollLine, index: number) => string;
     }> = [
       { id: 'sn', header: 'S/N', isMoney: false, get: (_line, index) => String(index + 1) },
-      { id: 'staff_number', header: 'Staff Number', isMoney: false, get: (line) => String(line.staff_number ?? '') },
+      { id: 'staff_id', header: 'Staff ID', isMoney: false, get: (line) => String(line.staff_id ?? line.staff_number ?? '') },
       { id: 'staff_name', header: 'Staff Name', isMoney: false, get: (line) => String(line.staff_name ?? '') },
       { id: 'grade_step', header: 'Grade/Step', isMoney: false, get: (line) => gradeStepText(line) },
       { id: 'basic_salary', header: 'Basic', isMoney: true, get: (line) => toCsvMoney(line.basic_salary) },
@@ -216,7 +250,7 @@ export function ViewPayrollLinesModal({
         if (header.includes('Consolidated All.')) header = 'Allowances';
         return {
           id: `allowance:${key}`,
-          header,
+          header: smartHeaderLabel(header),
           isMoney: true,
           get: (line: PayrollLine) => toCsvMoney(getItemAmount((line as any).allowances, key)),
         };
@@ -225,42 +259,59 @@ export function ViewPayrollLinesModal({
       { id: 'gross_pay', header: 'Gross Pay', isMoney: true, get: (line) => toCsvMoney(line.gross_pay) },
       ...deductionKeys.map((key) => {
         let header = deductionKeyToLabel.get(key) ?? key;
-        if (header.includes('PAYE') || header.includes('Paye') || header.toLowerCase() === 'paye tax' || header.toLowerCase() === 'tax') header = 'Paye';
-        else if (header.includes('Pension') || header.includes('PENSION')) header = 'Pension';
-        else if (header.includes('Union') || header.includes('UNION')) header = 'Union';
-        else if (header.includes('NHF')) header = 'NHF';
-        else if (header.includes('NHIS') || header.includes('NHIA')) header = 'NHIA';
+        if (key === 'coop_total_deduction') {
+          header = 'Cooperative Ded.';
+        } else if (header.includes('PAYE') || header.includes('Paye') || header.toLowerCase() === 'paye tax' || header.toLowerCase() === 'tax') {
+          header = 'Paye';
+        } else if (header.includes('Pension') || header.includes('PENSION')) {
+          header = 'Pension';
+        } else if (header.includes('Union') || header.includes('UNION')) {
+          header = 'Union';
+        } else if (header.includes('NHF')) {
+          header = 'NHF';
+        } else if (header.includes('NHIS') || header.includes('NHIA')) {
+          header = 'NHIA';
+        }
 
         return {
           id: `deduction:${key}`,
-          header,
+          header: smartHeaderLabel(header),
           isMoney: true,
           get: (line: PayrollLine) => toCsvMoney(getItemAmount((line as any).deductions, key)),
         };
       }),
-      { id: 'total_deductions', header: 'Total Ded.', isMoney: true, get: (line) => toCsvMoney(line.total_deductions) },
+      { id: 'total_deductions', header: 'Tot. Ded.', isMoney: true, get: (line) => toCsvMoney(line.total_deductions) },
       { id: 'net_pay', header: 'Net Pay', isMoney: true, get: (line) => toCsvMoney(line.net_pay) },
       { id: 'bank_code', header: 'Bank Code', isMoney: false, get: (line) => getBankCode((line as any).bank_name) },
-      { id: 'account_number', header: 'Account Number', isMoney: false, get: (line) => {
-        const acc = String((line as any).account_number ?? '').trim();
-        return acc ? `="${acc}"` : '';
-      } },
+      { id: 'account_number', header: 'Account Number', isMoney: false, get: (line) => formatExportAccountNumber((line as any).account_number) },
     ];
 
+    const isEmptyColumn = (col: typeof columns[number]) => {
+      if (col.id === 'sn' || col.id === 'staff_id' || col.id === 'staff_name' || col.id === 'grade_step' || col.id === 'basic_salary' || col.id === 'total_allowances' || col.id === 'total_deductions' || col.id === 'net_pay') {
+        return false;
+      }
+      if (col.isMoney) {
+        return allLines.every((line, index) => toNumber(col.get(line, index)) === 0);
+      }
+      return allLines.every((line, index) => String(col.get(line, index)).trim() === '');
+    };
+
+    const visibleColumns = columns.filter((col) => !isEmptyColumn(col));
+
     const moneyTotals = new Map<string, number>();
-    for (const col of columns) {
+    for (const col of visibleColumns) {
       if (!col.isMoney) continue;
       moneyTotals.set(col.id, 0);
     }
     allLines.forEach((line, index) => {
-      for (const col of columns) {
+      for (const col of visibleColumns) {
         if (!col.isMoney) continue;
         const raw = col.get(line, index);
         moneyTotals.set(col.id, (moneyTotals.get(col.id) ?? 0) + toNumber(raw));
       }
     });
 
-    return { columns, moneyTotals };
+    return { columns: visibleColumns, moneyTotals };
   };
 
   if (!batch) return null;
