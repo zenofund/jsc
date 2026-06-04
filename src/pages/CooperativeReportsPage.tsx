@@ -144,10 +144,10 @@ export function CooperativeReportsPage() {
       const contributions = await cooperativeAPI.getContributions(filters);
       return contributions
         .filter((contribution: CooperativeContribution) =>
-          isWithinDateRange(contribution.payment_date, dateRange),
+          isWithinDateRange(contribution.payment_date || contribution.created_at, dateRange),
         )
         .map((contribution: CooperativeContribution) => ({
-          payment_date: contribution.payment_date,
+          payment_date: contribution.payment_date || contribution.created_at,
           staff_name: contribution.staff_name,
           staff_number: contribution.staff_number,
           cooperative_name: contribution.cooperative_name,
@@ -165,10 +165,10 @@ export function CooperativeReportsPage() {
             ? Boolean(loan.cooperative_id)
             : loan.cooperative_id === selectedCooperative,
         )
-        .filter((loan: any) => isWithinDateRange(loan.disbursement_date, dateRange));
+        .filter((loan: any) => isWithinDateRange(loan.disbursement_date || loan.created_at, dateRange));
 
       return loans.map((loan: any) => ({
-        disbursement_date: loan.disbursement_date,
+        disbursement_date: loan.disbursement_date || loan.created_at,
         staff_name: loan.staff_name,
         staff_number: loan.staff_number,
         cooperative_name: loan.cooperative_name,
@@ -595,8 +595,7 @@ function ContributionsReport({
       
       // Filter by date range
       allContributions = allContributions.filter((c: CooperativeContribution) => {
-        const contributionDate = new Date(c.payment_date);
-        return contributionDate >= new Date(dateRange.from) && contributionDate <= new Date(dateRange.to);
+        return isWithinDateRange(c.payment_date || c.created_at, dateRange);
       });
 
       setContributions(allContributions);
@@ -661,7 +660,7 @@ function ContributionsReport({
             {Object.entries(summary.by_cooperative).map(([name, amount]: [string, any]) => (
               <div key={name} className="flex items-center justify-between p-3 rounded bg-muted">
                 <span className="text-sm text-card-foreground">{name}</span>
-                <span className="text-card-foreground">₦{amount.toLocaleString()}</span>
+                <span className="text-card-foreground">{formatCurrency(amount)}</span>
               </div>
             ))}
           </div>
@@ -689,7 +688,7 @@ function ContributionsReport({
               {contributions.slice(0, 50).map((contribution) => (
                 <tr key={contribution.id} className="hover:bg-accent transition-colors">
                   <td className="px-6 py-4 text-sm text-card-foreground">
-                    {new Date(contribution.payment_date).toLocaleDateString()}
+                    {new Date(contribution.payment_date || contribution.created_at).toLocaleDateString()}
                   </td>
                   <td className="px-6 py-4">
                     <div className="text-sm text-card-foreground">{contribution.staff_name}</div>
@@ -754,8 +753,7 @@ function LoansReport({
 
       // Filter by date
       allLoans = allLoans.filter((l: any) => {
-        const loanDate = new Date(l.disbursement_date);
-        return loanDate >= new Date(dateRange.from) && loanDate <= new Date(dateRange.to);
+        return isWithinDateRange(l.disbursement_date || l.created_at, dateRange);
       });
 
       setLoans(allLoans);
