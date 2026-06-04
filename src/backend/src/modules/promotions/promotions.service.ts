@@ -12,6 +12,49 @@ export class PromotionsService {
   ) {}
 
   /**
+   * Reduce a grade level token to a single canonical form so exclusion rules
+   * configured in System Config always match the staff record regardless of how
+   * the value was entered/stored. Mirrors PayrollService.canonicalizeGrade.
+   *   "GL 12" / "GL12" / "012" / "12"  -> "12"
+   *   "CAT 1" / "CAT1"                 -> "CAT1"
+   */
+  private canonicalizeGrade(value: any): string {
+    const stripped = String(value ?? '').replace(/[\s-]+/g, '').toUpperCase();
+    const numericMatch = stripped.match(/^(?:GL)?0*(\d+)$/);
+    return numericMatch ? numericMatch[1] : stripped;
+  }
+
+  private isExcludedFromGlobalItem(item: any, staffMember: any): boolean {
+    const gradeKey = this.canonicalizeGrade(staffMember.grade_level);
+    const empType = String(staffMember.employment_type || '').trim().toLowerCase();
+
+    const parseList = (value: any): string[] => {
+      if (Array.isArray(value)) return value;
+      if (typeof value === 'string') {
+        try {
+          const parsed = JSON.parse(value);
+          return Array.isArray(parsed) ? parsed : [];
+        } catch {
+          return [];
+        }
+      }
+      return [];
+    };
+
+    // Canonicalize both sides so e.g. configured "12" matches stored "GL 12" / "012".
+    const excludedGrades = parseList(item.excluded_grades).map((grade) => this.canonicalizeGrade(grade));
+    if (gradeKey && excludedGrades.includes(gradeKey)) return true;
+
+    const excludedEmploymentTypes = parseList(item.excluded_employment_types).map((type) => String(type || '').trim().toLowerCase());
+    return !!empType && excludedEmploymentTypes.includes(empType);
+  }
+
+  private async getPayrollContextStaff(staffId: string, gradeLevel?: string | number) {
+    const staff = await this.databaseService.queryOne('SELECT * FROM staff WHERE id = $1', [staffId]);
+    return staff && gradeLevel !== undefined ? { ...staff, grade_level: gradeLevel } : staff;
+  }
+
+  /**
    * Get staff promotion history
    */
   async getStaffPromotions(staffId: string) {
@@ -189,12 +232,12 @@ export class PromotionsService {
         const newBasicSalaryFloat = parseFloat(promotion.new_basic_salary);
 
         // Calculate gross salaries (Basic + Allowances)
-        const oldGrossSalary = await this.calculateGrossSalary(staff.id, oldBasicSalary);
-        const newGrossSalary = await this.calculateGrossSalary(staff.id, newBasicSalaryFloat);
+        const oldGrossSalary = await this.calculateGrossSalary(staff.id, oldBasicSalary, staff.grade_level);
+        const newGrossSalary = await this.calculateGrossSalary(staff.id, newBasicSalaryFloat, promotion.new_grade_level);
 
         // Calculate deductions (excluding TAX)
-        const oldDeductions = await this.calculateTotalDeductions(staff.id, oldBasicSalary);
-        const newDeductions = await this.calculateTotalDeductions(staff.id, newBasicSalaryFloat);
+        const oldDeductions = await this.calculateTotalDeductions(staff.id, oldBasicSalary, staff.grade_level);
+        const newDeductions = await this.calculateTotalDeductions(staff.id, newBasicSalaryFloat, promotion.new_grade_level);
 
         // Calculate Net Salary (Before Tax) for arrears purposes
         const oldNetSalary = oldGrossSalary - oldDeductions;
@@ -294,13 +337,15 @@ export class PromotionsService {
       throw new NotFoundException(`Could not determine salary for Grade ${newGradeLevel} Step ${newStep}.`);
     }
 
-    const oldAllowances = await this.calculateAllowanceBreakdown(staffId, oldBasicSalary);
-    const newAllowances = await this.calculateAllowanceBreakdown(staffId, newBasicSalary);
+    const oldContextGrade = typeof oldGradeLevel === 'number' ? oldGradeLevel : staff.grade_level;
+    const newContextGrade = newGradeLevel;
+    const oldAllowances = await this.calculateAllowanceBreakdown(staffId, oldBasicSalary, oldContextGrade);
+    const newAllowances = await this.calculateAllowanceBreakdown(staffId, newBasicSalary, newContextGrade);
     const oldGrossSalary = oldBasicSalary + oldAllowances.total;
     const newGrossSalary = newBasicSalary + newAllowances.total;
     
-    const oldDeductions = await this.calculateDeductionBreakdown(staffId, oldBasicSalary);
-    const newDeductions = await this.calculateDeductionBreakdown(staffId, newBasicSalary);
+    const oldDeductions = await this.calculateDeductionBreakdown(staffId, oldBasicSalary, oldContextGrade);
+    const newDeductions = await this.calculateDeductionBreakdown(staffId, newBasicSalary, newContextGrade);
 
     const oldNetSalary = oldGrossSalary - oldDeductions.total;
     const newNetSalary = newGrossSalary - newDeductions.total;
@@ -382,7 +427,8 @@ export class PromotionsService {
   /**
    * Calculate gross salary (Basic + Allowances)
    */
-  private async calculateGrossSalary(staffId: string, basicSalary: number): Promise<number> {
+  private async calculateGrossSalary(staffId: string, basicSalary: number, gradeLevel?: string | number): Promise<number> {
+    const staffMember = await this.getPayrollContextStaff(staffId, gradeLevel);
     // 1. Get Global Allowances (applies_to_all = true)
     const globalAllowances = await this.databaseService.query(
       `SELECT * FROM allowances WHERE status = 'active' AND applies_to_all = true`
@@ -402,6 +448,10 @@ export class PromotionsService {
 
     // Calculate Global Allowances
     for (const allowance of globalAllowances) {
+      if (staffMember && this.isExcludedFromGlobalItem(allowance, staffMember)) {
+        continue;
+      }
+
       if (allowance.type === 'percentage') {
         totalAllowances += (basicSalary * parseFloat(allowance.percentage)) / 100;
       } else if (allowance.type === 'fixed') {
@@ -428,7 +478,8 @@ export class PromotionsService {
   /**
    * Calculate total deductions (Global + Staff, excluding TAX)
    */
-  private async calculateTotalDeductions(staffId: string, basicSalary: number): Promise<number> {
+  private async calculateTotalDeductions(staffId: string, basicSalary: number, gradeLevel?: string | number): Promise<number> {
+    const staffMember = await this.getPayrollContextStaff(staffId, gradeLevel);
     // 1. Get Global Deductions (applies_to_all = true)
     const globalDeductions = await this.databaseService.query(
       `SELECT * FROM deductions WHERE status = 'active' AND applies_to_all = true AND code != 'TAX'`
@@ -447,6 +498,10 @@ export class PromotionsService {
 
     // Calculate Global Deductions
     for (const deduction of globalDeductions) {
+      if (staffMember && this.isExcludedFromGlobalItem(deduction, staffMember)) {
+        continue;
+      }
+
       if (deduction.type === 'percentage') {
         totalDeductions += (basicSalary * parseFloat(deduction.percentage)) / 100;
       } else if (deduction.type === 'fixed') {
@@ -473,7 +528,9 @@ export class PromotionsService {
   private async calculateAllowanceBreakdown(
     staffId: string,
     basicSalary: number,
+    gradeLevel?: string | number,
   ): Promise<{ total: number; items: Array<{ code: string; name: string; amount: number; type: string; source: string }> }> {
+    const staffMember = await this.getPayrollContextStaff(staffId, gradeLevel);
     const globalAllowances = await this.databaseService.query(
       `SELECT * FROM allowances WHERE status = 'active' AND applies_to_all = true`,
     );
@@ -490,6 +547,10 @@ export class PromotionsService {
     let total = 0;
 
     for (const allowance of globalAllowances) {
+      if (staffMember && this.isExcludedFromGlobalItem(allowance, staffMember)) {
+        continue;
+      }
+
       let amount = 0;
       if (allowance.type === 'percentage') {
         amount = (basicSalary * parseFloat(allowance.percentage)) / 100;
@@ -535,7 +596,9 @@ export class PromotionsService {
   private async calculateDeductionBreakdown(
     staffId: string,
     basicSalary: number,
+    gradeLevel?: string | number,
   ): Promise<{ total: number; items: Array<{ code: string; name: string; amount: number; type: string; source: string }> }> {
+    const staffMember = await this.getPayrollContextStaff(staffId, gradeLevel);
     const globalDeductions = await this.databaseService.query(
       `SELECT * FROM deductions WHERE status = 'active' AND applies_to_all = true AND code != 'TAX'`,
     );
@@ -552,6 +615,10 @@ export class PromotionsService {
     let total = 0;
 
     for (const deduction of globalDeductions) {
+      if (staffMember && this.isExcludedFromGlobalItem(deduction, staffMember)) {
+        continue;
+      }
+
       let amount = 0;
       if (deduction.type === 'percentage') {
         amount = (basicSalary * parseFloat(deduction.percentage)) / 100;

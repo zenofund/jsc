@@ -123,10 +123,27 @@ export class PayrollService {
       this.logger.warn(`Failed to ensure payroll payment columns: ${error?.message}`);
     }
   }
+  /**
+   * Reduce a grade level token to a single canonical form so that exclusion
+   * rules configured in System Config always match the staff record regardless
+   * of how the value was entered/stored. Handles spaces, dashes, "GL" prefixes
+   * and leading zeros symmetrically.
+   *   "GL 12" / "GL12" / "012" / "12"  -> "12"
+   *   "CAT 1" / "CAT1"                 -> "CAT1"
+   */
+  private canonicalizeGrade(value: any): string {
+    const stripped = String(value ?? '').replace(/[\s-]+/g, '').toUpperCase();
+    const numericMatch = stripped.match(/^(?:GL)?0*(\d+)$/);
+    if (numericMatch) {
+      return numericMatch[1]; // digits only, leading zeros removed
+    }
+    return stripped;
+  }
+
   private isExcludedFromPayrollItem(item: any, staffMember: any): boolean {
-    const gradeKey = String(staffMember.grade_level || '').replace(/\s+/g, '').toUpperCase();
-    const empType = String(staffMember.employment_type || '');
-    
+    const gradeKey = this.canonicalizeGrade(staffMember.grade_level);
+    const empType = String(staffMember.employment_type || '').trim().toLowerCase();
+
     let excludedGrades: string[] = [];
     try {
       excludedGrades = typeof item.excluded_grades === 'string' ? JSON.parse(item.excluded_grades) : (item.excluded_grades || []);
@@ -141,21 +158,13 @@ export class PayrollService {
       // Ignored parsing error
     }
 
-    const normalizedExcludedGrades = excludedGrades.map(g => String(g).replace(/\s+/g, '').toUpperCase());
-    if (normalizedExcludedGrades.includes(gradeKey)) return true;
+    // Canonicalize both sides so e.g. configured "12" matches stored "GL 12" / "012".
+    const normalizedExcludedGrades = excludedGrades.map((g) => this.canonicalizeGrade(g));
+    if (gradeKey && normalizedExcludedGrades.includes(gradeKey)) return true;
 
-    // Also try checking the normalized grade level via SalaryLookupService rules (e.g. GL 12 -> 12)
-    // Here we just use the gradeKey directly, but let's also check if "GL" + gradeKey is excluded, etc.
-    const gradeNumberMatch = gradeKey.match(/\d+/);
-    if (gradeNumberMatch) {
-      const gNumStr = gradeNumberMatch[0];
-      if (normalizedExcludedGrades.includes(`GL${gNumStr}`) || normalizedExcludedGrades.includes(gNumStr) || normalizedExcludedGrades.includes(`0${gNumStr}`)) {
-        return true;
-      }
-    }
+    const normalizedExcludedEmpTypes = excludedEmpTypes.map((type) => String(type || '').trim().toLowerCase());
+    if (empType && normalizedExcludedEmpTypes.includes(empType)) return true;
 
-    if (excludedEmpTypes.includes(empType)) return true;
-    
     return false;
   }
 
@@ -290,14 +299,16 @@ export class PayrollService {
 
     // Get all staff-specific allowances for this month
     const staffAllowances = await this.databaseService.query(
-      `SELECT sa.*, 
+      `SELECT sa.*,
               a.name as allowance_name,
               a.code as allowance_code,
               a.type,
-              a.is_taxable
+              a.is_taxable,
+              a.excluded_grades,
+              a.excluded_employment_types
        FROM staff_allowances sa
        LEFT JOIN allowances a ON sa.allowance_id = a.id
-       WHERE sa.status = 'active' 
+       WHERE sa.status = 'active'
        AND sa.effective_from <= TO_DATE($1 || '-01', 'YYYY-MM-DD')
        AND (sa.effective_to IS NULL OR sa.effective_to >= TO_DATE($1 || '-01', 'YYYY-MM-DD'))`,
       [batch.payroll_month],
@@ -305,14 +316,16 @@ export class PayrollService {
 
     // Get all staff-specific deductions for this month
     const staffDeductions = await this.databaseService.query(
-      `SELECT sd.*, 
+      `SELECT sd.*,
               d.name as deduction_name,
               d.code as deduction_code,
               d.type,
-              d.is_statutory
+              d.is_statutory,
+              d.excluded_grades,
+              d.excluded_employment_types
        FROM staff_deductions sd
        LEFT JOIN deductions d ON sd.deduction_id = d.id
-       WHERE sd.status = 'active' 
+       WHERE sd.status = 'active'
        AND sd.effective_from <= TO_DATE($1 || '-01', 'YYYY-MM-DD')
        AND (sd.effective_to IS NULL OR sd.effective_to >= TO_DATE($1 || '-01', 'YYYY-MM-DD'))`,
       [batch.payroll_month],

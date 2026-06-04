@@ -37,11 +37,11 @@ export class AllowancesService {
         dto.amount || null,
         dto.percentage || null,
         dto.is_taxable ?? dto.isTaxable ?? true,
-        dto.is_pensionable ?? false,
-        dto.appliesToAll ?? true,
+        dto.is_pensionable ?? dto.isPensionable ?? false,
+        dto.appliesToAll ?? dto.applies_to_all ?? true,
         userId,
-        dto.excluded_grades ? JSON.stringify(dto.excluded_grades) : '[]',
-        dto.excluded_employment_types ? JSON.stringify(dto.excluded_employment_types) : '[]',
+        dto.excluded_grades !== undefined ? JSON.stringify(dto.excluded_grades || []) : '[]',
+        dto.excluded_employment_types !== undefined ? JSON.stringify(dto.excluded_employment_types || []) : '[]',
       ],
     );
 
@@ -111,8 +111,9 @@ export class AllowancesService {
            is_taxable = COALESCE($6, is_taxable),
            is_pensionable = COALESCE($7, is_pensionable),
            status = COALESCE($8, status),
-           excluded_grades = COALESCE($10, excluded_grades),
-           excluded_employment_types = COALESCE($11, excluded_employment_types),
+           applies_to_all = COALESCE($10, applies_to_all),
+           excluded_grades = COALESCE($11, excluded_grades),
+           excluded_employment_types = COALESCE($12, excluded_employment_types),
            updated_at = NOW()
        WHERE id = $9
        RETURNING *`,
@@ -123,11 +124,12 @@ export class AllowancesService {
         dto.amount,
         dto.percentage,
         dto.is_taxable ?? dto.isTaxable,
-        dto.is_pensionable,
+        dto.is_pensionable ?? dto.isPensionable,
         dto.status,
         id,
-        dto.excluded_grades ? JSON.stringify(dto.excluded_grades) : null,
-        dto.excluded_employment_types ? JSON.stringify(dto.excluded_employment_types) : null
+        dto.appliesToAll ?? dto.applies_to_all ?? null,
+        dto.excluded_grades !== undefined ? JSON.stringify(dto.excluded_grades || []) : null,
+        dto.excluded_employment_types !== undefined ? JSON.stringify(dto.excluded_employment_types || []) : null
       ],
     );
 

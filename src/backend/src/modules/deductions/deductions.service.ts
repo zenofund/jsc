@@ -36,11 +36,11 @@ export class DeductionsService {
         dto.type,
         dto.amount || null,
         dto.percentage || null,
-        dto.appliesToAll ?? true,
+        dto.appliesToAll ?? dto.applies_to_all ?? true,
         dto.is_statutory ?? false,
         userId,
-        dto.excluded_grades ? JSON.stringify(dto.excluded_grades) : '[]',
-        dto.excluded_employment_types ? JSON.stringify(dto.excluded_employment_types) : '[]',
+        dto.excluded_grades !== undefined ? JSON.stringify(dto.excluded_grades || []) : '[]',
+        dto.excluded_employment_types !== undefined ? JSON.stringify(dto.excluded_employment_types || []) : '[]',
       ],
     );
 
@@ -109,8 +109,9 @@ export class DeductionsService {
            percentage = COALESCE($5, percentage),
            status = COALESCE($6, status),
            is_statutory = COALESCE($7, is_statutory),
-           excluded_grades = COALESCE($9, excluded_grades),
-           excluded_employment_types = COALESCE($10, excluded_employment_types),
+           applies_to_all = COALESCE($9, applies_to_all),
+           excluded_grades = COALESCE($10, excluded_grades),
+           excluded_employment_types = COALESCE($11, excluded_employment_types),
            updated_at = NOW()
        WHERE id = $8
        RETURNING *`,
@@ -121,10 +122,11 @@ export class DeductionsService {
         dto.amount, 
         dto.percentage, 
         dto.status, 
-        dto.is_statutory, 
+        dto.is_statutory ?? dto.isStatutory,
         id,
-        dto.excluded_grades ? JSON.stringify(dto.excluded_grades) : null,
-        dto.excluded_employment_types ? JSON.stringify(dto.excluded_employment_types) : null
+        dto.appliesToAll ?? dto.applies_to_all ?? null,
+        dto.excluded_grades !== undefined ? JSON.stringify(dto.excluded_grades || []) : null,
+        dto.excluded_employment_types !== undefined ? JSON.stringify(dto.excluded_employment_types || []) : null
       ],
     );
 
