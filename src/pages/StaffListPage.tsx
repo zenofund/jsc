@@ -158,7 +158,6 @@ export function StaffListPage() {
     'date_of_present_appointment',
     'grade_level',
     'step',
-    'exit_date',
   ];
 
   const fieldLabels: Record<string, string> = {
@@ -364,21 +363,15 @@ export function StaffListPage() {
       const nextFormValues = { ...formData, [name]: nextValue } as typeof formData;
       const shouldAutoUpdateRetirement = ['date_of_birth', 'appointment_date', 'employment_date'].includes(name) &&
         (!formData.retirement_date || formData.retirement_date === calculateExpectedRetirementDate(formData.date_of_birth, formData.appointment_date || formData.employment_date));
-      const shouldAutoUpdateExit = ['date_of_birth', 'appointment_date', 'employment_date'].includes(name) &&
-        (!formData.exit_date || formData.exit_date === calculateExpectedRetirementDate(formData.date_of_birth, formData.appointment_date || formData.employment_date));
       const nextRetirementDate = shouldAutoUpdateRetirement
         ? calculateExpectedRetirementDate(nextFormValues.date_of_birth, nextFormValues.appointment_date || nextFormValues.employment_date)
         : formData.retirement_date;
-      const nextExitDate = shouldAutoUpdateExit
-        ? calculateExpectedRetirementDate(nextFormValues.date_of_birth, nextFormValues.appointment_date || nextFormValues.employment_date)
-        : formData.exit_date;
 
-      setFormData(prev => ({ ...prev, ...nextFormValues, retirement_date: nextRetirementDate, exit_date: nextExitDate }));
+      setFormData(prev => ({ ...prev, ...nextFormValues, retirement_date: nextRetirementDate }));
       validateField(name, nextValue);
 
       if (['date_of_birth', 'appointment_date', 'employment_date'].includes(name)) {
         validateField('retirement_date', nextRetirementDate);
-        validateField('exit_date', nextExitDate);
       }
     }
     
@@ -1715,17 +1708,16 @@ export function StaffListPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">
-                    Date of Exit (Age or Service) *
+                    Exit Date
                   </label>
                   <input
                     type="text"
                     name="exit_date"
                     value={formData.exit_date}
-                    readOnly
+                    onChange={handleInputChange}
                     className={`w-full px-3 py-2 border ${formErrors.exit_date ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
                     placeholder="dd/mm/yyyy"
                     inputMode="numeric"
-                    required
                   />
                   {formErrors.exit_date && <p className="text-red-500 text-xs mt-1">{formErrors.exit_date}</p>}
                 </div>
