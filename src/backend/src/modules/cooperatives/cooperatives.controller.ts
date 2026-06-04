@@ -110,16 +110,19 @@ export class CooperativesController {
   }
 
   @Get('contributions/all')
-  @ApiOperation({ summary: 'Get all contributions' })
-  getAllContributions(@Query('cooperative_id') cooperativeId?: string) {
-    // If cooperative_id is provided, use the service method to filter by it
-    if (cooperativeId) {
-      return this.cooperativesService.getCooperativeContributions(cooperativeId);
-    }
-    // If no cooperative_id, return all contributions (we need to add this capability to service if not exists, 
-    // or reusing getCooperativeContributions with optional param if refactored, 
-    // but for now let's just allow it or call a new service method)
-    return this.cooperativesService.getAllContributions();
+  @ApiOperation({ summary: 'Get all contributions with optional filters' })
+  getAllContributions(
+    @Query('cooperative_id') cooperativeId?: string,
+    @Query('member_id') memberId?: string,
+    @Query('staff_id') staffId?: string,
+    @Query('contribution_month') contributionMonth?: string
+  ) {
+    return this.cooperativesService.getAllContributions({
+      cooperative_id: cooperativeId,
+      member_id: memberId,
+      staff_id: staffId,
+      contribution_month: contributionMonth
+    });
   }
 
   @Delete('contributions/:id')

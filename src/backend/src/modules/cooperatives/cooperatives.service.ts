@@ -519,10 +519,17 @@ export class CooperativesService {
 
 
   /**
-   * Get all contributions across all cooperatives
+   * Get all contributions across all cooperatives with optional filters
    */
-  async getAllContributions() {
-    const query = `
+  async getAllContributions(
+    filters?: {
+      cooperative_id?: string;
+      member_id?: string;
+      staff_id?: string;
+      contribution_month?: string;
+    }
+  ) {
+    let query = `
       SELECT 
         cc.*,
         cm.staff_id,
@@ -535,10 +542,39 @@ export class CooperativesService {
       JOIN cooperative_members cm ON cc.member_id = cm.id
       JOIN staff s ON cm.staff_id = s.id
       JOIN cooperatives c ON cc.cooperative_id = c.id
-      ORDER BY cc.created_at DESC
     `;
 
-    return this.databaseService.query(query);
+    const params = [];
+    let paramIndex = 1;
+    const conditions = [];
+
+    if (filters?.cooperative_id) {
+      conditions.push(`cc.cooperative_id = $${paramIndex++}`);
+      params.push(filters.cooperative_id);
+    }
+
+    if (filters?.member_id) {
+      conditions.push(`cc.member_id = $${paramIndex++}`);
+      params.push(filters.member_id);
+    }
+
+    if (filters?.staff_id) {
+      conditions.push(`cm.staff_id = $${paramIndex++}`);
+      params.push(filters.staff_id);
+    }
+
+    if (filters?.contribution_month) {
+      conditions.push(`cc.contribution_month = $${paramIndex++}`);
+      params.push(filters.contribution_month);
+    }
+
+    if (conditions.length > 0) {
+      query += ` WHERE ${conditions.join(' AND ')}`;
+    }
+
+    query += ' ORDER BY cc.created_at DESC';
+
+    return this.databaseService.query(query, params);
   }
 
   /**
