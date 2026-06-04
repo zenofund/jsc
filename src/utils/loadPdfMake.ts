@@ -8,9 +8,23 @@ export async function loadPdfMake() {
     ]).then(([pdfMakeModule, pdfFontsModule]) => {
       const pdfMake = (pdfMakeModule as any).default || pdfMakeModule;
       const pdfFonts = (pdfFontsModule as any).default || pdfFontsModule;
-      if (pdfFonts?.pdfMake?.vfs) {
-        pdfMake.vfs = pdfFonts.pdfMake.vfs;
+
+      const fontVfs =
+        pdfFonts?.pdfMake?.vfs ||
+        pdfFonts?.vfs ||
+        pdfFonts;
+
+      const hasFontEntries =
+        fontVfs &&
+        typeof fontVfs === 'object' &&
+        Object.keys(fontVfs).some((key) => key.toLowerCase().endsWith('.ttf'));
+
+      if (hasFontEntries && typeof pdfMake.addVirtualFileSystem === 'function') {
+        pdfMake.addVirtualFileSystem(fontVfs);
+      } else if (hasFontEntries) {
+        pdfMake.vfs = fontVfs;
       }
+
       return pdfMake;
     });
   }
