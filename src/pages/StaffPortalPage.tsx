@@ -36,6 +36,7 @@ import { formatCurrency } from '../utils/format';
 import { PayslipTemplate } from '../components/PayslipTemplate';
 import { generatePayslipPDF } from '../utils/payslipGenerator';
 import { loadPdfMake } from '../utils/loadPdfMake';
+import { downloadPdfDocument } from '../utils/downloadPdf';
 import { formatStaffName } from '../lib/name-utils';
 
 export function StaffPortalPage() {
@@ -953,7 +954,7 @@ export function StaffPortalPage() {
       const filename = `Payslip_${month}_${staffName}_${staffNumber}.pdf`;
 
       const pdfMake = await loadPdfMake();
-      pdfMake.createPdf(docDefinition).download(filename);
+      await downloadPdfDocument(pdfMake, docDefinition, filename);
       showToast('success', 'Payslip downloaded successfully');
     } catch (error) {
       console.error('PDF generation error:', error);

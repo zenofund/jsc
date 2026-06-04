@@ -12,6 +12,7 @@ import { PayslipTemplate } from '../components/PayslipTemplate';
 import { formatCurrency } from '../utils/format';
 import { generatePayslipPDF } from '../utils/payslipGenerator';
 import { loadPdfMake } from '../utils/loadPdfMake';
+import { downloadPdfDocument } from '../utils/downloadPdf';
 
 export function PayslipsPage() {
   const { user } = useAuth();
@@ -116,9 +117,8 @@ export function PayslipsPage() {
       const staffNumber = payslip.line?.staff_number || 'NoID';
       const filename = `Payslip_${month}_${staffName}_${staffNumber}.pdf`;
 
-      // Save PDF
       const pdfMake = await loadPdfMake();
-      pdfMake.createPdf(docDefinition).download(filename);
+      await downloadPdfDocument(pdfMake, docDefinition, filename);
       showToast('success', 'Payslip downloaded successfully');
     } catch (error) {
       console.error('PDF generation error:', error);
