@@ -1,6 +1,15 @@
 
 export const formatCurrency = (amount: number | string | undefined | null): string => {
-  const val = typeof amount === 'string' ? parseFloat(amount) : amount;
+  // Ensure we convert string (even with leading zeros) to number
+  let val: number | null | undefined;
+  if (typeof amount === 'string') {
+    // Parse numeric string, ignoring leading zeros
+    const parsed = parseFloat(amount);
+    val = isNaN(parsed) ? undefined : parsed;
+  } else {
+    val = amount;
+  }
+  
   if (val === undefined || val === null || isNaN(val)) return '₦0.00';
   
   // Use en-NG locale for Naira formatting

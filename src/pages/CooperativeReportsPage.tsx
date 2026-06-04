@@ -601,10 +601,10 @@ function ContributionsReport({
 
       setContributions(allContributions);
 
-      // Calculate summary
-      const totalAmount = allContributions.reduce((sum: number, c: CooperativeContribution) => sum + c.amount, 0);
+      // Calculate summary, even if empty
+      const totalAmount = allContributions.reduce((sum: number, c: CooperativeContribution) => sum + (Number(c.amount) || 0), 0);
       const byType = allContributions.reduce((acc: any, c: CooperativeContribution) => {
-        acc[c.contribution_type] = (acc[c.contribution_type] || 0) + c.amount;
+        acc[c.contribution_type] = (acc[c.contribution_type] || 0) + (Number(c.amount) || 0);
         return acc;
       }, {});
 
@@ -613,12 +613,19 @@ function ContributionsReport({
         total_count: allContributions.length,
         by_type: byType,
         by_cooperative: allContributions.reduce((acc: any, c: any) => {
-          acc[c.cooperative_name] = (acc[c.cooperative_name] || 0) + c.amount;
+          acc[c.cooperative_name] = (acc[c.cooperative_name] || 0) + (Number(c.amount) || 0);
           return acc;
         }, {}),
       });
     } catch (error) {
       console.error('Error loading contributions:', error);
+      // Fallback summary on error
+      setSummary({
+        total_amount: 0,
+        total_count: 0,
+        by_type: {},
+        by_cooperative: {},
+      });
     }
   };
 
@@ -630,7 +637,7 @@ function ContributionsReport({
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="p-6 rounded-lg border border-border bg-card">
           <p className="text-sm text-muted-foreground mb-1">Total Contributions</p>
-          <p className="text-2xl text-card-foreground">₦{summary.total_amount.toLocaleString()}</p>
+          <p className="text-2xl text-card-foreground">{formatCurrency(summary.total_amount)}</p>
         </div>
         <div className="p-6 rounded-lg border border-border bg-card">
           <p className="text-sm text-muted-foreground mb-1">Number of Contributions</p>
@@ -638,11 +645,11 @@ function ContributionsReport({
         </div>
         <div className="p-6 rounded-lg border border-border bg-card">
           <p className="text-sm text-muted-foreground mb-1">Regular Contributions</p>
-          <p className="text-2xl text-card-foreground">₦{(summary.by_type.regular || 0).toLocaleString()}</p>
+          <p className="text-2xl text-card-foreground">{formatCurrency(summary.by_type.regular || 0)}</p>
         </div>
         <div className="p-6 rounded-lg border border-border bg-card">
           <p className="text-sm text-muted-foreground mb-1">Share Capital</p>
-          <p className="text-2xl text-card-foreground">₦{(summary.by_type.share_capital || 0).toLocaleString()}</p>
+          <p className="text-2xl text-card-foreground">{formatCurrency(summary.by_type.share_capital || 0)}</p>
         </div>
       </div>
 
@@ -753,10 +760,10 @@ function LoansReport({
 
       setLoans(allLoans);
 
-      // Calculate summary
-      const totalDisbursed = allLoans.reduce((sum: any, l: any) => sum + l.principal_amount, 0);
-      const totalOutstanding = allLoans.reduce((sum: any, l: any) => sum + l.balance_outstanding, 0);
-      const totalRepaid = allLoans.reduce((sum: any, l: any) => sum + l.total_repaid, 0);
+      // Calculate summary, even if empty
+      const totalDisbursed = allLoans.reduce((sum: number, l: any) => sum + (Number(l.principal_amount) || 0), 0);
+      const totalOutstanding = allLoans.reduce((sum: number, l: any) => sum + (Number(l.balance_outstanding) || 0), 0);
+      const totalRepaid = allLoans.reduce((sum: number, l: any) => sum + (Number(l.total_repaid) || 0), 0);
 
       setSummary({
         total_count: allLoans.length,
@@ -769,13 +776,21 @@ function LoansReport({
             acc[key] = { count: 0, disbursed: 0, outstanding: 0 };
           }
           acc[key].count++;
-          acc[key].disbursed += l.principal_amount;
-          acc[key].outstanding += l.balance_outstanding;
+          acc[key].disbursed += Number(l.principal_amount) || 0;
+          acc[key].outstanding += Number(l.balance_outstanding) || 0;
           return acc;
         }, {}),
       });
     } catch (error) {
       console.error('Error loading loans:', error);
+      // Fallback summary on error
+      setSummary({
+        total_count: 0,
+        total_disbursed: 0,
+        total_outstanding: 0,
+        total_repaid: 0,
+        by_cooperative: {},
+      });
     }
   };
 
@@ -791,15 +806,15 @@ function LoansReport({
         </div>
         <div className="p-6 rounded-lg border border-border bg-card">
           <p className="text-sm text-muted-foreground mb-1">Total Disbursed</p>
-          <p className="text-2xl text-card-foreground">₦{summary.total_disbursed.toLocaleString()}</p>
+          <p className="text-2xl text-card-foreground">{formatCurrency(summary.total_disbursed)}</p>
         </div>
         <div className="p-6 rounded-lg border border-border bg-card">
           <p className="text-sm text-muted-foreground mb-1">Total Repaid</p>
-          <p className="text-2xl text-card-foreground">₦{summary.total_repaid.toLocaleString()}</p>
+          <p className="text-2xl text-card-foreground">{formatCurrency(summary.total_repaid)}</p>
         </div>
         <div className="p-6 rounded-lg border border-border bg-card">
           <p className="text-sm text-muted-foreground mb-1">Outstanding</p>
-          <p className="text-2xl text-card-foreground">₦{summary.total_outstanding.toLocaleString()}</p>
+          <p className="text-2xl text-card-foreground">{formatCurrency(summary.total_outstanding)}</p>
         </div>
       </div>
 
