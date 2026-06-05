@@ -579,9 +579,12 @@ function ContributionsReport({
 }) {
   const [contributions, setContributions] = useState<CooperativeContribution[]>([]);
   const [summary, setSummary] = useState<any>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 25;
 
   useEffect(() => {
     loadContributions();
+    setCurrentPage(1);
   }, [selectedCooperativeId, dateRange]);
 
   const loadContributions = async () => {
@@ -629,6 +632,16 @@ function ContributionsReport({
   };
 
   if (!summary) return <div className="text-center py-12 text-muted-foreground">Loading contributions...</div>;
+
+  const totalPages = Math.ceil(contributions.length / itemsPerPage);
+  const paginatedContributions = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return contributions.slice(startIndex, startIndex + itemsPerPage);
+  }, [contributions, currentPage]);
+
+  const handlePageChange = (pageNumber: number) => {
+    setCurrentPage(Math.min(Math.max(pageNumber, 1), Math.max(totalPages, 1)));
+  };
 
   return (
     <div className="space-y-6">
@@ -685,7 +698,7 @@ function ContributionsReport({
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {contributions.slice(0, 50).map((contribution) => (
+              {paginatedContributions.map((contribution) => (
                 <tr key={contribution.id} className="hover:bg-accent transition-colors">
                   <td className="px-6 py-4 text-sm text-card-foreground">
                     {new Date(contribution.payment_date || contribution.created_at).toLocaleDateString()}
@@ -711,9 +724,27 @@ function ContributionsReport({
             </tbody>
           </table>
         </div>
-        {contributions.length > 50 && (
-          <div className="p-4 text-center text-sm text-muted-foreground border-t border-border">
-            Showing 50 of {contributions.length} contributions
+        {totalPages > 1 && (
+          <div className="flex items-center justify-center gap-3 p-4 border-t border-border">
+            <button
+              type="button"
+              onClick={() => handlePageChange(currentPage - 1)}
+              disabled={currentPage === 1}
+              className="px-3 py-2 rounded-lg border border-border bg-card hover:bg-accent disabled:opacity-50 disabled:pointer-events-none text-sm transition-colors"
+            >
+              Previous
+            </button>
+            <span className="min-w-[96px] text-center text-sm text-muted-foreground">
+              Page {currentPage} of {totalPages}
+            </span>
+            <button
+              type="button"
+              onClick={() => handlePageChange(currentPage + 1)}
+              disabled={currentPage === totalPages}
+              className="px-3 py-2 rounded-lg border border-border bg-card hover:bg-accent disabled:opacity-50 disabled:pointer-events-none text-sm transition-colors"
+            >
+              Next
+            </button>
           </div>
         )}
       </div>
@@ -733,9 +764,12 @@ function LoansReport({
 }) {
   const [loans, setLoans] = useState<LoanDisbursement[]>([]);
   const [summary, setSummary] = useState<any>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 25;
 
   useEffect(() => {
     loadLoans();
+    setCurrentPage(1);
   }, [selectedCooperativeId, dateRange]);
 
   const loadLoans = async () => {
@@ -793,6 +827,16 @@ function LoansReport({
   };
 
   if (!summary) return <div className="text-center py-12 text-muted-foreground">Loading loans...</div>;
+
+  const totalPages = Math.ceil(loans.length / itemsPerPage);
+  const paginatedLoans = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return loans.slice(startIndex, startIndex + itemsPerPage);
+  }, [loans, currentPage]);
+
+  const handlePageChange = (pageNumber: number) => {
+    setCurrentPage(Math.min(Math.max(pageNumber, 1), Math.max(totalPages, 1)));
+  };
 
   return (
     <div className="space-y-6">
@@ -862,7 +906,7 @@ function LoansReport({
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {loans.slice(0, 50).map((loan) => (
+              {paginatedLoans.map((loan) => (
                 <tr key={loan.id} className="hover:bg-accent transition-colors">
                   <td className="px-6 py-4 text-sm text-card-foreground">
                     {new Date(loan.disbursement_date).toLocaleDateString()}
@@ -895,9 +939,27 @@ function LoansReport({
             </tbody>
           </table>
         </div>
-        {loans.length > 50 && (
-          <div className="p-4 text-center text-sm text-muted-foreground border-t border-border">
-            Showing 50 of {loans.length} loans
+        {totalPages > 1 && (
+          <div className="flex items-center justify-center gap-3 p-4 border-t border-border">
+            <button
+              type="button"
+              onClick={() => handlePageChange(currentPage - 1)}
+              disabled={currentPage === 1}
+              className="px-3 py-2 rounded-lg border border-border bg-card hover:bg-accent disabled:opacity-50 disabled:pointer-events-none text-sm transition-colors"
+            >
+              Previous
+            </button>
+            <span className="min-w-[96px] text-center text-sm text-muted-foreground">
+              Page {currentPage} of {totalPages}
+            </span>
+            <button
+              type="button"
+              onClick={() => handlePageChange(currentPage + 1)}
+              disabled={currentPage === totalPages}
+              className="px-3 py-2 rounded-lg border border-border bg-card hover:bg-accent disabled:opacity-50 disabled:pointer-events-none text-sm transition-colors"
+            >
+              Next
+            </button>
           </div>
         )}
       </div>
