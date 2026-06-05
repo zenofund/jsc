@@ -631,8 +631,6 @@ function ContributionsReport({
     }
   };
 
-  if (!summary) return <div className="text-center py-12 text-muted-foreground">Loading contributions...</div>;
-
   const totalPages = Math.ceil(contributions.length / itemsPerPage);
   const paginatedContributions = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
@@ -642,6 +640,8 @@ function ContributionsReport({
   const handlePageChange = (pageNumber: number) => {
     setCurrentPage(Math.min(Math.max(pageNumber, 1), Math.max(totalPages, 1)));
   };
+
+  if (!summary) return <div className="text-center py-12 text-muted-foreground">Loading contributions...</div>;
 
   return (
     <div className="space-y-6">
@@ -826,8 +826,6 @@ function LoansReport({
     }
   };
 
-  if (!summary) return <div className="text-center py-12 text-muted-foreground">Loading loans...</div>;
-
   const totalPages = Math.ceil(loans.length / itemsPerPage);
   const paginatedLoans = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
@@ -837,6 +835,8 @@ function LoansReport({
   const handlePageChange = (pageNumber: number) => {
     setCurrentPage(Math.min(Math.max(pageNumber, 1), Math.max(totalPages, 1)));
   };
+
+  if (!summary) return <div className="text-center py-12 text-muted-foreground">Loading loans...</div>;
 
   return (
     <div className="space-y-6">
