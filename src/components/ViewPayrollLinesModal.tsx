@@ -210,14 +210,20 @@ export function ViewPayrollLinesModal({
     return keyToLabel;
   };
 
+  const allowanceText = (line: PayrollLine) => {
+    const allowances = Array.isArray((line as any).allowances) ? (line as any).allowances : [];
+    const parts = allowances
+      .map((a: any) => ({ label: itemBaseLabel(a), amount: toNumber(a?.amount) }) as { label: string; amount: number })
+      .filter((p: { label: string; amount: number }) => p.label && p.amount !== 0)
+      .map((p: { label: string; amount: number }) => `${p.label}: ${round2(p.amount).toFixed(2)}`);
+    return parts.join(' | ');
+  };
+
   const collectExportModel = (allLines: PayrollLine[]) => {
-    const allowanceItems: any[] = [];
     const deductionItems: any[] = [];
 
     for (const line of allLines) {
-      const allowances = Array.isArray((line as any).allowances) ? (line as any).allowances : [];
       const deductions = Array.isArray((line as any).deductions) ? (line as any).deductions : [];
-      for (const a of allowances) allowanceItems.push(a);
       for (const d of deductions) {
         if (isCooperativeDeduction(d)) {
           deductionItems.push({ ...d, _coop_group: true });
@@ -227,14 +233,8 @@ export function ViewPayrollLinesModal({
       }
     }
 
-    const allowanceKeyToLabel = buildItemLabels(allowanceItems);
     const deductionKeyToLabel = buildItemLabels(deductionItems, getExportKey);
 
-    const allowanceKeys = Array.from(allowanceKeyToLabel.keys()).sort((a, b) => {
-      const la = allowanceKeyToLabel.get(a) ?? a;
-      const lb = allowanceKeyToLabel.get(b) ?? b;
-      return la.localeCompare(lb);
-    });
     const deductionKeys = Array.from(deductionKeyToLabel.keys()).sort((a, b) => {
       const la = deductionKeyToLabel.get(a) ?? a;
       const lb = deductionKeyToLabel.get(b) ?? b;
@@ -262,16 +262,7 @@ export function ViewPayrollLinesModal({
       { id: 'staff_name', header: 'Staff Name', isMoney: false, get: (line) => String(line.staff_name ?? '') },
       { id: 'grade_step', header: 'Grade/Step', isMoney: false, get: (line) => gradeStepText(line) },
       { id: 'basic_salary', header: 'Basic', isMoney: true, get: (line) => toCsvMoney(line.basic_salary) },
-      ...allowanceKeys.map((key) => {
-        let header = allowanceKeyToLabel.get(key) ?? key;
-        if (header.includes('Consolidated All.')) header = 'Allowances';
-        return {
-          id: `allowance:${key}`,
-          header: smartHeaderLabel(header),
-          isMoney: true,
-          get: (line: PayrollLine) => toCsvMoney(getItemAmount((line as any).allowances, key)),
-        };
-      }),
+      { id: 'allowances', header: 'Allowances', isMoney: false, get: (line) => allowanceText(line) },
       { id: 'total_allowances', header: 'Tot. All.', isMoney: true, get: (line) => toCsvMoney(lineTotalAllowances(line)) },
       { id: 'gross_pay', header: 'Gross Pay', isMoney: true, get: (line) => toCsvMoney(line.gross_pay) },
       ...deductionKeys.map((key) => {
@@ -304,7 +295,7 @@ export function ViewPayrollLinesModal({
     ];
 
     const isEmptyColumn = (col: typeof columns[number]) => {
-      if (col.id === 'sn' || col.id === 'staff_id' || col.id === 'staff_name' || col.id === 'grade_step' || col.id === 'basic_salary' || col.id === 'total_allowances' || col.id === 'total_deductions' || col.id === 'net_pay') {
+      if (col.id === 'sn' || col.id === 'staff_id' || col.id === 'staff_name' || col.id === 'grade_step' || col.id === 'basic_salary' || col.id === 'allowances' || col.id === 'total_allowances' || col.id === 'total_deductions' || col.id === 'net_pay') {
         return false;
       }
       if (col.isMoney) {
