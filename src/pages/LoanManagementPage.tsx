@@ -1611,12 +1611,17 @@ function ReportsTab() {
     coops: Cooperative[]
   ) => {
     const currentMonth = new Date().toISOString().slice(0, 7);
+    const rangeStartMonth = dateFrom.slice(0, 7);
+    const rangeEndMonth = dateTo.slice(0, 7);
+    const rangeEndDate = getDateRange().end;
+    const matchesCooperative = (coopId?: string) => cooperativeFilter === 'all' || coopId === cooperativeFilter;
 
     if (key === 'applications') {
       const filtered = apps.filter((app) => {
         const statusMatch = statusFilter === 'all' || app.status === statusFilter;
         const dateValue = app.submitted_at || app.created_at;
-        return statusMatch && inRange(dateValue);
+        const coopMatch = matchesCooperative(app.cooperative_id);
+        return statusMatch && coopMatch && inRange(dateValue);
       });
       const totalRequested = filtered.reduce((sum, app) => sum + (app.amount_requested || 0), 0);
       const byStatus = filtered.reduce((acc: Record<string, number>, app) => {
@@ -1664,7 +1669,8 @@ function ReportsTab() {
     if (key === 'disbursements') {
       const filtered = disb.filter((d) => {
         const statusMatch = statusFilter === 'all' || d.status === statusFilter;
-        return statusMatch && inRange(d.disbursement_date);
+        const coopMatch = matchesCooperative(d.cooperative_id);
+        return statusMatch && coopMatch && inRange(d.disbursement_date);
       });
       const totalDisbursed = filtered.reduce(
         (sum, d) => sum + (d.amount_disbursed ?? d.principal_amount ?? 0),
@@ -1705,13 +1711,18 @@ function ReportsTab() {
 
     if (key === 'repayment-schedule') {
       const scheduleStatus = (d: LoanDisbursement) => {
-        if (d.status === 'completed') return 'completed';
+        if (d.status === 'completed' || d.balance_outstanding <= 0) return 'completed';
+        if (currentMonth < d.start_deduction_month) return 'upcoming';
         if (currentMonth > d.end_deduction_month && d.balance_outstanding > 0) return 'overdue';
         return 'active';
       };
-      const filtered = disb.filter((d) => inRange(d.disbursement_date));
+      const filtered = disb.filter((d) => {
+        if (!matchesCooperative(d.cooperative_id)) return false;
+        return d.start_deduction_month <= rangeEndMonth && d.end_deduction_month >= rangeStartMonth;
+      });
       const scoped = filtered.filter((d) => statusFilter === 'all' || scheduleStatus(d) === statusFilter);
       const activeCount = filtered.filter((d) => scheduleStatus(d) === 'active').length;
+      const upcomingCount = filtered.filter((d) => scheduleStatus(d) === 'upcoming').length;
       const overdueCount = filtered.filter((d) => scheduleStatus(d) === 'overdue').length;
       const completedCount = filtered.filter((d) => scheduleStatus(d) === 'completed').length;
       const totalMonthlyDue = filtered
@@ -1742,6 +1753,7 @@ function ReportsTab() {
       }));
       const summary = [
         { label: 'Active Loans', value: activeCount.toString() },
+        { label: 'Upcoming Loans', value: upcomingCount.toString() },
         { label: 'Overdue Loans', value: overdueCount.toString() },
         { label: 'Completed Loans', value: completedCount.toString() },
         { label: 'Monthly Due', value: formatCurrency(totalMonthlyDue) },
@@ -1755,8 +1767,12 @@ function ReportsTab() {
         acc[coop.id] = coop.name;
         return acc;
       }, {});
-      const filtered = disb.filter((d) => d.cooperative_id && inRange(d.disbursement_date));
-      const scoped = filtered.filter((d) => cooperativeFilter === 'all' || d.cooperative_id === cooperativeFilter);
+      const filtered = disb.filter((d) => {
+        if (!d.cooperative_id) return false;
+        const disbursementDate = new Date(d.disbursement_date);
+        return disbursementDate <= rangeEndDate;
+      });
+      const scoped = filtered.filter((d) => matchesCooperative(d.cooperative_id));
       const grouped = scoped.reduce((acc: Record<string, any>, d) => {
         const keyValue = d.cooperative_id || 'unknown';
         const label = d.cooperative_name || coopNameById[keyValue] || 'Unknown Cooperative';
@@ -1800,7 +1816,12 @@ function ReportsTab() {
     }
 
     if (key === 'loan-aging') {
-      const agingLoans = disb.filter((d) => d.balance_outstanding > 0 && inRange(d.disbursement_date));
+      const agingLoans = disb.filter((d) => {
+        if (d.balance_outstanding <= 0) return false;
+        if (!matchesCooperative(d.cooperative_id)) return false;
+        const disbursementDate = new Date(d.disbursement_date);
+        return disbursementDate <= rangeEndDate;
+      });
       const today = new Date();
       const buckets = agingLoans.reduce((acc: Record<string, { count: number; outstanding: number }>, d) => {
         const disbursementDate = new Date(d.disbursement_date);
@@ -1859,9 +1880,13 @@ function ReportsTab() {
       return { rows, columns, summary, breakdown };
     }
 
-    const overdue = disb.filter(
-      (d) => d.balance_outstanding > 0 && currentMonth > d.end_deduction_month && inRange(d.disbursement_date)
-    );
+    const overdue = disb.filter((d) => {
+      if (d.balance_outstanding <= 0) return false;
+      if (!matchesCooperative(d.cooperative_id)) return false;
+      const disbursementDate = new Date(d.disbursement_date);
+      if (disbursementDate > rangeEndDate) return false;
+      return currentMonth > d.end_deduction_month;
+    });
     const columns: ReportColumn[] = [
       { key: 'staff_name', label: 'Staff Name' },
       { key: 'staff_number', label: 'Staff Number' },
@@ -1933,11 +1958,11 @@ function ReportsTab() {
     : selectedReport === 'disbursements'
       ? disbursementStatuses
       : selectedReport === 'repayment-schedule'
-        ? ['active', 'overdue', 'completed']
+        ? ['active', 'upcoming', 'overdue', 'completed']
         : [];
 
   const showStatusFilter = selectedReport === 'applications' || selectedReport === 'disbursements' || selectedReport === 'repayment-schedule';
-  const showCooperativeFilter = selectedReport === 'cooperative-statement';
+  const showCooperativeFilter = selectedReport !== null;
 
   return (
     <div className="space-y-6">

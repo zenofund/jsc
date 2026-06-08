@@ -173,7 +173,7 @@ export function CooperativeReportsPage() {
         staff_name: loan.staff_name,
         staff_number: loan.staff_number,
         cooperative_name: loan.cooperative_name,
-        principal_amount: toNumber(loan.principal_amount),
+        principal_amount: toNumber(loan.amount_disbursed ?? loan.principal_amount ?? loan.total_amount),
         total_repaid: toNumber(loan.total_repaid),
         balance_outstanding: toNumber(loan.balance_outstanding),
         status: loan.status,
@@ -820,7 +820,10 @@ function LoansReport({
       setLoans(allLoans);
 
       // Calculate summary, even if empty
-      const totalDisbursed = allLoans.reduce((sum: number, l: any) => sum + (Number(l.principal_amount) || 0), 0);
+      const totalDisbursed = allLoans.reduce(
+        (sum: number, l: any) => sum + (Number(l.amount_disbursed ?? l.principal_amount ?? l.total_amount) || 0),
+        0,
+      );
       const totalOutstanding = allLoans.reduce((sum: number, l: any) => sum + (Number(l.balance_outstanding) || 0), 0);
       const totalRepaid = allLoans.reduce((sum: number, l: any) => sum + (Number(l.total_repaid) || 0), 0);
 
@@ -835,7 +838,7 @@ function LoansReport({
             acc[key] = { count: 0, disbursed: 0, outstanding: 0 };
           }
           acc[key].count++;
-          acc[key].disbursed += Number(l.principal_amount) || 0;
+          acc[key].disbursed += Number(l.amount_disbursed ?? l.principal_amount ?? l.total_amount) || 0;
           acc[key].outstanding += Number(l.balance_outstanding) || 0;
           return acc;
         }, {}),
@@ -968,7 +971,7 @@ function LoansReport({
                   </td>
                   <td className="px-6 py-4 text-sm text-card-foreground">{loan.cooperative_name || 'N/A'}</td>
                   <td className="px-6 py-4 text-right text-sm text-card-foreground">
-                    ₦{loan.principal_amount.toLocaleString()}
+                    ₦{Number(loan.amount_disbursed ?? loan.principal_amount ?? loan.total_amount ?? 0).toLocaleString()}
                   </td>
                   <td className="px-6 py-4 text-right text-sm text-card-foreground">
                     ₦{loan.total_repaid.toLocaleString()}
