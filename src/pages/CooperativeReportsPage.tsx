@@ -12,7 +12,8 @@ import {
   Building2,
   Wallet,
   CreditCard,
-  Loader2
+  Loader2,
+  Search
 } from 'lucide-react';
 import { formatCompactCurrency, formatCurrency } from '../utils/format';
 import { PageSkeleton } from '../components/PageLoader';
@@ -580,6 +581,7 @@ function ContributionsReport({
   const [contributions, setContributions] = useState<CooperativeContribution[]>([]);
   const [summary, setSummary] = useState<any>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [searchQuery, setSearchQuery] = useState('');
   const itemsPerPage = 25;
 
   useEffect(() => {
@@ -631,11 +633,22 @@ function ContributionsReport({
     }
   };
 
-  const totalPages = Math.ceil(contributions.length / itemsPerPage);
+  const filteredContributions = useMemo(() => {
+    if (!searchQuery.trim()) return contributions;
+    const query = searchQuery.toLowerCase();
+    return contributions.filter(c => 
+      c.staff_name?.toLowerCase().includes(query) ||
+      c.staff_number?.toLowerCase().includes(query) ||
+      c.cooperative_name?.toLowerCase().includes(query) ||
+      c.contribution_type?.toLowerCase().includes(query)
+    );
+  }, [contributions, searchQuery]);
+
+  const totalPages = Math.ceil(filteredContributions.length / itemsPerPage);
   const paginatedContributions = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
-    return contributions.slice(startIndex, startIndex + itemsPerPage);
-  }, [contributions, currentPage]);
+    return filteredContributions.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredContributions, currentPage]);
 
   const handlePageChange = (pageNumber: number) => {
     setCurrentPage(Math.min(Math.max(pageNumber, 1), Math.max(totalPages, 1)));
@@ -682,8 +695,21 @@ function ContributionsReport({
 
       {/* Contributions Table */}
       <div className="rounded-lg border border-border bg-card overflow-hidden">
-        <div className="p-4 border-b border-border">
+        <div className="p-4 border-b border-border flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <h3 className="text-lg text-card-foreground">Contribution Details</h3>
+          <div className="relative max-w-sm w-full">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search by staff, cooperative, or type..."
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="w-full pl-9 pr-4 py-2 rounded-lg border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring text-sm"
+            />
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -765,6 +791,7 @@ function LoansReport({
   const [loans, setLoans] = useState<LoanDisbursement[]>([]);
   const [summary, setSummary] = useState<any>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [searchQuery, setSearchQuery] = useState('');
   const itemsPerPage = 25;
 
   useEffect(() => {
@@ -826,11 +853,22 @@ function LoansReport({
     }
   };
 
-  const totalPages = Math.ceil(loans.length / itemsPerPage);
+  const filteredLoans = useMemo(() => {
+    if (!searchQuery.trim()) return loans;
+    const query = searchQuery.toLowerCase();
+    return loans.filter((l: any) => 
+      l.staff_name?.toLowerCase().includes(query) ||
+      l.staff_number?.toLowerCase().includes(query) ||
+      l.cooperative_name?.toLowerCase().includes(query) ||
+      l.status?.toLowerCase().includes(query)
+    );
+  }, [loans, searchQuery]);
+
+  const totalPages = Math.ceil(filteredLoans.length / itemsPerPage);
   const paginatedLoans = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
-    return loans.slice(startIndex, startIndex + itemsPerPage);
-  }, [loans, currentPage]);
+    return filteredLoans.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredLoans, currentPage]);
 
   const handlePageChange = (pageNumber: number) => {
     setCurrentPage(Math.min(Math.max(pageNumber, 1), Math.max(totalPages, 1)));
@@ -889,8 +927,21 @@ function LoansReport({
 
       {/* Loans Table */}
       <div className="rounded-lg border border-border bg-card overflow-hidden">
-        <div className="p-4 border-b border-border">
+        <div className="p-4 border-b border-border flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <h3 className="text-lg text-card-foreground">Loan Details</h3>
+          <div className="relative max-w-sm w-full">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search by staff, cooperative, or status..."
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="w-full pl-9 pr-4 py-2 rounded-lg border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring text-sm"
+            />
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -971,6 +1022,7 @@ function LoansReport({
 function MembersReport({ cooperatives, selectedCooperativeId }: { cooperatives: Cooperative[]; selectedCooperativeId: string }) {
   const [members, setMembers] = useState<CooperativeMember[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
+  const [searchQuery, setSearchQuery] = useState('');
   const membersPerPage = 25;
 
   useEffect(() => {
@@ -991,14 +1043,25 @@ function MembersReport({ cooperatives, selectedCooperativeId }: { cooperatives: 
     }
   };
 
+  const filteredMembers = useMemo(() => {
+    if (!searchQuery.trim()) return members;
+    const query = searchQuery.toLowerCase();
+    return members.filter(m => 
+      m.staff_name?.toLowerCase().includes(query) ||
+      m.staff_number?.toLowerCase().includes(query) ||
+      m.member_number?.toLowerCase().includes(query) ||
+      m.cooperative_name?.toLowerCase().includes(query)
+    );
+  }, [members, searchQuery]);
+
   const activeMembers = members.filter(m => m.status === 'active');
   const inactiveMembers = members.filter(m => m.status === 'inactive');
   const suspendedMembers = members.filter(m => m.status === 'suspended');
-  const totalMemberPages = Math.ceil(members.length / membersPerPage);
+  const totalMemberPages = Math.ceil(filteredMembers.length / membersPerPage);
   const paginatedMembers = useMemo(() => {
     const startIndex = (currentPage - 1) * membersPerPage;
-    return members.slice(startIndex, startIndex + membersPerPage);
-  }, [members, currentPage]);
+    return filteredMembers.slice(startIndex, startIndex + membersPerPage);
+  }, [filteredMembers, currentPage]);
 
   const handlePageChange = (pageNumber: number) => {
     setCurrentPage(Math.min(Math.max(pageNumber, 1), Math.max(totalMemberPages, 1)));
@@ -1028,8 +1091,21 @@ function MembersReport({ cooperatives, selectedCooperativeId }: { cooperatives: 
 
       {/* Members Table */}
       <div className="rounded-lg border border-border bg-card overflow-hidden">
-        <div className="p-4 border-b border-border">
+        <div className="p-4 border-b border-border flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <h3 className="text-lg text-card-foreground">Member Details</h3>
+          <div className="relative max-w-sm w-full">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search by staff, member #, or cooperative..."
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="w-full pl-9 pr-4 py-2 rounded-lg border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring text-sm"
+            />
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -1129,6 +1205,9 @@ function FinancialReport({
 // Cross-Cooperative Analysis Component
 function CrossCooperativeReport({ cooperatives }: { cooperatives: Cooperative[] }) {
   const [staffMemberships, setStaffMemberships] = useState<Map<string, CooperativeMember[]>>(new Map());
+  const [currentPage, setCurrentPage] = useState(1);
+  const [searchQuery, setSearchQuery] = useState('');
+  const itemsPerPage = 25;
 
   useEffect(() => {
     loadCrossCooperativeData();
@@ -1155,6 +1234,29 @@ function CrossCooperativeReport({ cooperatives }: { cooperatives: Cooperative[] 
   const multiCooperativeStaff = Array.from(staffMemberships.entries()).filter(([_, memberships]) => memberships.length > 1);
   const maxMemberships = Math.max(...Array.from(staffMemberships.values()).map(m => m.length), 0);
 
+  const filteredStaff = useMemo(() => {
+    if (!searchQuery.trim()) return multiCooperativeStaff;
+    const query = searchQuery.toLowerCase();
+    return multiCooperativeStaff.filter(([_, memberships]) => {
+      const first = memberships[0];
+      return (
+        first?.staff_name?.toLowerCase().includes(query) ||
+        first?.staff_number?.toLowerCase().includes(query) ||
+        memberships.some(m => m.cooperative_name?.toLowerCase().includes(query))
+      );
+    });
+  }, [multiCooperativeStaff, searchQuery]);
+
+  const totalPages = Math.ceil(filteredStaff.length / itemsPerPage);
+  const paginatedStaff = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredStaff.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredStaff, currentPage]);
+
+  const handlePageChange = (pageNumber: number) => {
+    setCurrentPage(Math.min(Math.max(pageNumber, 1), Math.max(totalPages, 1)));
+  };
+
   return (
     <div className="space-y-6">
       {/* Summary Cards */}
@@ -1175,8 +1277,21 @@ function CrossCooperativeReport({ cooperatives }: { cooperatives: Cooperative[] 
 
       {/* Multi-Cooperative Members */}
       <div className="rounded-lg border border-border bg-card overflow-hidden">
-        <div className="p-4 border-b border-border">
+        <div className="p-4 border-b border-border flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <h3 className="text-lg text-card-foreground">Staff with Multiple Cooperative Memberships</h3>
+          <div className="relative max-w-sm w-full">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search by staff or cooperative..."
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="w-full pl-9 pr-4 py-2 rounded-lg border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring text-sm"
+            />
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -1189,7 +1304,7 @@ function CrossCooperativeReport({ cooperatives }: { cooperatives: Cooperative[] 
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {multiCooperativeStaff.map(([staffId, memberships]) => {
+              {paginatedStaff.map(([staffId, memberships]) => {
                 const totalMonthly = memberships.reduce((sum, m) => sum + m.monthly_contribution, 0);
                 return (
                   <tr key={staffId} className="hover:bg-accent transition-colors">
@@ -1220,6 +1335,29 @@ function CrossCooperativeReport({ cooperatives }: { cooperatives: Cooperative[] 
             </tbody>
           </table>
         </div>
+        {totalPages > 1 && (
+          <div className="flex items-center justify-center gap-3 p-4 border-t border-border">
+            <button
+              type="button"
+              onClick={() => handlePageChange(currentPage - 1)}
+              disabled={currentPage === 1}
+              className="px-3 py-2 rounded-lg border border-border bg-card hover:bg-accent disabled:opacity-50 disabled:pointer-events-none text-sm transition-colors"
+            >
+              Previous
+            </button>
+            <span className="min-w-[96px] text-center text-sm text-muted-foreground">
+              Page {currentPage} of {totalPages}
+            </span>
+            <button
+              type="button"
+              onClick={() => handlePageChange(currentPage + 1)}
+              disabled={currentPage === totalPages}
+              className="px-3 py-2 rounded-lg border border-border bg-card hover:bg-accent disabled:opacity-50 disabled:pointer-events-none text-sm transition-colors"
+            >
+              Next
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
