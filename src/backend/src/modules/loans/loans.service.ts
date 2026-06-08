@@ -992,6 +992,8 @@ export class LoansService {
     );
 
     // Calculate remaining tenor and new monthly deduction
+    const newBalance = Number(disbursement.balance_outstanding || 0) - dto.amount;
+
     const repaymentsQuery = await this.databaseService.queryOne(
       `SELECT COUNT(DISTINCT month) as count FROM loan_repayments WHERE disbursement_id = $1`,
       [dto.disbursementId]
