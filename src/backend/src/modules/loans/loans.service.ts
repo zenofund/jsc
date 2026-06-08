@@ -992,20 +992,22 @@ export class LoansService {
     );
 
     // Calculate remaining tenor and new monthly deduction
-    const newBalance = Number(disbursement.balance_outstanding || 0) - dto.amount;
+    const newBalance = Number(disbursement.balance_outstanding || 0) - Number(dto.amount || 0);
 
     const repaymentsQuery = await this.databaseService.queryOne(
       `SELECT COUNT(DISTINCT month) as count FROM loan_repayments WHERE disbursement_id = $1`,
       [dto.disbursementId]
     );
-    const paidMonths = parseInt(repaymentsQuery.count);
-    const remainingTenor = Math.max(1, (disbursement.tenure_months || 1) - paidMonths);
-    const newMonthlyDeduction = Math.round(newBalance / remainingTenor);
+    const paidMonths = parseInt(String(repaymentsQuery?.count || '0'), 10) || 0;
+    const tenureMonths = Number(disbursement.tenure_months || 1);
+    const remainingTenor = Math.max(1, tenureMonths - paidMonths);
+    const calculatedDeduction = Math.round(newBalance / remainingTenor);
+    const newMonthlyDeduction = isNaN(calculatedDeduction) ? 0 : calculatedDeduction;
 
     await this.databaseService.query(
       `UPDATE loan_disbursements 
        SET balance_outstanding = $1, 
-           monthly_deduction = CASE WHEN $1 > 0 THEN $2 ELSE monthly_deduction END,
+           monthly_deduction = CASE WHEN $1 > 0 THEN CAST($2 AS DECIMAL) ELSE monthly_deduction END,
            status = CASE WHEN $1 <= 0 THEN 'completed' ELSE status END,
            updated_at = NOW()
        WHERE id = $3`,
