@@ -237,6 +237,13 @@ export class LoansController {
     return this.loansService.findOneRepayment(id);
   }
 
+  @Delete('repayments/:id')
+  @Roles('admin')
+  @ApiOperation({ summary: 'Delete repayment by ID' })
+  deleteRepayment(@Param('id') id: string) {
+    return this.loansService.deleteRepayment(id);
+  }
+
   // ==================== STATS ====================
 
   @Get('stats/overview')

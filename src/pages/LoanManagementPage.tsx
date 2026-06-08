@@ -1216,6 +1216,7 @@ function DisbursementsTab({
   disbursements: LoanDisbursement[];
   onRefresh: () => Promise<void>;
 }) {
+  const confirm = useConfirm();
   const [showStatementModal, setShowStatementModal] = useState(false);
   const [statement, setStatement] = useState<any>(null);
   const [payoffModal, setPayoffModal] = useState<{ open: boolean; disbursement: LoanDisbursement | null }>({
@@ -1232,6 +1233,25 @@ function DisbursementsTab({
       setShowStatementModal(true);
     } catch (error) {
       console.error('Error loading statement:', error);
+    }
+  };
+
+  const deleteRepayment = async (repaymentId: string) => {
+    if (!statement?.disbursement?.id) return;
+    const ok = await confirm({
+      title: 'Delete repayment?',
+      message: 'This will remove the repayment and recalculate the loan balance.',
+    });
+    if (!ok) return;
+
+    try {
+      await repaymentAPI.delete(repaymentId);
+      const stmt = await disbursementAPI.getStatement(statement.disbursement.id);
+      setStatement(stmt);
+      await onRefresh();
+      showToast.success('Repayment deleted successfully.');
+    } catch (error: any) {
+      showToast.error(error?.message || 'Failed to delete repayment');
     }
   };
 
@@ -1408,9 +1428,19 @@ function DisbursementsTab({
                           <div className="text-card-foreground">{rep.repayment_month}</div>
                           <div className="text-sm text-muted-foreground">{rep.payment_method}</div>
                         </div>
-                        <div className="text-right">
-                          <div className="text-card-foreground">{formatCurrency(rep.amount_paid)}</div>
-                          <div className="text-sm text-muted-foreground">Balance: {formatCurrency(rep.balance_after_payment)}</div>
+                        <div className="flex items-center gap-3">
+                          <div className="text-right">
+                            <div className="text-card-foreground">{formatCurrency(rep.amount_paid)}</div>
+                            <div className="text-sm text-muted-foreground">Balance: {formatCurrency(rep.balance_after_payment)}</div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => deleteRepayment(rep.id)}
+                            className="p-2 rounded hover:bg-accent text-destructive"
+                            title="Delete repayment"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
                         </div>
                       </div>
                     ))

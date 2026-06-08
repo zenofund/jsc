@@ -419,6 +419,10 @@ export const repaymentAPI = {
     });
   },
 
+  async delete(id: string) {
+    return makeApiRequest(`/loans/repayments/${id}`, { method: 'DELETE' });
+  },
+
   // Record loan repayment (usually from payroll)
   async create(data: {
     disbursement_id: string;

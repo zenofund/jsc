@@ -965,57 +965,134 @@ export class LoansService {
   // ==================== REPAYMENTS ====================
 
   async recordRepayment(dto: RecordRepaymentDto, userId: string) {
-    const disbursement = await this.findOneDisbursement(dto.disbursementId);
+    return this.databaseService.transaction(async (client) => {
+      const disbursementRes = await client.query(
+        `SELECT * FROM loan_disbursements WHERE id = $1`,
+        [dto.disbursementId],
+      );
+      const disbursement = disbursementRes.rows?.[0];
 
-    if (disbursement.status !== 'active') {
-      throw new BadRequestException('Disbursement is not active');
-    }
+      if (!disbursement) {
+        throw new NotFoundException('Disbursement not found');
+      }
+      if (disbursement.status !== 'active') {
+        throw new BadRequestException('Disbursement is not active');
+      }
 
-    const repayment = await this.databaseService.queryOne(
-      `INSERT INTO loan_repayments (
-        disbursement_id, staff_id, amount, repayment_date, 
-        month, payroll_batch_id, recorded_by
-      ) VALUES ($1, $2, $3, NOW(), $4, $5, $6)
-      RETURNING *,
-        month as repayment_month,
-        amount as amount_paid,
-        repayment_date as payment_date,
-        CASE WHEN payroll_batch_id IS NULL THEN 'direct_payment' ELSE 'payroll_deduction' END as payment_method`,
-      [
-        dto.disbursementId,
-        disbursement.staff_id,
-        dto.amount,
-        dto.month,
-        dto.payrollBatchId || null,
-        userId,
-      ],
-    );
+      const outstanding = Number(disbursement.balance_outstanding || 0);
+      const amount = Number(dto.amount || 0);
+      if (amount <= 0) {
+        throw new BadRequestException('Amount must be greater than 0');
+      }
+      if (amount > outstanding) {
+        throw new BadRequestException('Amount cannot exceed outstanding balance');
+      }
 
-    // Calculate remaining tenor and new monthly deduction
-    const newBalance = Number(disbursement.balance_outstanding || 0) - Number(dto.amount || 0);
+      const repaymentRes = await client.query(
+        `INSERT INTO loan_repayments (
+          disbursement_id, staff_id, amount, repayment_date, 
+          month, payroll_batch_id, recorded_by
+        ) VALUES ($1, $2, $3, NOW(), $4, $5, $6)
+        RETURNING *,
+          month as repayment_month,
+          amount as amount_paid,
+          repayment_date as payment_date,
+          CASE WHEN payroll_batch_id IS NULL THEN 'direct_payment' ELSE 'payroll_deduction' END as payment_method`,
+        [
+          dto.disbursementId,
+          disbursement.staff_id,
+          amount,
+          dto.month,
+          dto.payrollBatchId || null,
+          userId,
+        ],
+      );
+      const repayment = repaymentRes.rows?.[0];
 
-    const repaymentsQuery = await this.databaseService.queryOne(
-      `SELECT COUNT(DISTINCT month) as count FROM loan_repayments WHERE disbursement_id = $1`,
-      [dto.disbursementId]
-    );
-    const paidMonths = parseInt(String(repaymentsQuery?.count || '0'), 10) || 0;
-    const tenureMonths = Number(disbursement.tenure_months || 1);
-    const remainingTenor = Math.max(1, tenureMonths - paidMonths);
-    const calculatedDeduction = Math.round(newBalance / remainingTenor);
-    const newMonthlyDeduction = isNaN(calculatedDeduction) ? 0 : calculatedDeduction;
+      const newBalance = outstanding - amount;
 
-    await this.databaseService.query(
-      `UPDATE loan_disbursements 
-       SET balance_outstanding = $1, 
-           monthly_deduction = CASE WHEN $1 > 0 THEN CAST($2 AS DECIMAL) ELSE monthly_deduction END,
-           status = CASE WHEN $1 <= 0 THEN 'completed' ELSE status END,
-           updated_at = NOW()
-       WHERE id = $3`,
-      [newBalance, newMonthlyDeduction, dto.disbursementId],
-    );
+      const repaymentsQueryRes = await client.query(
+        `SELECT COUNT(DISTINCT month) as count FROM loan_repayments WHERE disbursement_id = $1`,
+        [dto.disbursementId],
+      );
+      const paidMonths = parseInt(String(repaymentsQueryRes.rows?.[0]?.count || '0'), 10) || 0;
+      const tenureMonths = Number(disbursement.tenure_months || 1);
+      const remainingTenor = Math.max(1, tenureMonths - paidMonths);
+      const calculatedDeduction = Math.round(newBalance / remainingTenor);
+      const newMonthlyDeduction = isNaN(calculatedDeduction) ? 0 : calculatedDeduction;
 
-    this.logger.log(`Repayment of ₦${dto.amount} recorded for disbursement ${disbursement.disbursement_number}`);
-    return repayment;
+      await client.query(
+        `UPDATE loan_disbursements 
+         SET balance_outstanding = $1::decimal, 
+             monthly_deduction = CASE WHEN $1::decimal > 0 THEN $2::decimal ELSE monthly_deduction END,
+             status = CASE WHEN $1::decimal <= 0 THEN 'completed' ELSE status END,
+             updated_at = NOW()
+         WHERE id = $3`,
+        [newBalance, newMonthlyDeduction, dto.disbursementId],
+      );
+
+      this.logger.log(`Repayment of ₦${amount} recorded for disbursement ${disbursement.disbursement_number}`);
+      return repayment;
+    });
+  }
+
+  async deleteRepayment(id: string) {
+    return this.databaseService.transaction(async (client) => {
+      const repaymentRes = await client.query(
+        `SELECT * FROM loan_repayments WHERE id = $1`,
+        [id],
+      );
+      const repayment = repaymentRes.rows?.[0];
+      if (!repayment) {
+        throw new NotFoundException('Repayment not found');
+      }
+
+      const disbursementId = repayment.disbursement_id;
+      const disbursementRes = await client.query(
+        `SELECT ld.*,
+          COALESCE(la.total_repayment, ld.amount_disbursed) as total_amount
+         FROM loan_disbursements ld
+         LEFT JOIN loan_applications la ON ld.loan_application_id = la.id
+         WHERE ld.id = $1`,
+        [disbursementId],
+      );
+      const disbursement = disbursementRes.rows?.[0];
+      if (!disbursement) {
+        throw new NotFoundException('Disbursement not found');
+      }
+
+      await client.query(`DELETE FROM loan_repayments WHERE id = $1`, [id]);
+
+      const totalRepaidRes = await client.query(
+        `SELECT COALESCE(SUM(amount), 0) as total_repaid FROM loan_repayments WHERE disbursement_id = $1`,
+        [disbursementId],
+      );
+      const totalRepaid = Number(totalRepaidRes.rows?.[0]?.total_repaid || 0);
+      const totalAmount = Number(disbursement.total_amount || 0);
+      const newBalance = Math.max(0, totalAmount - totalRepaid);
+
+      const paidMonthsRes = await client.query(
+        `SELECT COUNT(DISTINCT month) as count FROM loan_repayments WHERE disbursement_id = $1`,
+        [disbursementId],
+      );
+      const paidMonths = parseInt(String(paidMonthsRes.rows?.[0]?.count || '0'), 10) || 0;
+      const tenureMonths = Number(disbursement.tenure_months || 1);
+      const remainingTenor = Math.max(1, tenureMonths - paidMonths);
+      const calculatedDeduction = Math.round(newBalance / remainingTenor);
+      const newMonthlyDeduction = isNaN(calculatedDeduction) ? 0 : calculatedDeduction;
+
+      await client.query(
+        `UPDATE loan_disbursements 
+         SET balance_outstanding = $1::decimal, 
+             monthly_deduction = CASE WHEN $1::decimal > 0 THEN $2::decimal ELSE monthly_deduction END,
+             status = CASE WHEN $1::decimal <= 0 THEN 'completed' ELSE 'active' END,
+             updated_at = NOW()
+         WHERE id = $3`,
+        [newBalance, newMonthlyDeduction, disbursementId],
+      );
+
+      return { success: true };
+    });
   }
 
   async findAllRepayments(filters: {
