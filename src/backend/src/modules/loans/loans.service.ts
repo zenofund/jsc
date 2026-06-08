@@ -991,15 +991,23 @@ export class LoansService {
       ],
     );
 
-    // Update disbursement balance
-    const newBalance = Number(disbursement.balance_outstanding || 0) - dto.amount;
+    // Calculate remaining tenor and new monthly deduction
+    const repaymentsQuery = await this.databaseService.queryOne(
+      `SELECT COUNT(DISTINCT month) as count FROM loan_repayments WHERE disbursement_id = $1`,
+      [dto.disbursementId]
+    );
+    const paidMonths = parseInt(repaymentsQuery.count);
+    const remainingTenor = Math.max(1, (disbursement.tenure_months || 1) - paidMonths);
+    const newMonthlyDeduction = Math.round(newBalance / remainingTenor);
+
     await this.databaseService.query(
       `UPDATE loan_disbursements 
        SET balance_outstanding = $1, 
+           monthly_deduction = CASE WHEN $1 > 0 THEN $2 ELSE monthly_deduction END,
            status = CASE WHEN $1 <= 0 THEN 'completed' ELSE status END,
            updated_at = NOW()
-       WHERE id = $2`,
-      [newBalance, dto.disbursementId],
+       WHERE id = $3`,
+      [newBalance, newMonthlyDeduction, dto.disbursementId],
     );
 
     this.logger.log(`Repayment of ₦${dto.amount} recorded for disbursement ${disbursement.disbursement_number}`);

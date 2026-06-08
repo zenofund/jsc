@@ -1222,6 +1222,7 @@ function DisbursementsTab({
     open: false,
     disbursement: null,
   });
+  const [payoffAmount, setPayoffAmount] = useState<number | ''>('');
   const [isPayingOff, setIsPayingOff] = useState(false);
 
   const viewStatement = async (disbId: string) => {
@@ -1236,11 +1237,13 @@ function DisbursementsTab({
 
   const openPayoffModal = (disbursement: LoanDisbursement) => {
     setPayoffModal({ open: true, disbursement });
+    setPayoffAmount(Number(disbursement.balance_outstanding || 0));
   };
 
   const closePayoffModal = () => {
     if (isPayingOff) return;
     setPayoffModal({ open: false, disbursement: null });
+    setPayoffAmount('');
   };
 
   const handlePayOff = async () => {
@@ -1254,17 +1257,28 @@ function DisbursementsTab({
       return;
     }
 
+    const amountToPay = Number(payoffAmount);
+    if (amountToPay <= 0) {
+      showToast.error('Please enter a valid amount greater than 0.');
+      return;
+    }
+
+    if (amountToPay > outstanding) {
+      showToast.error(`Amount cannot exceed the outstanding balance of ${formatCurrency(outstanding)}.`);
+      return;
+    }
+
     try {
       setIsPayingOff(true);
       await repaymentAPI.payOff({
         disbursementId: disbursement.id,
-        amount: outstanding,
+        amount: amountToPay,
       });
-      showToast.success('Loan paid off and closed successfully.');
+      showToast.success('Repayment recorded successfully.');
       closePayoffModal();
       await onRefresh();
     } catch (error: any) {
-      showToast.error(error?.message || 'Failed to pay off loan');
+      showToast.error(error?.message || 'Failed to record repayment');
     } finally {
       setIsPayingOff(false);
     }
@@ -1340,7 +1354,7 @@ function DisbursementsTab({
                             onClick={() => openPayoffModal(disb)}
                             className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-sm transition-colors"
                           >
-                            Pay Off
+                            Repay
                           </button>
                         )}
                       </div>
@@ -1412,7 +1426,7 @@ function DisbursementsTab({
         <Modal
           isOpen={payoffModal.open}
           onClose={closePayoffModal}
-          title="Pay Off Loan"
+          title="Record Repayment"
           size="md"
         >
           <div className="space-y-4">
@@ -1427,8 +1441,20 @@ function DisbursementsTab({
               </div>
             </div>
 
+            <div>
+              <label className="block text-sm mb-1 text-card-foreground">Payment Amount</label>
+              <input
+                type="number"
+                max={Number(payoffModal.disbursement.balance_outstanding || 0)}
+                value={payoffAmount}
+                onChange={(e) => setPayoffAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                className="w-full px-3 py-2 rounded border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                placeholder="Enter amount to pay"
+              />
+            </div>
+
             <p className="text-sm text-muted-foreground">
-              This will record a full repayment for the outstanding balance and close the loan.
+              Enter the amount to record as a manual repayment. The remaining balance and monthly deductions will be adjusted automatically.
             </p>
 
             <div className="flex justify-end gap-2">
@@ -1446,7 +1472,7 @@ function DisbursementsTab({
                 disabled={isPayingOff}
                 className="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
               >
-                {isPayingOff ? 'Processing...' : 'Confirm Pay Off'}
+                {isPayingOff ? 'Processing...' : 'Record Repayment'}
               </button>
             </div>
           </div>
