@@ -1767,10 +1767,11 @@ function ReportsTab() {
         acc[coop.id] = coop.name;
         return acc;
       }, {});
+      const rangeStartDate = getDateRange().start;
       const filtered = disb.filter((d) => {
         if (!d.cooperative_id) return false;
         const disbursementDate = new Date(d.disbursement_date);
-        return disbursementDate <= rangeEndDate;
+        return disbursementDate >= rangeStartDate && disbursementDate <= rangeEndDate;
       });
       const scoped = filtered.filter((d) => matchesCooperative(d.cooperative_id));
       const grouped = scoped.reduce((acc: Record<string, any>, d) => {
@@ -1816,11 +1817,12 @@ function ReportsTab() {
     }
 
     if (key === 'loan-aging') {
+      const rangeStartDate = getDateRange().start;
       const agingLoans = disb.filter((d) => {
         if (d.balance_outstanding <= 0) return false;
         if (!matchesCooperative(d.cooperative_id)) return false;
         const disbursementDate = new Date(d.disbursement_date);
-        return disbursementDate <= rangeEndDate;
+        return disbursementDate >= rangeStartDate && disbursementDate <= rangeEndDate;
       });
       const today = new Date();
       const buckets = agingLoans.reduce((acc: Record<string, { count: number; outstanding: number }>, d) => {
@@ -1880,11 +1882,12 @@ function ReportsTab() {
       return { rows, columns, summary, breakdown };
     }
 
+    const rangeStartDate = getDateRange().start;
     const overdue = disb.filter((d) => {
       if (d.balance_outstanding <= 0) return false;
       if (!matchesCooperative(d.cooperative_id)) return false;
       const disbursementDate = new Date(d.disbursement_date);
-      if (disbursementDate > rangeEndDate) return false;
+      if (disbursementDate < rangeStartDate || disbursementDate > rangeEndDate) return false;
       return currentMonth > d.end_deduction_month;
     });
     const columns: ReportColumn[] = [
