@@ -211,12 +211,10 @@ export function ViewPayrollLinesModal({
   };
 
   const allowanceText = (line: PayrollLine) => {
-    const allowances = Array.isArray((line as any).allowances) ? (line as any).allowances : [];
-    const parts = allowances
-      .map((a: any) => ({ label: itemBaseLabel(a), amount: toNumber(a?.amount) }) as { label: string; amount: number })
-      .filter((p: { label: string; amount: number }) => p.label && p.amount !== 0)
-      .map((p: { label: string; amount: number }) => `${p.label}: ${round2(p.amount).toFixed(2)}`);
-    return parts.join(' | ');
+    const value = toNumber(lineTotalAllowances(line));
+    const factor = 100;
+    const truncated = value >= 0 ? Math.floor(value * factor) / factor : Math.ceil(value * factor) / factor;
+    return truncated === 0 ? '' : truncated.toFixed(2);
   };
 
   const collectExportModel = (allLines: PayrollLine[]) => {

@@ -21,8 +21,16 @@ async function bootstrap() {
 
   // CORS
   const corsOrigins = configService.get<string>('CORS_ORIGINS', 'http://localhost:5173');
+  const nodeEnv = configService.get<string>('NODE_ENV', 'development');
+  const allowedOrigins = corsOrigins
+    .split(',')
+    .map(origin => origin.trim())
+    .filter(Boolean);
+  if (nodeEnv === 'development' && !allowedOrigins.includes('http://localhost:5174')) {
+    allowedOrigins.push('http://localhost:5174');
+  }
   app.enableCors({
-    origin: corsOrigins.split(',').map(origin => origin.trim()),
+    origin: allowedOrigins,
     credentials: true,
   });
 

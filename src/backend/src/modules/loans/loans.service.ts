@@ -273,7 +273,7 @@ export class LoansService {
     }
 
     // Calculate loan details
-    const interestAmount = (dto.requestedAmount * loanType.interest_rate * dto.tenureMonths) / (12 * 100);
+    const interestAmount = (dto.requestedAmount * loanType.interest_rate) / 100;
     const totalRepayment = dto.requestedAmount + interestAmount;
     const monthlyDeduction = Math.round(totalRepayment / dto.tenureMonths);
 
@@ -1204,7 +1204,7 @@ export class LoansService {
             ? Number(row.outstandingBalance)
             : Math.max(0, principal - amountRepaid);
         const interestRate = row.interestRate !== undefined ? Number(row.interestRate) : Number(loanType.interest_rate || 0);
-        const interestAmount = (principal * interestRate * row.tenureMonths) / (12 * 100);
+        const interestAmount = (principal * interestRate) / 100;
         const totalRepayment = principal + interestAmount;
         const monthlyDeduction = Math.round(totalRepayment / row.tenureMonths);
         const appStatus = LoanStatus.DISBURSED;

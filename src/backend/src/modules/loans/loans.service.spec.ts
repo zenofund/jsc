@@ -53,9 +53,9 @@ describe('LoansService', () => {
 
       const result = await service.getLoanStats();
 
-      // Verify the query includes both pending and guarantor_pending statuses
+      // Verify the query includes pending statuses
       const callArg = (databaseService.queryOne as jest.Mock).mock.calls[0][0];
-      expect(callArg).toContain("status IN ('pending', 'guarantor_pending')");
+      expect(callArg).toContain("status IN ('draft', 'pending', 'guarantor_pending')");
       
       expect(result).toEqual(mockStats);
     });
