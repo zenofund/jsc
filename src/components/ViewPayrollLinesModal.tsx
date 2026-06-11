@@ -38,6 +38,7 @@ export function ViewPayrollLinesModal({
   sortDirection = 'desc',
 }: ViewPayrollLinesModalProps) {
   const [exporting, setExporting] = React.useState<'csv' | 'pdf' | null>(null);
+  const [searchTerm, setSearchTerm] = React.useState('');
 
   const getGradeKey = (gradeLevel: unknown) => {
     const raw = String(gradeLevel ?? '').trim().toUpperCase();
@@ -83,10 +84,19 @@ export function ViewPayrollLinesModal({
   };
 
   const displayLines = React.useMemo(() => {
-    const sorted = [...lines];
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+    const filtered = normalizedSearch
+      ? lines.filter((line) => {
+          const staffName = String(line.staff_name ?? '').toLowerCase();
+          const staffNumber = String(line.staff_number ?? '').toLowerCase();
+          return staffName.includes(normalizedSearch) || staffNumber.includes(normalizedSearch);
+        })
+      : lines;
+
+    const sorted = [...filtered];
     sorted.sort((a, b) => compareLines(a, b, sortDirection));
     return sorted;
-  }, [lines, sortDirection]);
+  }, [lines, sortDirection, searchTerm]);
 
   const csvCell = (value: unknown) => {
     const str = value === null || value === undefined ? '' : String(value);
@@ -510,23 +520,32 @@ export function ViewPayrollLinesModal({
               </div>
             </div>
             
-            <div className="w-full sm:w-auto flex flex-col sm:flex-row gap-2">
-              <button
-                  onClick={handleExportCSV}
-                  disabled={exporting !== null || isLoading}
-                  className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50"
-              >
-                  {exporting === 'csv' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-                  Export CSV
-              </button>
-              <button
-                  onClick={handleExportPDF}
-                  disabled={exporting !== null || isLoading}
-                  className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 border border-border text-foreground rounded-md hover:bg-accent disabled:opacity-50"
-              >
-                  {exporting === 'pdf' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
-                  Export PDF
-              </button>
+            <div className="w-full sm:w-1/2 flex flex-col gap-2">
+              <input
+                type="search"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search staff name or number"
+                className="w-full px-3 py-2 rounded border border-border bg-input-background text-foreground focus:ring-2 focus:ring-primary focus:border-primary"
+              />
+              <div className="flex flex-col sm:flex-row gap-2">
+                <button
+                    onClick={handleExportCSV}
+                    disabled={exporting !== null || isLoading}
+                    className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50"
+                >
+                    {exporting === 'csv' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                    Export CSV
+                </button>
+                <button
+                    onClick={handleExportPDF}
+                    disabled={exporting !== null || isLoading}
+                    className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 border border-border text-foreground rounded-md hover:bg-accent disabled:opacity-50"
+                >
+                    {exporting === 'pdf' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                    Export PDF
+                </button>
+              </div>
             </div>
         </div>
 
