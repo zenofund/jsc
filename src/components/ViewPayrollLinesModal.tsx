@@ -228,20 +228,48 @@ export function ViewPayrollLinesModal({
   };
 
   const collectExportModel = (allLines: PayrollLine[]) => {
-    const deductionItems: any[] = [];
+    const coopDeductionItems: any[] = [];
+    const nonCoopDeductionItems: any[] = [];
 
+    // Separate cooperative from non-cooperative deductions
     for (const line of allLines) {
       const deductions = Array.isArray((line as any).deductions) ? (line as any).deductions : [];
       for (const d of deductions) {
         if (isCooperativeDeduction(d)) {
-          deductionItems.push({ ...d, _coop_group: true });
+          coopDeductionItems.push({ ...d, _line_id: line.id });
         } else {
-          deductionItems.push(d);
+          nonCoopDeductionItems.push(d);
         }
       }
     }
 
-    const deductionKeyToLabel = buildItemLabels(deductionItems, getExportKey);
+    // Build a map of cooperative names to aggregated data
+    const coopNameToItems = new Map<string, any[]>();
+    for (const item of coopDeductionItems) {
+      const coopName = getCooperativeGroupKey(item).replace(/^coop:/, '').trim();
+      if (!coopNameToItems.has(coopName)) {
+        coopNameToItems.set(coopName, []);
+      }
+      coopNameToItems.get(coopName)!.push(item);
+    }
+
+    // Create aggregate cooperative deduction items (one per cooperative)
+    const aggregatedCoopItems = Array.from(coopNameToItems.entries()).map(([coopName, items]) => ({
+      name: coopName,
+      code: coopName,
+      amount: items.reduce((sum, item) => sum + toNumber(item?.amount || 0), 0),
+      _is_aggregated_coop: true,
+    }));
+
+    // Combine deduction items: all non-coop items + aggregated coop items
+    const allDeductionItems = [...nonCoopDeductionItems, ...aggregatedCoopItems];
+
+    const deductionKeyToLabel = buildItemLabels(allDeductionItems, (item: any) => {
+      if (item._is_aggregated_coop) {
+        return `coop:${item.name}`;
+      }
+      return itemKey(item);
+    });
 
     const deductionKeys = Array.from(deductionKeyToLabel.keys()).sort((a, b) => {
       const la = deductionKeyToLabel.get(a) ?? a;
@@ -252,9 +280,23 @@ export function ViewPayrollLinesModal({
     const getItemAmount = (items: any[], key: string) => {
       if (!Array.isArray(items)) return 0;
       let sum = 0;
-      for (const i of items) {
-        const itemKeyValue = getExportKey(i);
-        if (itemKeyValue === key) sum += toNumber(i?.amount);
+      
+      // Check if this key is an aggregated cooperative key
+      if (key.startsWith('coop:')) {
+        const coopName = key.replace(/^coop:/, '').trim();
+        for (const i of items) {
+          const iCoopName = isCooperativeDeduction(i) ? getCooperativeGroupKey(i).replace(/^coop:/, '').trim() : null;
+          if (iCoopName === coopName) {
+            sum += toNumber(i?.amount);
+          }
+        }
+      } else {
+        // Non-cooperative deduction
+        for (const i of items) {
+          if (!isCooperativeDeduction(i) && itemKey(i) === key) {
+            sum += toNumber(i?.amount);
+          }
+        }
       }
       return sum;
     };
