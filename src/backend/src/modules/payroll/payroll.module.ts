@@ -8,6 +8,7 @@ import { SalaryStructuresModule } from '@modules/salary-structures/salary-struct
 import { AuditModule } from '@modules/audit/audit.module';
 import { NotificationsModule } from '@modules/notifications/notifications.module';
 import { CooperativesModule } from '@modules/cooperatives/cooperatives.module';
+import { LoansModule } from '@modules/loans/loans.module';
 
 @Module({
   imports: [
@@ -17,7 +18,8 @@ import { CooperativesModule } from '@modules/cooperatives/cooperatives.module';
     SalaryStructuresModule, 
     AuditModule, 
     NotificationsModule,
-    CooperativesModule
+    CooperativesModule,
+    LoansModule
   ],
   controllers: [PayrollController],
   providers: [PayrollService],

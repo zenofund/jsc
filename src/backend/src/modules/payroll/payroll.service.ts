@@ -8,6 +8,7 @@ import { SalaryLookupService } from '../salary-structures/salary-lookup.service'
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/dto/audit.dto';
 import { CooperativesService } from '../cooperatives/cooperatives.service';
+import { LoansService } from '../loans/loans.service';
 import { CreatePayrollBatchDto } from './dto/create-payroll-batch.dto';
 import { ApprovePayrollDto } from './dto/approve-payroll.dto';
 import { v4 as uuidv4 } from 'uuid';
@@ -24,6 +25,7 @@ export class PayrollService {
     private salaryLookupService: SalaryLookupService,
     private auditService: AuditService,
     private cooperativesService: CooperativesService,
+    private loansService: LoansService,
   ) {}
 
   async onModuleInit() {
@@ -1302,8 +1304,54 @@ export class PayrollService {
 
     // Process Cooperative Deductions
     this.processCooperativeDeductions(batchId, userId);
+    
+    // Process Loan Deductions
+    this.processLoanDeductions(batchId, userId);
 
     return { message: 'Batch locked successfully' };
+  }
+
+  /**
+   * Process loan deductions from locked batch
+   */
+  private async processLoanDeductions(batchId: string, userId: string) {
+    try {
+      const batch = await this.findOne(batchId);
+      const payrollLines = await this.databaseService.query(
+        'SELECT staff_id, deductions FROM payroll_lines WHERE payroll_batch_id = $1',
+        [batchId]
+      );
+
+      const deductions = [];
+
+      for (const line of payrollLines) {
+        let lineDeductions = [];
+        try {
+          lineDeductions = typeof line.deductions === 'string' ? JSON.parse(line.deductions) : line.deductions;
+        } catch (e) {
+          continue;
+        }
+
+        if (!Array.isArray(lineDeductions)) continue;
+
+        for (const deduction of lineDeductions) {
+          if (deduction.code === 'LOAN') {
+            deductions.push({
+              staffId: line.staff_id,
+              amount: Number(deduction.amount),
+              month: batch.payroll_month,
+            });
+          }
+        }
+      }
+
+      if (deductions.length > 0) {
+        const results = await this.loansService.processPayrollDeductions(batchId, deductions, userId);
+        this.logger.log(`Processed ${results.success} loan repayments, ${results.failed} failed for batch ${batchId}`);
+      }
+    } catch (error: any) {
+      this.logger.error(`Failed to process loan deductions: ${error.message}`);
+    }
   }
 
   /**

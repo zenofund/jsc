@@ -1172,6 +1172,92 @@ export class LoansService {
     return repayment;
   }
 
+  async processPayrollDeductions(
+    payrollBatchId: string, 
+    deductions: Array<{
+      staffId: string;
+      amount: number;
+      month: string;
+    }>, 
+    userId: string
+  ) {
+    return this.databaseService.transaction(async (client) => {
+      const results: { success: number; failed: number; errors: Array<{ staffId: string; error: string }> } = { success: 0, failed: 0, errors: [] };
+
+      for (const deduction of deductions) {
+        try {
+          // Find active disbursement for staff
+          const disbursementRes = await client.query(
+            `SELECT id, balance_outstanding FROM loan_disbursements 
+             WHERE staff_id = $1 AND status = 'active'
+             ORDER BY start_month DESC LIMIT 1`,
+            [deduction.staffId]
+          );
+          const disbursement = disbursementRes.rows?.[0];
+          if (!disbursement) {
+            results.failed++;
+            results.errors.push({ staffId: deduction.staffId, error: 'No active loan disbursement found' });
+            continue;
+          }
+
+          const outstanding = Number(disbursement.balance_outstanding || 0);
+          const amount = Math.min(Number(deduction.amount || 0), outstanding);
+          if (amount <= 0) {
+            results.failed++;
+            results.errors.push({ staffId: deduction.staffId, error: 'Invalid amount or no outstanding balance' });
+            continue;
+          }
+
+          // Check if repayment already exists for this staff, disbursement, month, and payroll batch
+          const existingRes = await client.query(
+            `SELECT id FROM loan_repayments 
+             WHERE disbursement_id = $1 AND month = $2 AND payroll_batch_id = $3`,
+            [disbursement.id, deduction.month, payrollBatchId]
+          );
+          if (existingRes.rows?.length > 0) {
+            results.failed++;
+            results.errors.push({ staffId: deduction.staffId, error: 'Repayment already recorded' });
+            continue;
+          }
+
+          // Insert repayment
+          await client.query(
+            `INSERT INTO loan_repayments (
+              disbursement_id, staff_id, amount, repayment_date, 
+              month, payroll_batch_id, recorded_by
+            ) VALUES ($1, $2, $3, NOW(), $4, $5, $6)`,
+            [
+              disbursement.id,
+              deduction.staffId,
+              amount,
+              deduction.month,
+              payrollBatchId,
+              userId,
+            ],
+          );
+
+          // Update disbursement balance
+          const newBalance = outstanding - amount;
+          await client.query(
+            `UPDATE loan_disbursements 
+             SET balance_outstanding = $1::decimal,
+                 status = CASE WHEN $1::decimal <= 0 THEN 'completed' ELSE status END,
+                 updated_at = NOW()
+             WHERE id = $2`,
+            [newBalance, disbursement.id],
+          );
+
+          results.success++;
+        } catch (err: any) {
+          results.failed++;
+          results.errors.push({ staffId: deduction.staffId, error: err?.message || 'Unknown error' });
+        }
+      }
+
+      return results;
+    });
+  }
+
   // ==================== STATS ====================
 
   async getLoanStats() {
