@@ -272,16 +272,17 @@ CREATE TABLE cooperative_members (
 -- 10. LOANS
 -- =====================================================
 CREATE TABLE loan_types (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name VARCHAR(255) NOT NULL,
-    code VARCHAR(50) UNIQUE NOT NULL,
-    interest_rate DECIMAL(5, 2),
-    max_amount DECIMAL(15, 2),
-    max_tenure_months INTEGER,
-    required_guarantors INTEGER DEFAULT 0,
-    status VARCHAR(20) DEFAULT 'active',
-    created_by UUID REFERENCES users(id),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name VARCHAR(255) NOT NULL,
+  code VARCHAR(50) UNIQUE NOT NULL,
+  interest_rate DECIMAL(5,2),
+  max_amount DECIMAL(15,2),
+  max_tenure_months INTEGER,
+  required_guarantors INTEGER DEFAULT 0,
+  status VARCHAR(20) DEFAULT 'active',
+  created_by UUID REFERENCES users(id),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  interest_calculation_method VARCHAR(20) DEFAULT 'amortized' CHECK (interest_calculation_method IN ('amortized', 'upfront'))
 );
 
 CREATE TABLE loan_applications (

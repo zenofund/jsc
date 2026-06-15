@@ -9,10 +9,11 @@ import { useConfirm } from '../contexts/ConfirmContext';
 import { loanApplicationAPI, loanTypeAPI, disbursementAPI, loanStatsAPI, cooperativeAPI, repaymentAPI } from '../lib/loanAPI';
 import { staffAPI } from '../lib/api-client';
 import type { LoanType, LoanApplication, LoanDisbursement, Cooperative, Staff } from '../types/entities';
-import { PageSkeleton } from '../components/PageLoader';
+import { PageLoader } from '../components/PageLoader';
 import { showToast } from '../utils/toast';
 import { formatCompactCurrency, formatCurrency } from '../utils/format';
 import { Modal } from '../components/Modal';
+import { NumberInput } from '../components/NumberInput';
 import { formatStaffLabelWithId } from '../lib/name-utils';
 
 type TabType = 'overview' | 'applications' | 'loan-types' | 'disbursements' | 'reports';
@@ -56,7 +57,7 @@ export function LoanManagementPage() {
   };
 
   if (loading) {
-    return <PageSkeleton mode="grid" />;
+    return <PageLoader mode="grid" />;
   }
 
   return (
@@ -729,12 +730,10 @@ function ApplicationsTab({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-foreground mb-1">Amount (₦) *</label>
-              <input
-                type="number"
-                min="1"
-                value={assignLoanData.requestedAmount || ''}
-                onChange={(e) => setAssignLoanData({ ...assignLoanData, requestedAmount: Number(e.target.value) })}
-                className="w-full px-3 py-2 rounded-lg border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              <NumberInput
+                min={1}
+                value={assignLoanData.requestedAmount}
+                onChange={(value) => setAssignLoanData({ ...assignLoanData, requestedAmount: value })}
                 required
               />
             </div>
@@ -751,14 +750,59 @@ function ApplicationsTab({
             </div>
           </div>
 
+          {/* Disbursement Preview */}
+          {(() => {
+            const selectedLoanType = loanTypesList.find(t => t.id === assignLoanData.loanTypeId);
+            if (selectedLoanType && assignLoanData.requestedAmount > 0) {
+              const interestAmount = (assignLoanData.requestedAmount * selectedLoanType.interest_rate) / 100;
+              const disbursedAmount = selectedLoanType.interest_calculation_method === 'upfront'
+                ? assignLoanData.requestedAmount - interestAmount
+                : assignLoanData.requestedAmount;
+
+              return (
+                <div className="p-4 bg-primary/10 rounded-lg border border-primary/20">
+                  <h4 className="text-sm font-medium text-primary mb-2 flex items-center gap-2">
+                    <Wallet className="w-4 h-4" />
+                    Borrower Disbursement Preview
+                  </h4>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Requested Amount:</span>
+                      <span className="text-card-foreground font-medium">{formatCurrency(assignLoanData.requestedAmount)}</span>
+                    </div>
+                    {selectedLoanType.interest_calculation_method === 'upfront' && (
+                      <>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Interest Deduction ({selectedLoanType.interest_rate}%):</span>
+                          <span className="text-destructive font-medium">-{formatCurrency(interestAmount)}</span>
+                        </div>
+                        <div className="border-t border-border pt-2 mt-2 flex justify-between">
+                          <span className="text-primary font-medium">Amount to Receive:</span>
+                          <span className="text-primary font-bold">{formatCurrency(disbursedAmount)}</span>
+                        </div>
+                      </>
+                    )}
+                    {selectedLoanType.interest_calculation_method === 'amortized' && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Full Amount to Receive:</span>
+                        <span className="text-primary font-bold">{formatCurrency(disbursedAmount)}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            }
+            return null;
+          })()}
+
           <div>
-            <label className="block text-sm font-medium text-foreground mb-1">Purpose *</label>
+            <label className="block text-sm font-medium text-foreground mb-1">Purpose</label>
             <textarea
               value={assignLoanData.purpose}
               onChange={(e) => setAssignLoanData({ ...assignLoanData, purpose: e.target.value })}
               className="w-full px-3 py-2 rounded-lg border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               rows={3}
-              required
+              placeholder="Enter loan purpose (optional)"
             />
           </div>
 
@@ -845,6 +889,7 @@ function LoanTypesTab({
     eligibility_criteria: '',
     status: 'active' as 'active' | 'inactive',
     cooperative_id: '' as string | undefined,
+    interest_calculation_method: 'amortized' as 'amortized' | 'upfront',
   });
 
   const handleCreate = () => {
@@ -863,6 +908,7 @@ function LoanTypesTab({
       eligibility_criteria: '',
       status: 'active',
       cooperative_id: '',
+      interest_calculation_method: 'amortized',
     });
     setShowModal(true);
   };
@@ -883,6 +929,7 @@ function LoanTypesTab({
       min_guarantors: loanType.min_guarantors,
       eligibility_criteria: loanType.eligibility_criteria || '',
       status: loanType.status,
+      interest_calculation_method: loanType.interest_calculation_method || 'amortized',
     });
     setShowModal(true);
   };
@@ -908,6 +955,7 @@ function LoanTypesTab({
         eligibilityCriteria: formData.eligibility_criteria,
         status: formData.status,
         cooperativeId: formData.cooperative_id,
+        interestCalculationMethod: formData.interest_calculation_method,
       };
 
       if (editingType) {
@@ -1009,6 +1057,10 @@ function LoanTypesTab({
                 <span className="text-card-foreground">{loanType.interest_rate}%</span>
               </div>
               <div className="flex justify-between">
+                <span className="text-muted-foreground">Calculation Method:</span>
+                <span className="text-card-foreground capitalize">{loanType.interest_calculation_method || 'amortized'}</span>
+              </div>
+              <div className="flex justify-between">
                 <span className="text-muted-foreground">Max Amount:</span>
                 <span className="text-card-foreground">₦{loanType.max_amount?.toLocaleString() || 'N/A'}</span>
               </div>
@@ -1080,12 +1132,23 @@ function LoanTypesTab({
                   />
                 </div>
                 <div>
-                  <label className="block text-sm mb-1 text-card-foreground">Max Amount (₦)</label>
-                  <input
-                    type="number"
-                    value={formData.max_amount}
-                    onChange={(e) => setFormData({ ...formData, max_amount: parseFloat(e.target.value) })}
+                  <label className="block text-sm mb-1 text-card-foreground">Interest Calculation Method *</label>
+                  <select
+                    value={formData.interest_calculation_method}
+                    onChange={(e) => setFormData({ ...formData, interest_calculation_method: e.target.value as any })}
                     className="w-full px-3 py-2 rounded border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  >
+                    <option value="amortized">Amortized (Monthly Interest + Principal)</option>
+                    <option value="upfront">Upfront (Interest Deducted at Source)</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm mb-1 text-card-foreground">Max Amount (₦)</label>
+                  <NumberInput
+                    value={formData.max_amount}
+                    onChange={(value) => setFormData({ ...formData, max_amount: value })}
                   />
                 </div>
               </div>

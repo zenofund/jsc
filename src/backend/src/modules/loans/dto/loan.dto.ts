@@ -10,6 +10,11 @@ export enum LoanStatus {
   DEFAULTED = 'defaulted',
 }
 
+export enum InterestCalculationMethod {
+  AMORTIZED = 'amortized',
+  UPFRONT = 'upfront',
+}
+
 export class CreateLoanTypeDto {
   @IsString()
   @IsNotEmpty()
@@ -69,6 +74,10 @@ export class CreateLoanTypeDto {
 
   @IsOptional()
   requiresGuarantors?: boolean;
+
+  @IsOptional()
+  @IsEnum(InterestCalculationMethod)
+  interestCalculationMethod?: InterestCalculationMethod;
 }
 export class UpdateLoanTypeDto {
   @IsString()
@@ -134,6 +143,10 @@ export class UpdateLoanTypeDto {
   @Min(0)
   @IsOptional()
   minGuarantors?: number;
+
+  @IsOptional()
+  @IsEnum(InterestCalculationMethod)
+  interestCalculationMethod?: InterestCalculationMethod;
 }
 
 export class GuarantorDto {

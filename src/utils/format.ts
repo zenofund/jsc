@@ -32,6 +32,13 @@ export const formatNumber = (amount: number | string | undefined | null): string
   }).format(val);
 };
 
+export const parseFormattedNumber = (value: string): number => {
+  // Remove all non-digit, non-decimal, non-minus characters
+  const cleaned = value.replace(/[^0-9.-]/g, '');
+  const parsed = parseFloat(cleaned);
+  return isNaN(parsed) ? 0 : parsed;
+};
+
 export const formatCompactCurrency = (amount: number | string | undefined | null) => {
   const val = typeof amount === 'string' ? parseFloat(amount) : amount;
   if (val === undefined || val === null || isNaN(val)) return { short: '₦0.00', full: '₦0.00' };

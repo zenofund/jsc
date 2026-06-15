@@ -682,6 +682,7 @@ export interface LoanType {
   eligibility_criteria: string;
   status: 'active' | 'inactive';
   cooperative_id?: string; // Optional: Link loan type to a specific cooperative
+  interest_calculation_method?: 'amortized' | 'upfront'; // Interest calculation method
   created_at: string;
   updated_at: string;
   created_by: string;

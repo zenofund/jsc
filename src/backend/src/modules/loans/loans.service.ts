@@ -55,8 +55,9 @@ export class LoansService {
       `INSERT INTO loan_types (
         code, name, description, max_amount, interest_rate, 
         max_tenure_months, required_guarantors, cooperative_id, status, created_by,
-        min_service_years, max_salary_percentage, min_guarantors, eligibility_criteria, requires_guarantors
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        min_service_years, max_salary_percentage, min_guarantors, eligibility_criteria, requires_guarantors,
+        interest_calculation_method
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
       RETURNING *`,
       [
         dto.code,
@@ -73,7 +74,8 @@ export class LoansService {
         dto.maxSalaryPercentage,
         minGuarantors,
         dto.eligibilityCriteria,
-        requiresGuarantors
+        requiresGuarantors,
+        dto.interestCalculationMethod || 'amortized'
       ],
     );
 
@@ -209,6 +211,10 @@ export class LoansService {
       updates.push(`status = $${paramIndex++}`);
       values.push(dto.status);
     }
+    if (dto.interestCalculationMethod !== undefined) {
+      updates.push(`interest_calculation_method = $${paramIndex++}`);
+      values.push(dto.interestCalculationMethod);
+    }
 
     updates.push(`updated_at = NOW()`);
     values.push(id);
@@ -274,8 +280,15 @@ export class LoansService {
 
     // Calculate loan details
     const interestAmount = (dto.requestedAmount * loanType.interest_rate) / 100;
-    const totalRepayment = dto.requestedAmount + interestAmount;
-    const monthlyDeduction = Math.round(totalRepayment / dto.tenureMonths);
+    let totalRepayment, monthlyDeduction;
+    
+    if (loanType.interest_calculation_method === 'upfront') {
+      totalRepayment = dto.requestedAmount; // Principal only, interest is deducted upfront
+      monthlyDeduction = Math.round(totalRepayment / dto.tenureMonths);
+    } else {
+      totalRepayment = dto.requestedAmount + interestAmount;
+      monthlyDeduction = Math.round(totalRepayment / dto.tenureMonths);
+    }
 
     // Generate application number
     const year = new Date().getFullYear();
@@ -794,6 +807,13 @@ export class LoansService {
     const totalRepayment = Number(application.total_repayment || approvedAmount);
     const monthlyDeduction = Number(application.monthly_deduction || Math.round(totalRepayment / application.tenure_months));
     const startMonth = new Date(dto.disbursementDate).toISOString().slice(0, 7);
+    
+    // Determine the actual amount to disburse
+    const loanType = await this.findOneLoanType(application.loan_type_id);
+    let amountToDisburse = approvedAmount;
+    if (loanType.interest_calculation_method === 'upfront') {
+      amountToDisburse = approvedAmount - (application.interest_amount || 0);
+    }
 
     const disbursement = await this.databaseService.queryOne(
       `INSERT INTO loan_disbursements (
@@ -809,7 +829,7 @@ export class LoansService {
         dto.loanApplicationId,
         application.staff_id,
         application.staff_number,
-        dto.amount,
+        amountToDisburse,
         dto.disbursementDate,
         'bank_transfer',
         startMonth,

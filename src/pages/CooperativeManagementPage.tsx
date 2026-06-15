@@ -8,8 +8,9 @@ import {
 } from 'lucide-react';
 import { cooperativeAPI, loanMigrationAPI } from '../lib/loanAPI';
 import { staffAPI } from '../lib/api-client';
-import { PageSkeleton } from '../components/PageLoader';
+import { PageLoader } from '../components/PageLoader';
 import { Modal } from '../components/Modal';
+import { NumberInput } from '../components/NumberInput';
 import { StatusBadge } from '../components/StatusBadge';
 import {
   DropdownMenu,
@@ -637,7 +638,7 @@ export function CooperativeManagementPage() {
   }
 
   if (loading) {
-    return <PageSkeleton mode="grid" />;
+    return <PageLoader mode="grid" />;
   }
 
   return (
@@ -1573,33 +1574,27 @@ function CooperativeFormModal({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm mb-2">Monthly Contribution Required (₦) *</label>
-              <input
-                type="number"
+              <NumberInput
                 value={formData.monthly_contribution_required}
-                onChange={(e) => setFormData({ ...formData, monthly_contribution_required: Number(e.target.value) })}
-                className="w-full px-3 py-2 rounded-lg border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                onChange={(value) => setFormData({ ...formData, monthly_contribution_required: value })}
                 required
-                min="0"
+                min={0}
               />
             </div>
             <div>
               <label className="block text-sm mb-2">Share Capital Value (₦)</label>
-              <input
-                type="number"
-                value={formData.share_capital_value}
-                onChange={(e) => setFormData({ ...formData, share_capital_value: e.target.value === '' ? '' : Number(e.target.value) })}
-                className="w-full px-3 py-2 rounded-lg border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                min="0"
+              <NumberInput
+                value={Number(formData.share_capital_value || 0)}
+                onChange={(value) => setFormData({ ...formData, share_capital_value: value === 0 ? '' : value })}
+                min={0}
               />
             </div>
             <div>
               <label className="block text-sm mb-2">Minimum Shares</label>
-              <input
-                type="number"
-                value={formData.minimum_shares}
-                onChange={(e) => setFormData({ ...formData, minimum_shares: e.target.value === '' ? '' : Number(e.target.value) })}
-                className="w-full px-3 py-2 rounded-lg border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                min="1"
+              <NumberInput
+                value={Number(formData.minimum_shares || 0)}
+                onChange={(value) => setFormData({ ...formData, minimum_shares: value === 0 ? '' : value })}
+                min={1}
               />
             </div>
             <div>
@@ -1923,13 +1918,11 @@ function MemberFormModal({
 
         <div>
           <label className="block text-sm mb-2">Monthly Contribution (₦) *</label>
-          <input
-            type="number"
+          <NumberInput
             value={formData.monthly_contribution}
-            onChange={(e) => setFormData({ ...formData, monthly_contribution: Number(e.target.value) })}
-            className="w-full px-3 py-2 rounded-lg border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            onChange={(value) => setFormData({ ...formData, monthly_contribution: value })}
             required
-            min="0"
+            min={0}
           />
           {selectedCooperative && (
             <p className="text-xs text-muted-foreground mt-1">
@@ -1940,12 +1933,10 @@ function MemberFormModal({
 
         <div>
           <label className="block text-sm mb-2">Number of Shares</label>
-          <input
-            type="number"
-            value={formData.shares_owned}
-            onChange={(e) => setFormData({ ...formData, shares_owned: e.target.value === '' ? '' : Number(e.target.value) })}
-            className="w-full px-3 py-2 rounded-lg border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-            min="0"
+          <NumberInput
+            value={Number(formData.shares_owned || 0)}
+            onChange={(value) => setFormData({ ...formData, shares_owned: value === 0 ? '' : value })}
+            min={0}
           />
           {selectedCooperative && (
             <p className="text-xs text-muted-foreground mt-1">
@@ -2158,13 +2149,11 @@ function ContributionFormModal({
 
         <div>
           <label className="block text-sm mb-2">Amount (₦) *</label>
-          <input
-            type="number"
+          <NumberInput
             value={formData.amount}
-            onChange={(e) => setFormData({ ...formData, amount: Number(e.target.value) })}
-            className="w-full px-3 py-2 rounded-lg border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            onChange={(value) => setFormData({ ...formData, amount: value })}
             required
-            min="0"
+            min={0}
           />
           {selectedMember && formData.contribution_type === 'regular' && (
             <p className="text-xs text-muted-foreground mt-1">
