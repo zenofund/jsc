@@ -1676,17 +1676,25 @@ function ReportsTab() {
     const currentMonth = new Date().toISOString().slice(0, 7);
     const rangeStartMonth = dateFrom.slice(0, 7);
     const rangeEndMonth = dateTo.slice(0, 7);
-    const rangeEndDate = getDateRange().end;
+    const { start, end } = getDateRange();
     const matchesCooperative = (coopId?: string) => cooperativeFilter === 'all' || coopId === cooperativeFilter;
+    
+    // Helper to safely convert value to number
+    const toNumber = (val: any): number => {
+      const num = Number(val);
+      return isNaN(num) ? 0 : num;
+    };
 
     if (key === 'applications') {
       const filtered = apps.filter((app) => {
         const statusMatch = statusFilter === 'all' || app.status === statusFilter;
         const dateValue = app.submitted_at || app.created_at;
         const coopMatch = matchesCooperative(app.cooperative_id);
-        return statusMatch && coopMatch && inRange(dateValue);
+        if (!dateValue) return statusMatch && coopMatch; // If no date, still include if status/coop match
+        const date = new Date(dateValue);
+        return statusMatch && coopMatch && date >= start && date <= end;
       });
-      const totalRequested = filtered.reduce((sum, app) => sum + (app.amount_requested || 0), 0);
+      const totalRequested = filtered.reduce((sum, app) => sum + toNumber(app.amount_requested), 0);
       const byStatus = filtered.reduce((acc: Record<string, number>, app) => {
         acc[app.status] = (acc[app.status] || 0) + 1;
         return acc;
@@ -1733,14 +1741,16 @@ function ReportsTab() {
       const filtered = disb.filter((d) => {
         const statusMatch = statusFilter === 'all' || d.status === statusFilter;
         const coopMatch = matchesCooperative(d.cooperative_id);
-        return statusMatch && coopMatch && inRange(d.disbursement_date);
+        if (!d.disbursement_date) return statusMatch && coopMatch; // If no date, still include
+        const date = new Date(d.disbursement_date);
+        return statusMatch && coopMatch && date >= start && date <= end;
       });
       const totalDisbursed = filtered.reduce(
-        (sum, d) => sum + (d.amount_disbursed ?? d.principal_amount ?? 0),
+        (sum, d) => sum + toNumber(d.amount_disbursed ?? d.principal_amount),
         0,
       );
-      const totalRepaid = filtered.reduce((sum, d) => sum + (d.total_repaid || 0), 0);
-      const totalOutstanding = filtered.reduce((sum, d) => sum + (d.balance_outstanding || 0), 0);
+      const totalRepaid = filtered.reduce((sum, d) => sum + toNumber(d.total_repaid), 0);
+      const totalOutstanding = filtered.reduce((sum, d) => sum + toNumber(d.balance_outstanding), 0);
       const columns: ReportColumn[] = [
         { key: 'disbursement_number', label: 'Disbursement #' },
         { key: 'staff_name', label: 'Staff Name' },
@@ -1774,13 +1784,14 @@ function ReportsTab() {
 
     if (key === 'repayment-schedule') {
       const scheduleStatus = (d: LoanDisbursement) => {
-        if (d.status === 'completed' || d.balance_outstanding <= 0) return 'completed';
+        if (d.status === 'completed' || toNumber(d.balance_outstanding) <= 0) return 'completed';
         if (currentMonth < d.start_deduction_month) return 'upcoming';
-        if (currentMonth > d.end_deduction_month && d.balance_outstanding > 0) return 'overdue';
+        if (currentMonth > d.end_deduction_month && toNumber(d.balance_outstanding) > 0) return 'overdue';
         return 'active';
       };
       const filtered = disb.filter((d) => {
         if (!matchesCooperative(d.cooperative_id)) return false;
+        if (!d.start_deduction_month || !d.end_deduction_month) return true; // Include if no date range
         return d.start_deduction_month <= rangeEndMonth && d.end_deduction_month >= rangeStartMonth;
       });
       const scoped = filtered.filter((d) => statusFilter === 'all' || scheduleStatus(d) === statusFilter);
@@ -1790,10 +1801,10 @@ function ReportsTab() {
       const completedCount = filtered.filter((d) => scheduleStatus(d) === 'completed').length;
       const totalMonthlyDue = filtered
         .filter((d) => scheduleStatus(d) === 'active')
-        .reduce((sum, d) => sum + (d.monthly_deduction || 0), 0);
+        .reduce((sum, d) => sum + toNumber(d.monthly_deduction), 0);
       const overdueOutstanding = filtered
         .filter((d) => scheduleStatus(d) === 'overdue')
-        .reduce((sum, d) => sum + (d.balance_outstanding || 0), 0);
+        .reduce((sum, d) => sum + toNumber(d.balance_outstanding), 0);
       const columns: ReportColumn[] = [
         { key: 'staff_name', label: 'Staff Name' },
         { key: 'staff_number', label: 'Staff Number' },
@@ -1830,11 +1841,11 @@ function ReportsTab() {
         acc[coop.id] = coop.name;
         return acc;
       }, {});
-      const rangeStartDate = getDateRange().start;
       const filtered = disb.filter((d) => {
         if (!d.cooperative_id) return false;
+        if (!d.disbursement_date) return true; // Include if no date
         const disbursementDate = new Date(d.disbursement_date);
-        return disbursementDate >= rangeStartDate && disbursementDate <= rangeEndDate;
+        return disbursementDate >= start && disbursementDate <= end;
       });
       const scoped = filtered.filter((d) => matchesCooperative(d.cooperative_id));
       const grouped = scoped.reduce((acc: Record<string, any>, d) => {
@@ -1850,9 +1861,9 @@ function ReportsTab() {
           };
         }
         acc[keyValue].total_loans += 1;
-        acc[keyValue].total_disbursed += d.amount_disbursed ?? d.principal_amount ?? 0;
-        acc[keyValue].total_repaid += d.total_repaid || 0;
-        acc[keyValue].total_outstanding += d.balance_outstanding || 0;
+        acc[keyValue].total_disbursed += toNumber(d.amount_disbursed ?? d.principal_amount);
+        acc[keyValue].total_repaid += toNumber(d.total_repaid);
+        acc[keyValue].total_outstanding += toNumber(d.balance_outstanding);
         return acc;
       }, {});
       const rows = Object.values(grouped).map((g: any) => ({
@@ -1870,7 +1881,7 @@ function ReportsTab() {
         { key: 'total_outstanding', label: 'Outstanding', align: 'right' },
       ];
       const totalLoans = rows.reduce((sum, r: any) => sum + Number(r.total_loans || 0), 0);
-      const totalOutstanding = scoped.reduce((sum, d) => sum + (d.balance_outstanding || 0), 0);
+      const totalOutstanding = scoped.reduce((sum, d) => sum + toNumber(d.balance_outstanding), 0);
       const summary = [
         { label: 'Cooperatives', value: rows.length.toString() },
         { label: 'Total Loans', value: totalLoans.toString() },
@@ -1880,12 +1891,12 @@ function ReportsTab() {
     }
 
     if (key === 'loan-aging') {
-      const rangeStartDate = getDateRange().start;
       const agingLoans = disb.filter((d) => {
-        if (d.balance_outstanding <= 0) return false;
+        if (toNumber(d.balance_outstanding) <= 0) return false;
         if (!matchesCooperative(d.cooperative_id)) return false;
+        if (!d.disbursement_date) return true; // Include if no date
         const disbursementDate = new Date(d.disbursement_date);
-        return disbursementDate >= rangeStartDate && disbursementDate <= rangeEndDate;
+        return disbursementDate >= start && disbursementDate <= end;
       });
       const today = new Date();
       const buckets = agingLoans.reduce((acc: Record<string, { count: number; outstanding: number }>, d) => {
@@ -1898,7 +1909,7 @@ function ReportsTab() {
         else if (months <= 24) bucket = '13-24 months';
         if (!acc[bucket]) acc[bucket] = { count: 0, outstanding: 0 };
         acc[bucket].count += 1;
-        acc[bucket].outstanding += d.balance_outstanding || 0;
+        acc[bucket].outstanding += toNumber(d.balance_outstanding);
         return acc;
       }, {});
       const columns: ReportColumn[] = [
@@ -1928,7 +1939,7 @@ function ReportsTab() {
           aging_bucket: bucket,
         };
       });
-      const totalOutstanding = agingLoans.reduce((sum, d) => sum + (d.balance_outstanding || 0), 0);
+      const totalOutstanding = agingLoans.reduce((sum, d) => sum + toNumber(d.balance_outstanding), 0);
       const summary = [
         { label: 'Outstanding Loans', value: agingLoans.length.toString() },
         { label: 'Outstanding Balance', value: formatCurrency(totalOutstanding) },
@@ -1945,12 +1956,13 @@ function ReportsTab() {
       return { rows, columns, summary, breakdown };
     }
 
-    const rangeStartDate = getDateRange().start;
     const overdue = disb.filter((d) => {
-      if (d.balance_outstanding <= 0) return false;
+      if (toNumber(d.balance_outstanding) <= 0) return false;
       if (!matchesCooperative(d.cooperative_id)) return false;
-      const disbursementDate = new Date(d.disbursement_date);
-      if (disbursementDate < rangeStartDate || disbursementDate > rangeEndDate) return false;
+      if (d.disbursement_date) {
+        const disbursementDate = new Date(d.disbursement_date);
+        if (disbursementDate < start || disbursementDate > end) return false;
+      }
       return currentMonth > d.end_deduction_month;
     });
     const columns: ReportColumn[] = [
@@ -1969,7 +1981,7 @@ function ReportsTab() {
       months_overdue: Math.max(0, monthDiff(d.end_deduction_month, currentMonth)),
       balance_outstanding: formatCurrency(d.balance_outstanding),
     }));
-    const totalOutstanding = overdue.reduce((sum, d) => sum + (d.balance_outstanding || 0), 0);
+    const totalOutstanding = overdue.reduce((sum, d) => sum + toNumber(d.balance_outstanding), 0);
     const summary = [
       { label: 'Defaulters', value: overdue.length.toString() },
       { label: 'Outstanding Balance', value: formatCurrency(totalOutstanding) },
