@@ -278,6 +278,26 @@ export class LoansService {
       throw new BadRequestException(`Tenure exceeds maximum of ${loanType.max_tenure_months} months`);
     }
 
+    // Check if staff has active loan of same type from same cooperative
+    if (loanType.cooperative_id) {
+      const activeLoanCheck = await this.databaseService.query(
+        `SELECT ld.* 
+         FROM loan_disbursements ld
+         JOIN loan_applications la ON ld.loan_application_id = la.id
+         JOIN loan_types lt ON la.loan_type_id = lt.id
+         WHERE ld.staff_id = $1 
+         AND lt.id = $2 
+         AND lt.cooperative_id = $3 
+         AND ld.status = 'active'
+         AND ld.balance_outstanding > 0`,
+        [dto.staffId, dto.loanTypeId, loanType.cooperative_id]
+      );
+
+      if (activeLoanCheck.length > 0) {
+        throw new BadRequestException(`Staff has an active loan of type "${loanType.name}" from the same cooperative. Please repay it completely before applying again.`);
+      }
+    }
+
     // Calculate loan details
     const interestAmount = (dto.requestedAmount * loanType.interest_rate) / 100;
     let totalRepayment, monthlyDeduction;

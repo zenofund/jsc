@@ -177,8 +177,8 @@ export class CreateLoanApplicationDto {
   tenureMonths: number;
 
   @IsString()
-  @IsNotEmpty()
-  purpose: string;
+  @IsOptional()
+  purpose?: string;
 
   @IsArray()
   @IsOptional()
