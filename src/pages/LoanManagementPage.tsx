@@ -9,7 +9,7 @@ import { useConfirm } from '../contexts/ConfirmContext';
 import { loanApplicationAPI, loanTypeAPI, disbursementAPI, loanStatsAPI, cooperativeAPI, repaymentAPI } from '../lib/loanAPI';
 import { staffAPI } from '../lib/api-client';
 import type { LoanType, LoanApplication, LoanDisbursement, Cooperative, Staff } from '../types/entities';
-import { PageLoader } from '../components/PageLoader';
+import { PageSkeleton } from '../components/PageLoader';
 import { showToast } from '../utils/toast';
 import { formatCompactCurrency, formatCurrency } from '../utils/format';
 import { Modal } from '../components/Modal';
@@ -57,7 +57,7 @@ export function LoanManagementPage() {
   };
 
   if (loading) {
-    return <PageLoader mode="grid" />;
+    return <PageSkeleton mode="grid" />;
   }
 
   return (

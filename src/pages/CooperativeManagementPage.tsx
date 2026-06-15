@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { cooperativeAPI, loanMigrationAPI } from '../lib/loanAPI';
 import { staffAPI } from '../lib/api-client';
-import { PageLoader } from '../components/PageLoader';
+import { PageSkeleton } from '../components/PageLoader';
 import { Modal } from '../components/Modal';
 import { NumberInput } from '../components/NumberInput';
 import { StatusBadge } from '../components/StatusBadge';
@@ -638,7 +638,7 @@ export function CooperativeManagementPage() {
   }
 
   if (loading) {
-    return <PageLoader mode="grid" />;
+    return <PageSkeleton mode="grid" />;
   }
 
   return (
