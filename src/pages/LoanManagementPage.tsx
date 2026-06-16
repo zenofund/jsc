@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { 
   DollarSign, TrendingUp, Users, Clock, CheckCircle, XCircle, FileText,
   Plus, Edit2, Trash2, Download, Search, Building2,
-  Wallet, RefreshCw, CreditCard, X, Loader2
+  Wallet, RefreshCw, CreditCard, X, Loader2, MoreVertical
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useConfirm } from '../contexts/ConfirmContext';
@@ -15,8 +15,26 @@ import { formatCompactCurrency, formatCurrency } from '../utils/format';
 import { Modal } from '../components/Modal';
 import { NumberInput } from '../components/NumberInput';
 import { formatStaffLabelWithId } from '../lib/name-utils';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu';
 
 type TabType = 'overview' | 'applications' | 'loan-types' | 'disbursements' | 'reports';
+
+type DisbursementEditForm = {
+  amountDisbursed: number;
+  tenureMonths: number;
+  monthlyDeduction: number;
+  balanceOutstanding: number;
+  startMonth: string;
+  endMonth: string;
+  status: LoanDisbursement['status'];
+  remarks: string;
+};
 
 export function LoanManagementPage() {
   const { user } = useAuth();
@@ -1279,6 +1297,7 @@ function DisbursementsTab({
   disbursements: LoanDisbursement[];
   onRefresh: () => Promise<void>;
 }) {
+  const { user } = useAuth();
   const confirm = useConfirm();
   const [showStatementModal, setShowStatementModal] = useState(false);
   const [statement, setStatement] = useState<any>(null);
@@ -1288,6 +1307,14 @@ function DisbursementsTab({
   });
   const [payoffAmount, setPayoffAmount] = useState<number | ''>('');
   const [isPayingOff, setIsPayingOff] = useState(false);
+
+  const [editModal, setEditModal] = useState<{ open: boolean; disbursement: LoanDisbursement | null }>({
+    open: false,
+    disbursement: null,
+  });
+  const [editData, setEditData] = useState<DisbursementEditForm | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const canEditDisbursements = user?.role === 'admin' || user?.role === 'payroll_officer';
 
   const viewStatement = async (disbId: string) => {
     try {
@@ -1327,6 +1354,74 @@ function DisbursementsTab({
     if (isPayingOff) return;
     setPayoffModal({ open: false, disbursement: null });
     setPayoffAmount('');
+  };
+
+  const openEditModal = (disbursement: LoanDisbursement) => {
+    setEditModal({ open: true, disbursement });
+    setEditData({
+      amountDisbursed: Number(
+        disbursement.amount_disbursed ??
+          disbursement.total_amount ??
+          disbursement.principal_amount ??
+          0,
+      ),
+      tenureMonths: Number(disbursement.tenure_months ?? 0),
+      monthlyDeduction: Number(disbursement.monthly_deduction ?? 0),
+      balanceOutstanding: Number(disbursement.balance_outstanding ?? 0),
+      startMonth: disbursement.start_deduction_month || '',
+      endMonth: disbursement.end_deduction_month || '',
+      status: disbursement.status,
+      remarks: '',
+    });
+  };
+
+  const closeEditModal = () => {
+    if (isEditing) return;
+    setEditModal({ open: false, disbursement: null });
+    setEditData(null);
+  };
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!editModal.disbursement || !editData) return;
+
+    if (editData.tenureMonths < 1) {
+      showToast.error('Tenure must be at least 1 month.');
+      return;
+    }
+
+    if (editData.amountDisbursed < 0 || editData.monthlyDeduction < 0 || editData.balanceOutstanding < 0) {
+      showToast.error('Amounts cannot be negative.');
+      return;
+    }
+
+    if (editData.endMonth && editData.startMonth && editData.endMonth < editData.startMonth) {
+      showToast.error('End month cannot be earlier than start month.');
+      return;
+    }
+
+    try {
+      setIsEditing(true);
+      await disbursementAPI.update(editModal.disbursement.id, {
+        amountDisbursed: editData.amountDisbursed,
+        tenureMonths: editData.tenureMonths,
+        monthlyDeduction: editData.monthlyDeduction,
+        balanceOutstanding: editData.balanceOutstanding,
+        startMonth: editData.startMonth || undefined,
+        endMonth: editData.endMonth || undefined,
+        status: editData.status,
+        remarks: editData.remarks.trim() || undefined,
+      });
+      showToast.success('Assigned loan updated successfully.');
+      setEditModal({ open: false, disbursement: null });
+      setEditData(null);
+      await onRefresh();
+    } catch (error: any) {
+      showToast.error(error?.message || 'Failed to update assigned loan');
+    } finally {
+      setIsEditing(false);
+    }
   };
 
   const handlePayOff = async () => {
@@ -1425,22 +1520,38 @@ function DisbursementsTab({
                       </span>
                     </td>
                     <td className="px-6 py-4 text-center">
-                      <div className="flex items-center justify-center gap-2">
-                        <button
-                          onClick={() => viewStatement(disb.id)}
-                          className="px-3 py-1 bg-primary hover:bg-primary/90 text-primary-foreground rounded text-sm transition-colors"
-                        >
-                          Statement
-                        </button>
-                        {disb.status === 'active' && Number(disb.balance_outstanding || 0) > 0 && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
                           <button
-                            onClick={() => openPayoffModal(disb)}
-                            className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-sm transition-colors"
+                            type="button"
+                            className="inline-flex items-center justify-center rounded p-2 hover:bg-accent transition-colors"
+                            title="Actions"
                           >
-                            Repay
+                            <MoreVertical className="w-4 h-4 text-muted-foreground" />
                           </button>
-                        )}
-                      </div>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {canEditDisbursements && (
+                            <DropdownMenuItem onClick={() => openEditModal(disb)}>
+                              <Edit2 className="w-4 h-4" />
+                              Edit
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuItem onClick={() => viewStatement(disb.id)}>
+                            <FileText className="w-4 h-4 text-blue-500" />
+                            Statement
+                          </DropdownMenuItem>
+                          {disb.status === 'active' && Number(disb.balance_outstanding || 0) > 0 && (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={() => openPayoffModal(disb)}>
+                                <Wallet className="w-4 h-4 text-green-600" />
+                                Repay
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </td>
                   </tr>
                 ))
@@ -1513,6 +1624,146 @@ function DisbursementsTab({
             </div>
           </div>
         </div>
+      )}
+
+      {editModal.open && editModal.disbursement && editData && (
+        <Modal
+          isOpen={editModal.open}
+          onClose={closeEditModal}
+          title="Edit Assigned Loan"
+          size="lg"
+        >
+          <form onSubmit={handleEditSubmit} className="space-y-5">
+            <div className="rounded-lg bg-muted p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <div className="text-sm text-muted-foreground">Staff</div>
+                <div className="text-sm text-card-foreground">
+                  {editModal.disbursement.staff_name} ({editModal.disbursement.staff_number})
+                </div>
+              </div>
+              <div>
+                <div className="text-sm text-muted-foreground">Disbursement #</div>
+                <div className="text-sm text-card-foreground">{editModal.disbursement.disbursement_number}</div>
+              </div>
+              <div>
+                <div className="text-sm text-muted-foreground">Loan Type</div>
+                <div className="text-sm text-card-foreground">{editModal.disbursement.loan_type_name}</div>
+              </div>
+              <div>
+                <div className="text-sm text-muted-foreground">Current Status</div>
+                <div className="text-sm text-card-foreground">{editModal.disbursement.status.toUpperCase()}</div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm mb-1 text-card-foreground">Amount Disbursed</label>
+                <NumberInput
+                  min={0}
+                  value={editData.amountDisbursed}
+                  onChange={(value) => setEditData({ ...editData, amountDisbursed: value })}
+                />
+              </div>
+              <div>
+                <label className="block text-sm mb-1 text-card-foreground">Tenure (Months)</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={editData.tenureMonths || ''}
+                  onChange={(e) =>
+                    setEditData({
+                      ...editData,
+                      tenureMonths: Number(e.target.value),
+                    })
+                  }
+                  className="w-full px-3 py-2 rounded border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm mb-1 text-card-foreground">Monthly Deduction</label>
+                <NumberInput
+                  min={0}
+                  value={editData.monthlyDeduction}
+                  onChange={(value) => setEditData({ ...editData, monthlyDeduction: value })}
+                />
+              </div>
+              <div>
+                <label className="block text-sm mb-1 text-card-foreground">Outstanding Balance</label>
+                <NumberInput
+                  min={0}
+                  value={editData.balanceOutstanding}
+                  onChange={(value) => setEditData({ ...editData, balanceOutstanding: value })}
+                />
+              </div>
+              <div>
+                <label className="block text-sm mb-1 text-card-foreground">Start Month</label>
+                <input
+                  type="month"
+                  value={editData.startMonth}
+                  onChange={(e) => setEditData({ ...editData, startMonth: e.target.value })}
+                  className="w-full px-3 py-2 rounded border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+              </div>
+              <div>
+                <label className="block text-sm mb-1 text-card-foreground">End Month</label>
+                <input
+                  type="month"
+                  value={editData.endMonth}
+                  onChange={(e) => setEditData({ ...editData, endMonth: e.target.value })}
+                  className="w-full px-3 py-2 rounded border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+              </div>
+              <div>
+                <label className="block text-sm mb-1 text-card-foreground">Status</label>
+                <select
+                  value={editData.status}
+                  onChange={(e) =>
+                    setEditData({
+                      ...editData,
+                      status: e.target.value as LoanDisbursement['status'],
+                    })
+                  }
+                  className="w-full px-3 py-2 rounded border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                >
+                  <option value="active">Active</option>
+                  <option value="completed">Completed</option>
+                  <option value="defaulted">Defaulted</option>
+                  <option value="written_off">Written Off</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm mb-1 text-card-foreground">Remarks</label>
+              <textarea
+                value={editData.remarks}
+                onChange={(e) => setEditData({ ...editData, remarks: e.target.value })}
+                rows={3}
+                placeholder="Add a short reason for this correction"
+                className="w-full px-3 py-2 rounded border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeEditModal}
+                disabled={isEditing}
+                className="px-4 py-2 rounded-lg border border-border hover:bg-accent disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isEditing}
+                className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white disabled:opacity-50"
+              >
+                {isEditing ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
 
       {payoffModal.open && payoffModal.disbursement && (

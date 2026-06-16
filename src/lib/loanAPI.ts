@@ -321,6 +321,23 @@ export const disbursementAPI = {
     return makeApiRequest(`/loans/disbursements/${id}`, { method: 'GET' });
   },
 
+  // Update an existing disbursement
+  async update(id: string, data: {
+    amountDisbursed?: number;
+    tenureMonths?: number;
+    monthlyDeduction?: number;
+    balanceOutstanding?: number;
+    startMonth?: string;
+    endMonth?: string;
+    status?: 'active' | 'completed' | 'defaulted' | 'written_off';
+    remarks?: string;
+  }) {
+    return makeApiRequest(`/loans/disbursements/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
   // Disburse approved loan
   async create(data: {
     loan_application_id: string;
