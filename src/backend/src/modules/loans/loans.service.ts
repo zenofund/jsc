@@ -1198,6 +1198,9 @@ export class LoansService {
       staffId: string;
       amount: number;
       month: string;
+      disbursementId?: string;
+      months?: string[];
+      monthlyAmount?: number;
     }>, 
     userId: string
   ) {
@@ -1206,13 +1209,20 @@ export class LoansService {
 
       for (const deduction of deductions) {
         try {
-          // Find active disbursement for staff
-          const disbursementRes = await client.query(
-            `SELECT id, balance_outstanding FROM loan_disbursements 
-             WHERE staff_id = $1 AND status = 'active'
-             ORDER BY start_month DESC LIMIT 1`,
-            [deduction.staffId]
-          );
+          const disbursementRes = deduction.disbursementId
+            ? await client.query(
+                `SELECT id, staff_id, balance_outstanding, tenure_months
+                 FROM loan_disbursements
+                 WHERE id = $1 AND staff_id = $2 AND status = 'active'`,
+                [deduction.disbursementId, deduction.staffId],
+              )
+            : await client.query(
+                `SELECT id, staff_id, balance_outstanding, tenure_months
+                 FROM loan_disbursements 
+                 WHERE staff_id = $1 AND status = 'active'
+                 ORDER BY start_month DESC LIMIT 1`,
+                [deduction.staffId],
+              );
           const disbursement = disbursementRes.rows?.[0];
           if (!disbursement) {
             results.failed++;
@@ -1220,54 +1230,91 @@ export class LoansService {
             continue;
           }
 
-          const outstanding = Number(disbursement.balance_outstanding || 0);
-          const amount = Math.min(Number(deduction.amount || 0), outstanding);
-          if (amount <= 0) {
+          let outstanding = Number(disbursement.balance_outstanding || 0);
+          let remainingAmount = Math.min(Number(deduction.amount || 0), outstanding);
+          if (remainingAmount <= 0) {
             results.failed++;
             results.errors.push({ staffId: deduction.staffId, error: 'Invalid amount or no outstanding balance' });
             continue;
           }
 
-          // Check if repayment already exists for this staff, disbursement, month, and payroll batch
-          const existingRes = await client.query(
-            `SELECT id FROM loan_repayments 
-             WHERE disbursement_id = $1 AND month = $2 AND payroll_batch_id = $3`,
-            [disbursement.id, deduction.month, payrollBatchId]
-          );
-          if (existingRes.rows?.length > 0) {
+          const repaymentMonths = Array.isArray(deduction.months) && deduction.months.length > 0
+            ? deduction.months
+            : [deduction.month].filter(Boolean);
+          const monthlyAmount = Math.max(0, Number(deduction.monthlyAmount || deduction.amount || 0));
+          let processedCount = 0;
+
+          for (const repaymentMonth of repaymentMonths) {
+            if (outstanding <= 0 || remainingAmount <= 0) {
+              break;
+            }
+
+            const existingRes = await client.query(
+              `SELECT id FROM loan_repayments 
+               WHERE disbursement_id = $1 AND month = $2`,
+              [disbursement.id, repaymentMonth],
+            );
+            if (existingRes.rows?.length > 0) {
+              continue;
+            }
+
+            const installmentAmount = Math.min(
+              monthlyAmount > 0 ? monthlyAmount : remainingAmount,
+              outstanding,
+            );
+            if (installmentAmount <= 0) {
+              break;
+            }
+            if (remainingAmount + 0.0001 < installmentAmount) {
+              break;
+            }
+
+            await client.query(
+              `INSERT INTO loan_repayments (
+                disbursement_id, staff_id, amount, repayment_date, 
+                month, payroll_batch_id, recorded_by
+              ) VALUES ($1, $2, $3, NOW(), $4, $5, $6)`,
+              [
+                disbursement.id,
+                deduction.staffId,
+                installmentAmount,
+                repaymentMonth,
+                payrollBatchId,
+                userId,
+              ],
+            );
+
+            remainingAmount -= installmentAmount;
+            outstanding -= installmentAmount;
+            processedCount += 1;
+            results.success++;
+          }
+
+          if (processedCount === 0) {
             results.failed++;
-            results.errors.push({ staffId: deduction.staffId, error: 'Repayment already recorded' });
+            results.errors.push({ staffId: deduction.staffId, error: 'No eligible repayment month was available to process' });
             continue;
           }
 
-          // Insert repayment
-          await client.query(
-            `INSERT INTO loan_repayments (
-              disbursement_id, staff_id, amount, repayment_date, 
-              month, payroll_batch_id, recorded_by
-            ) VALUES ($1, $2, $3, NOW(), $4, $5, $6)`,
-            [
-              disbursement.id,
-              deduction.staffId,
-              amount,
-              deduction.month,
-              payrollBatchId,
-              userId,
-            ],
+          const paidMonthsRes = await client.query(
+            `SELECT COUNT(DISTINCT month) as count FROM loan_repayments WHERE disbursement_id = $1`,
+            [disbursement.id],
           );
+          const paidMonths = parseInt(String(paidMonthsRes.rows?.[0]?.count || '0'), 10) || 0;
+          const tenureMonths = Number(disbursement.tenure_months || 1);
+          const remainingTenor = Math.max(1, tenureMonths - paidMonths);
+          const calculatedDeduction = Math.round(outstanding / remainingTenor);
+          const newMonthlyDeduction = isNaN(calculatedDeduction) ? 0 : calculatedDeduction;
 
-          // Update disbursement balance
-          const newBalance = outstanding - amount;
           await client.query(
             `UPDATE loan_disbursements 
              SET balance_outstanding = $1::decimal,
+                 monthly_deduction = CASE WHEN $1::decimal > 0 THEN $2::decimal ELSE monthly_deduction END,
                  status = CASE WHEN $1::decimal <= 0 THEN 'completed' ELSE status END,
                  updated_at = NOW()
-             WHERE id = $2`,
-            [newBalance, disbursement.id],
+             WHERE id = $3`,
+            [outstanding, newMonthlyDeduction, disbursement.id],
           );
-
-          results.success++;
         } catch (err: any) {
           results.failed++;
           results.errors.push({ staffId: deduction.staffId, error: err?.message || 'Unknown error' });

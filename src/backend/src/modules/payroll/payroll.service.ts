@@ -35,6 +35,80 @@ export class PayrollService {
     await this.ensurePayrollLockColumns();
   }
 
+  private addMonthsToPayrollMonth(payrollMonth: string, monthOffset: number) {
+    const [yearPart, monthPart] = String(payrollMonth || '').split('-');
+    const year = Number(yearPart);
+    const month = Number(monthPart);
+
+    if (!year || !month) {
+      return payrollMonth;
+    }
+
+    const date = new Date(Date.UTC(year, month - 1 + monthOffset, 1));
+    const nextYear = date.getUTCFullYear();
+    const nextMonth = String(date.getUTCMonth() + 1).padStart(2, '0');
+    return `${nextYear}-${nextMonth}`;
+  }
+
+  private getLoanDueMonths(
+    startMonth: string,
+    tenureMonths: number,
+    payrollMonth: string,
+    paidMonths: string[],
+  ) {
+    const safeTenure = Math.max(0, Number(tenureMonths || 0));
+    if (!startMonth || !payrollMonth || safeTenure <= 0 || startMonth > payrollMonth) {
+      return [] as string[];
+    }
+
+    const paidMonthSet = new Set((paidMonths || []).filter(Boolean));
+    const dueMonths: string[] = [];
+
+    for (let index = 0; index < safeTenure; index += 1) {
+      const scheduledMonth = this.addMonthsToPayrollMonth(startMonth, index);
+      if (scheduledMonth > payrollMonth) {
+        break;
+      }
+      if (!paidMonthSet.has(scheduledMonth)) {
+        dueMonths.push(scheduledMonth);
+      }
+    }
+
+    return dueMonths;
+  }
+
+  private getPayableLoanInstallments(
+    dueMonths: string[],
+    monthlyDeduction: number,
+    outstandingBalance: number,
+    availableBudget: number,
+  ) {
+    const payableMonths: Array<{ month: string; amount: number }> = [];
+    let remainingOutstanding = Math.max(0, Number(outstandingBalance || 0));
+    let remainingBudget = Math.max(0, Number(availableBudget || 0));
+    const scheduledMonthlyDeduction = Math.max(0, Number(monthlyDeduction || 0));
+
+    if (scheduledMonthlyDeduction <= 0 || remainingOutstanding <= 0 || remainingBudget <= 0) {
+      return payableMonths;
+    }
+
+    for (const month of dueMonths) {
+      const installmentAmount = Math.min(scheduledMonthlyDeduction, remainingOutstanding);
+      if (installmentAmount <= 0) {
+        break;
+      }
+      if (remainingBudget + 0.0001 < installmentAmount) {
+        break;
+      }
+
+      payableMonths.push({ month, amount: installmentAmount });
+      remainingBudget -= installmentAmount;
+      remainingOutstanding -= installmentAmount;
+    }
+
+    return payableMonths;
+  }
+
   private async ensurePayrollLockColumns() {
     try {
       await this.databaseService.query(`
@@ -341,10 +415,26 @@ export class PayrollService {
 
     // Get active loan repayments
     const loanRepayments = await this.databaseService.query(
-      `SELECT ld.*, la.staff_id
+      `SELECT
+         ld.id,
+         ld.staff_id,
+         ld.start_month,
+         ld.tenure_months,
+         ld.monthly_deduction,
+         ld.balance_outstanding,
+         COALESCE(
+           ARRAY_AGG(DISTINCT lr.month) FILTER (WHERE lr.month IS NOT NULL),
+           ARRAY[]::text[]
+         ) as paid_months
        FROM loan_disbursements ld
        JOIN loan_applications la ON ld.loan_application_id = la.id
-       WHERE ld.status = 'active' AND ld.balance_outstanding > 0`,
+       LEFT JOIN loan_repayments lr ON lr.disbursement_id = ld.id
+       WHERE ld.status = 'active'
+         AND ld.balance_outstanding > 0
+         AND ld.start_month <= $1
+       GROUP BY ld.id
+       ORDER BY ld.start_month ASC`,
+      [batch.payroll_month],
     );
 
     // Get active cooperative memberships for auto-deduction
@@ -569,18 +659,6 @@ export class PayrollService {
         totalDeductionsAmount += amount;
       }
 
-      // Loan repayments
-      const staffLoans = loanRepayments.filter((loan) => loan.staff_id === staffMember.id);
-      for (const loan of staffLoans) {
-        const repaymentAmount = parseFloat(loan.monthly_deduction);
-        deductionsArray.push({
-          code: 'LOAN',
-          name: 'Loan Repayment',
-          amount: repaymentAmount,
-        });
-        totalDeductionsAmount += repaymentAmount;
-      }
-
       // Cooperative Contributions (Auto-Deduct)
       const staffCoops = cooperativeMemberships.filter((m) => m.staff_id === staffMember.id);
       for (const coop of staffCoops) {
@@ -618,6 +696,49 @@ export class PayrollService {
         amount: taxDetails.monthly_tax,
       });
       totalDeductionsAmount += taxDetails.monthly_tax;
+
+      // Loan repayments with carry-forward for missed payroll months.
+      const staffLoans = loanRepayments.filter((loan) => loan.staff_id === staffMember.id);
+      let remainingLoanBudget = Math.max(0, round2(grossPay - totalDeductionsAmount));
+      for (const loan of staffLoans) {
+        const dueMonths = this.getLoanDueMonths(
+          loan.start_month,
+          Number(loan.tenure_months || 0),
+          batch.payroll_month,
+          Array.isArray(loan.paid_months) ? loan.paid_months : [],
+        );
+        if (dueMonths.length === 0) {
+          continue;
+        }
+
+        const payableInstallments = this.getPayableLoanInstallments(
+          dueMonths,
+          Number(loan.monthly_deduction || 0),
+          Number(loan.balance_outstanding || 0),
+          remainingLoanBudget,
+        );
+        if (payableInstallments.length === 0) {
+          continue;
+        }
+
+        const repaymentAmount = round2(
+          payableInstallments.reduce((sum, installment) => sum + installment.amount, 0),
+        );
+        deductionsArray.push({
+          code: 'LOAN',
+          name: payableInstallments.length > 1
+            ? `Loan Repayment (${payableInstallments.length} months)`
+            : 'Loan Repayment',
+          amount: repaymentAmount,
+          loan_disbursement_id: loan.id,
+          loan_months: payableInstallments.map((installment) => installment.month),
+          loan_monthly_installment: Number(loan.monthly_deduction || 0),
+          loan_due_months: dueMonths,
+          carried_forward_months: Math.max(0, dueMonths.length - payableInstallments.length),
+        });
+        totalDeductionsAmount += repaymentAmount;
+        remainingLoanBudget = Math.max(0, round2(remainingLoanBudget - repaymentAmount));
+      }
 
       // Calculate net pay
 
@@ -1340,6 +1461,9 @@ export class PayrollService {
               staffId: line.staff_id,
               amount: Number(deduction.amount),
               month: batch.payroll_month,
+              disbursementId: deduction.loan_disbursement_id,
+              months: Array.isArray(deduction.loan_months) ? deduction.loan_months : [batch.payroll_month],
+              monthlyAmount: Number(deduction.loan_monthly_installment || deduction.amount || 0),
             });
           }
         }
