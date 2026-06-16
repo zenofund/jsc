@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { DataTable } from '../components/DataTable';
 import { StatusBadge } from '../components/StatusBadge';
 import { Modal } from '../components/Modal';
+import { Portal } from '../components/Portal';
 import { useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
 import { useConfirm } from '../contexts/ConfirmContext';
@@ -29,6 +30,8 @@ export function PromotionsPage() {
   const [allowedGrades, setAllowedGrades] = useState<number[]>([3,4,5,6,7,8,9,10,12,13,14,15,16,17]);
   const [staffSearch, setStaffSearch] = useState('');
   const [showStaffDropdown, setShowStaffDropdown] = useState(false);
+  const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number; width: number } | null>(null);
+  const staffSelectRef = useRef<HTMLDivElement>(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -71,6 +74,26 @@ export function PromotionsPage() {
       } catch {}
     })();
   }, []);
+
+  useEffect(() => {
+    const updatePosition = () => {
+      if (showStaffDropdown && !formData.staff_id && staffSelectRef.current) {
+        const rect = staffSelectRef.current.getBoundingClientRect();
+        setDropdownPosition({
+          top: rect.bottom + window.scrollY + 4,
+          left: rect.left + window.scrollX,
+          width: rect.width,
+        });
+      }
+    };
+
+    window.addEventListener('scroll', updatePosition, true);
+    window.addEventListener('resize', updatePosition);
+    return () => {
+      window.removeEventListener('scroll', updatePosition, true);
+      window.removeEventListener('resize', updatePosition);
+    };
+  }, [showStaffDropdown, formData.staff_id]);
 
   const loadData = async () => {
     try {
@@ -582,7 +605,7 @@ export function PromotionsPage() {
       >
         <div className="space-y-4">
           {/* Staff Selection */}
-          <div className="relative">
+          <div ref={staffSelectRef} className="relative">
             <label className="block text-sm font-medium text-foreground mb-1">
               Select Staff Member *
             </label>
@@ -595,7 +618,19 @@ export function PromotionsPage() {
                   setShowStaffDropdown(true);
                 }
               }}
-              onFocus={() => setShowStaffDropdown(true)}
+              onFocus={() => {
+                if (!formData.staff_id) {
+                  setShowStaffDropdown(true);
+                  if (staffSelectRef.current) {
+                    const rect = staffSelectRef.current.getBoundingClientRect();
+                    setDropdownPosition({
+                      top: rect.bottom + window.scrollY + 4,
+                      left: rect.left + window.scrollX,
+                      width: rect.width,
+                    });
+                  }
+                }
+              }}
               onBlur={() => setTimeout(() => setShowStaffDropdown(false), 200)}
               placeholder="Search staff by name or staff number..."
               className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
@@ -613,8 +648,19 @@ export function PromotionsPage() {
                 ✕
               </button>
             )}
-            {showStaffDropdown && !formData.staff_id && (
-              <div className="absolute z-10 w-full mt-1 max-h-60 overflow-auto bg-card border border-border rounded-lg shadow-lg">
+          </div>
+          {showStaffDropdown && !formData.staff_id && dropdownPosition && (
+            <Portal>
+              <div
+                style={{
+                  position: 'absolute',
+                  top: dropdownPosition.top,
+                  left: dropdownPosition.left,
+                  width: dropdownPosition.width,
+                  zIndex: 9999,
+                }}
+                className="max-h-60 overflow-auto bg-card border border-border rounded-lg shadow-xl"
+              >
                 {filteredStaff.length === 0 ? (
                   <div className="px-4 py-3 text-sm text-muted-foreground">No staff found</div>
                 ) : (
@@ -633,8 +679,8 @@ export function PromotionsPage() {
                   ))
                 )}
               </div>
-            )}
-          </div>
+            </Portal>
+          )}
 
           {formData.staff_id && (
             <>
