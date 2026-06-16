@@ -76,7 +76,7 @@ export function PromotionsPage() {
     try {
       const [promotionsData, staffResponse] = await Promise.all([
         getAllPromotions(),
-        staffAPI.getAllStaff(),
+        staffAPI.getAllStaff({ fetchAll: true }),
       ]);
       const rawStaffData = Array.isArray(staffResponse) ? staffResponse : (staffResponse.data || []);
       
