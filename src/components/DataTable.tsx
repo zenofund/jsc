@@ -14,6 +14,7 @@ interface DataTableProps<T> {
   searchable?: boolean;
   searchPlaceholder?: string;
   onEdit?: (row: T) => void;
+  searchControls?: React.ReactNode;
 }
 
 // Helper for deep recursive search
@@ -42,6 +43,7 @@ export function DataTable<T extends Record<string, any>>({
   searchable = false,
   searchPlaceholder = 'Search...',
   onEdit,
+  searchControls,
 }: DataTableProps<T>) {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
@@ -130,19 +132,24 @@ export function DataTable<T extends Record<string, any>>({
 
   return (
     <div className="space-y-4">
-      {searchable && (
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder={searchPlaceholder}
-            value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-              setCurrentPage(1);
-            }}
-            className="w-full pl-9 sm:pl-10 pr-3 sm:pr-4 py-2 text-sm border border-border rounded-lg bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-          />
+      {(searchable || searchControls) && (
+        <div className="flex flex-col md:flex-row gap-4">
+          {searchable && (
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder={searchPlaceholder}
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="w-full pl-9 sm:pl-10 pr-3 sm:pr-4 py-2 text-sm border border-border rounded-lg bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+          )}
+          {searchControls}
         </div>
       )}
 

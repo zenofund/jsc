@@ -1299,6 +1299,7 @@ function DisbursementsTab({
 }) {
   const { user } = useAuth();
   const confirm = useConfirm();
+  const [searchTerm, setSearchTerm] = useState('');
   const [showStatementModal, setShowStatementModal] = useState(false);
   const [statement, setStatement] = useState<any>(null);
   const [payoffModal, setPayoffModal] = useState<{ open: boolean; disbursement: LoanDisbursement | null }>({
@@ -1315,6 +1316,17 @@ function DisbursementsTab({
   const [editData, setEditData] = useState<DisbursementEditForm | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const canEditDisbursements = user?.role === 'admin' || user?.role === 'payroll_officer';
+  const filteredDisbursements = disbursements.filter((disb) => {
+    const query = searchTerm.trim().toLowerCase();
+    if (!query) return true;
+
+    return (
+      (disb.staff_name || '').toLowerCase().includes(query) ||
+      (disb.staff_number || '').toLowerCase().includes(query) ||
+      (disb.disbursement_number || '').toLowerCase().includes(query) ||
+      (disb.loan_type_name || '').toLowerCase().includes(query)
+    );
+  });
 
   const viewStatement = async (disbId: string) => {
     try {
@@ -1464,6 +1476,19 @@ function DisbursementsTab({
 
   return (
     <div className="space-y-6">
+      <div className="flex flex-col md:flex-row gap-4">
+        <div className="flex-1 relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="Search by staff name or disbursement number..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 rounded-lg border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+        </div>
+      </div>
+
       <div className="rounded-lg border border-border bg-card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -1479,14 +1504,14 @@ function DisbursementsTab({
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {disbursements.length === 0 ? (
+              {filteredDisbursements.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-6 py-12 text-center text-muted-foreground">
                     No disbursements found
                   </td>
                 </tr>
               ) : (
-                disbursements.map((disb) => (
+                filteredDisbursements.map((disb) => (
                   <tr key={disb.id} className="hover:bg-accent transition-colors">
                     <td className="px-6 py-4">
                       <div className="text-sm text-card-foreground">{disb.disbursement_number}</div>

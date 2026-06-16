@@ -85,10 +85,21 @@ export function StaffListPage() {
   const [isParsing, setIsParsing] = useState<boolean>(false);
   const [parsedRecords, setParsedRecords] = useState<any[]>([]);
   const [uploadSummary, setUploadSummary] = useState<{ success: number; failed: number; errors: { record: string; error: string }[] } | null>(null);
+  const [statusFilter, setStatusFilter] = useState('all');
 
   // Check if user can manage staff
   const canManageStaff = user?.role === 'admin' || user?.role === 'hr_manager';
   const canEditStaffNumber = user?.role === 'admin' || user?.role === 'hr_manager';
+  const staffStatuses: Staff['status'][] = [
+    'active',
+    'suspended',
+    'on_leave',
+    'retired',
+    'terminated',
+    'resigned',
+    'secondment',
+    'interdiction',
+  ];
 
   // Form state
   const isNumericGrade = (value: any) => /^\d+$/.test(normalizeGrade(value));
@@ -227,6 +238,10 @@ export function StaffListPage() {
   ];
 
   const isDateField = (name: string) => dateFields.includes(name);
+
+  const filteredStaff = statusFilter === 'all'
+    ? staff
+    : staff.filter((staffMember) => String(staffMember.status || '').toLowerCase() === statusFilter);
 
   const validateField = (name: string, value: any) => {
     let error = '';
@@ -1197,10 +1212,24 @@ export function StaffListPage() {
         <PageSkeleton mode="table" />
       ) : (
         <DataTable
-          data={staff}
+          data={filteredStaff}
           columns={columns}
           searchable
           searchPlaceholder="Search by name, staff number, or department..."
+          searchControls={
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="px-4 py-2 text-sm rounded-lg border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring md:w-56"
+            >
+              <option value="all">All Statuses</option>
+              {staffStatuses.map((status) => (
+                <option key={status} value={status}>
+                  {status.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())}
+                </option>
+              ))}
+            </select>
+          }
         />
       )}
 
