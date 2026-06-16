@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { DataTable } from '../components/DataTable';
 import { StatusBadge } from '../components/StatusBadge';
@@ -100,7 +100,7 @@ export function PromotionsPage() {
     try {
       const [promotionsData, staffResponse] = await Promise.all([
         getAllPromotions(),
-        staffAPI.getAllStaff({ fetchAll: true }),
+        staffAPI.getAllStaff({ fetchAll: true, limit: 1000 }),
       ]);
       const rawStaffData = Array.isArray(staffResponse) ? staffResponse : (staffResponse.data || []);
       
@@ -347,16 +347,49 @@ export function PromotionsPage() {
     return `${formatStaffLabelWithId(staffMember)} - GL ${staffMember.salary_info.grade_level}/Step ${staffMember.salary_info.step}`;
   };
 
-  const filteredStaff = staff.filter(s => {
-    if (s.status !== 'active') return false;
-    if (!staffSearch.trim()) return true;
-    const searchLower = staffSearch.toLowerCase();
-    const searchableLabel = formatStaffLabelWithId(s).toLowerCase();
-    return (
-      searchableLabel.includes(searchLower) ||
-      (s.staff_number || '').toLowerCase().includes(searchLower)
-    );
-  });
+  const getStaffSearchScore = (staffMember: Staff, searchValue: string): number => {
+    const query = searchValue.trim().toLowerCase();
+    if (!query) return 0;
+
+    const staffNumber = (staffMember.staff_number || '').toLowerCase();
+    const fullName = formatStaffName(staffMember).toLowerCase();
+    const searchableLabel = formatStaffLabelWithId(staffMember).toLowerCase();
+    const nameParts = [
+      staffMember.bio_data?.first_name,
+      staffMember.bio_data?.middle_name,
+      staffMember.bio_data?.last_name,
+    ]
+      .map((part) => String(part || '').trim().toLowerCase())
+      .filter(Boolean);
+
+    if (staffNumber === query) return 1000;
+    if (fullName === query) return 950;
+    if (nameParts.some((part) => part === query)) return 900;
+    if (staffNumber.startsWith(query)) return 850;
+    if (fullName.startsWith(query)) return 800;
+    if (nameParts.some((part) => part.startsWith(query))) return 750;
+    if (searchableLabel.includes(query)) return 500;
+
+    return 0;
+  };
+
+  const filteredStaff = useMemo(() => {
+    const query = staffSearch.trim();
+
+    return staff
+      .filter((s) => s.status === 'active')
+      .map((s, index) => ({
+        staffMember: s,
+        index,
+        score: getStaffSearchScore(s, query),
+      }))
+      .filter(({ score }) => !query || score > 0)
+      .sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        return a.index - b.index;
+      })
+      .map(({ staffMember }) => staffMember);
+  }, [staff, staffSearch]);
 
   const filteredPromotions = promotions.filter(p => 
     filter === 'all' ? true : p.status === filter

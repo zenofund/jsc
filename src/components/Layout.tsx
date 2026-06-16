@@ -5,7 +5,7 @@ import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { settingsAPI } from '../lib/api-client';
 import { NotificationDropdown } from './NotificationDropdown';
 import { 
-  Menu, X, User, LogOut, Lock,
+  X, User, LogOut, Lock,
   LayoutDashboard, Users, DollarSign, 
   FileText, Settings, TrendingUp, CheckSquare,
   FolderOpen, BarChart3, Moon, Sun, Award, UserCircle, Wallet,
@@ -33,6 +33,16 @@ interface NavigationItem {
   icon: any;
   view: string;
   roles: string[];
+}
+
+function UniqueMenuIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>
+      <path d="M3.5 5.5H16.5" />
+      <path d="M3.5 10H16.5" />
+      <path d="M3.5 14.5H10.5" />
+    </svg>
+  );
 }
 
 type BeforeInstallPromptEvent = Event & {
@@ -269,7 +279,7 @@ export function Layout({ children }: LayoutProps) {
               onClick={() => setSidebarOpen(!sidebarOpen)}
               className="p-2 hover:bg-accent rounded-lg flex-shrink-0"
             >
-              {sidebarOpen ? <X className="w-5 h-5 text-muted-foreground" /> : <Menu className="w-5 h-5 text-muted-foreground" />}
+              {sidebarOpen ? <X className="w-5 h-5 text-muted-foreground" /> : <UniqueMenuIcon className="w-5 h-5 text-muted-foreground" />}
             </button>
             <div className="min-w-0 flex-1">
               <h1 className="font-semibold text-foreground text-sm sm:text-base truncate">
