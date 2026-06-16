@@ -312,12 +312,14 @@ export class LoansService {
 
     // Generate application number
     const year = new Date().getFullYear();
-    const count = await this.databaseService.queryOne(
-      `SELECT COUNT(*) as count FROM loan_applications 
-       WHERE application_number LIKE $1`,
+    const result = await this.databaseService.queryOne(
+      `SELECT application_number FROM loan_applications 
+       WHERE application_number LIKE $1
+       ORDER BY application_number DESC LIMIT 1`,
       [`LN/${year}/%`],
     );
-    const appNumber = `LN/${year}/${String(parseInt(count.count) + 1).padStart(5, '0')}`;
+    const nextNum = result?.application_number ? parseInt(result.application_number.split('/')[2], 10) + 1 : 1;
+    const appNumber = `LN/${year}/${String(nextNum).padStart(5, '0')}`;
 
     // Create application
     const application = await this.databaseService.queryOne(
@@ -817,12 +819,14 @@ export class LoansService {
 
     // Generate disbursement number
     const year = new Date().getFullYear();
-    const count = await this.databaseService.queryOne(
-      `SELECT COUNT(*) as count FROM loan_disbursements 
-       WHERE disbursement_number LIKE $1`,
+    const result = await this.databaseService.queryOne(
+      `SELECT disbursement_number FROM loan_disbursements 
+       WHERE disbursement_number LIKE $1
+       ORDER BY disbursement_number DESC LIMIT 1`,
       [`DISB/${year}/%`],
     );
-    const disbNumber = `DISB/${year}/${String(parseInt(count.count) + 1).padStart(5, '0')}`;
+    const nextNum = result?.disbursement_number ? parseInt(result.disbursement_number.split('/')[2], 10) + 1 : 1;
+    const disbNumber = `DISB/${year}/${String(nextNum).padStart(5, '0')}`;
     const approvedAmount = Number(application.amount_approved || application.amount_requested || dto.amount);
     const totalRepayment = Number(application.total_repayment || approvedAmount);
     const monthlyDeduction = Number(application.monthly_deduction || Math.round(totalRepayment / application.tenure_months));
@@ -1483,17 +1487,19 @@ export class LoansService {
 
         // Generate numbers consistent with current format
         const year = new Date().getFullYear();
-        const appCount = await this.databaseService.queryOne(
-          `SELECT COUNT(*) as count FROM loan_applications WHERE application_number LIKE $1`,
+        const appResult = await this.databaseService.queryOne(
+          `SELECT application_number FROM loan_applications WHERE application_number LIKE $1 ORDER BY application_number DESC LIMIT 1`,
           [`LN/${year}/%`],
         );
-        const applicationNumber = `LN/${year}/${String(parseInt(appCount.count, 10) + 1).padStart(5, '0')}`;
+        const nextAppNum = appResult?.application_number ? parseInt(appResult.application_number.split('/')[2], 10) + 1 : 1;
+        const applicationNumber = `LN/${year}/${String(nextAppNum).padStart(5, '0')}`;
 
-        const disbCount = await this.databaseService.queryOne(
-          `SELECT COUNT(*) as count FROM loan_disbursements WHERE disbursement_number LIKE $1`,
+        const disbResult = await this.databaseService.queryOne(
+          `SELECT disbursement_number FROM loan_disbursements WHERE disbursement_number LIKE $1 ORDER BY disbursement_number DESC LIMIT 1`,
           [`DISB/${year}/%`],
         );
-        const disbursementNumber = `DISB/${year}/${String(parseInt(disbCount.count, 10) + 1).padStart(5, '0')}`;
+        const nextDisbNum = disbResult?.disbursement_number ? parseInt(disbResult.disbursement_number.split('/')[2], 10) + 1 : 1;
+        const disbursementNumber = `DISB/${year}/${String(nextDisbNum).padStart(5, '0')}`;
 
         if (!dryRun) {
           const app = await this.databaseService.queryOne(

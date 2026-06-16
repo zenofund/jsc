@@ -234,11 +234,11 @@ export class StaffService implements OnModuleInit {
 
   private async getNextStaffNumberValue(): Promise<string> {
     const year = new Date().getFullYear();
-    const count = await this.databaseService.queryOne<{ count: number }>(
-      `SELECT COUNT(*) as count FROM staff WHERE staff_number LIKE $1`,
+    const result = await this.databaseService.queryOne(
+      `SELECT staff_number FROM staff WHERE staff_number LIKE $1 ORDER BY staff_number DESC LIMIT 1`,
       [`JSC/${year}/%`],
     );
-    const sequence = (parseInt((count?.count as any) || '0', 10) + 1);
+    const sequence = result?.staff_number ? parseInt(result.staff_number.split('/')[2], 10) + 1 : 1;
     return `JSC/${year}/${sequence.toString().padStart(4, '0')}`;
   }
 

@@ -237,10 +237,12 @@ export class LeaveService {
     }
 
     // Generate request number
-    const count = await this.databaseService.queryOne<{ count: number }>(
-      'SELECT COUNT(*) as count FROM leave_requests',
+    const result = await this.databaseService.queryOne(
+      `SELECT request_number FROM leave_requests WHERE request_number LIKE $1 ORDER BY request_number DESC LIMIT 1`,
+      [`LEAVE/${currentYear}/%`]
     );
-    const requestNumber = `LEAVE/${currentYear}/${String(parseInt(count.count.toString()) + 1).padStart(5, '0')}`;
+    const sequence = result?.request_number ? parseInt(result.request_number.split('/')[2], 10) + 1 : 1;
+    const requestNumber = `LEAVE/${currentYear}/${String(sequence).padStart(5, '0')}`;
 
     // Create leave request
     const request = await this.databaseService.queryOne(
