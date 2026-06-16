@@ -248,6 +248,44 @@ export class RecordRepaymentDto {
   payrollBatchId?: string;
 }
 
+export class UpdateDisbursementDto {
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  amountDisbursed?: number;
+
+  @IsNumber()
+  @Min(1)
+  @IsOptional()
+  tenureMonths?: number;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  monthlyDeduction?: number;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  balanceOutstanding?: number;
+
+  @IsString()
+  @IsOptional()
+  startMonth?: string;
+
+  @IsString()
+  @IsOptional()
+  endMonth?: string;
+
+  @IsString()
+  @IsOptional()
+  status?: string;
+
+  @IsString()
+  @IsOptional()
+  remarks?: string;
+}
+
 export class UpdateLoanApplicationDto {
   @IsNumber()
   @Min(0)

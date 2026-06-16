@@ -10,6 +10,7 @@ import {
   UpdateLoanApplicationDto,
   ApproveLoanDto,
   DisburseLoanDto,
+  UpdateDisbursementDto,
   RecordRepaymentDto,
   CreateGuarantorDto,
   UpdateGuarantorDto,
@@ -197,6 +198,17 @@ export class LoansController {
   @ApiOperation({ summary: 'Get disbursement by ID' })
   findOneDisbursement(@Param('id') id: string) {
     return this.loansService.findOneDisbursement(id);
+  }
+
+  @Put('disbursements/:id')
+  @Roles('admin', 'payroll_officer')
+  @ApiOperation({ summary: 'Update a disbursement (admin only)' })
+  updateDisbursement(
+    @Param('id') id: string,
+    @Body() dto: UpdateDisbursementDto,
+    @Request() req,
+  ) {
+    return this.loansService.updateDisbursement(id, dto, req.user.userId);
   }
 
   @Get('disbursements/:id/repayments')

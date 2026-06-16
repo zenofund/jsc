@@ -3,6 +3,8 @@ import { DatabaseService } from '@common/database/database.service';
 import { EmailService } from '@modules/email/email.service';
 import { NotificationsService } from '@modules/notifications/notifications.service';
 import { NotificationType, NotificationCategory, NotificationPriority } from '@modules/notifications/dto/notification.dto';
+import { AuditService } from '@modules/audit/audit.service';
+import { AuditAction } from '@modules/audit/dto/audit.dto';
 import {
   CreateLoanTypeDto,
   UpdateLoanTypeDto,
@@ -10,6 +12,7 @@ import {
   UpdateLoanApplicationDto,
   ApproveLoanDto,
   DisburseLoanDto,
+  UpdateDisbursementDto,
   RecordRepaymentDto,
   CreateGuarantorDto,
   UpdateGuarantorDto,
@@ -29,6 +32,7 @@ export class LoansService {
     private databaseService: DatabaseService,
     private emailService: EmailService,
     private notificationsService: NotificationsService,
+    private auditService: AuditService,
   ) {}
 
   // ==================== LOAN TYPES ====================
@@ -964,6 +968,77 @@ export class LoansService {
     }
 
     return disbursement;
+  }
+
+  async updateDisbursement(id: string, dto: UpdateDisbursementDto, userId: string) {
+    const disbursement = await this.findOneDisbursement(id);
+
+    const updates = [];
+    const values = [];
+    let paramIndex = 1;
+
+    if (dto.amountDisbursed !== undefined) {
+      updates.push(`amount_disbursed = $${paramIndex++}`);
+      values.push(dto.amountDisbursed);
+    }
+    if (dto.tenureMonths !== undefined) {
+      updates.push(`tenure_months = $${paramIndex++}`);
+      values.push(dto.tenureMonths);
+    }
+    if (dto.monthlyDeduction !== undefined) {
+      updates.push(`monthly_deduction = $${paramIndex++}`);
+      values.push(dto.monthlyDeduction);
+    }
+    if (dto.balanceOutstanding !== undefined) {
+      updates.push(`balance_outstanding = $${paramIndex++}`);
+      values.push(dto.balanceOutstanding);
+    }
+    if (dto.startMonth) {
+      updates.push(`start_month = $${paramIndex++}`);
+      values.push(dto.startMonth);
+    }
+    if (dto.endMonth) {
+      updates.push(`end_month = $${paramIndex++}`);
+      values.push(dto.endMonth);
+    }
+    if (dto.status) {
+      updates.push(`status = $${paramIndex++}`);
+      values.push(dto.status);
+    }
+    if (dto.remarks) {
+      updates.push(`remarks = $${paramIndex++}`);
+      values.push(dto.remarks);
+    }
+
+    if (updates.length === 0) {
+      return disbursement;
+    }
+
+    updates.push(`updated_at = NOW()`);
+    values.push(id);
+
+    const query = `
+      UPDATE loan_disbursements 
+      SET ${updates.join(', ')} 
+      WHERE id = $${paramIndex}
+      RETURNING *
+    `;
+
+    const updated = await this.databaseService.queryOne(query, values);
+
+    // Log to audit trail
+    await this.auditService.log({
+      userId,
+      action: AuditAction.UPDATE,
+      entity: 'loan_disbursements',
+      entityId: id,
+      description: `Updated loan disbursement ${disbursement.disbursement_number}`,
+      oldValues: disbursement,
+      newValues: updated,
+    });
+
+    this.logger.log(`Disbursement ${id} updated by user ${userId}`);
+    return updated;
   }
 
   async getDisbursementRepayments(id: string) {
