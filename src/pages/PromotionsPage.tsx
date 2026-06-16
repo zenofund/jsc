@@ -27,6 +27,8 @@ export function PromotionsPage() {
   const [processingPromotionId, setProcessingPromotionId] = useState<string | null>(null);
   const [approvalComment, setApprovalComment] = useState('');
   const [allowedGrades, setAllowedGrades] = useState<number[]>([3,4,5,6,7,8,9,10,12,13,14,15,16,17]);
+  const [staffSearch, setStaffSearch] = useState('');
+  const [showStaffDropdown, setShowStaffDropdown] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -315,6 +317,21 @@ export function PromotionsPage() {
     return staffMember?.staff_number || 'N/A';
   };
 
+  const getSelectedStaffLabel = (staffId: string): string => {
+    const staffMember = staff.find(s => s.id === staffId);
+    if (!staffMember) return '';
+    return `${staffMember.bio_data.first_name} ${staffMember.bio_data.last_name} (${staffMember.staff_number}) - GL ${staffMember.salary_info.grade_level}/Step ${staffMember.salary_info.step}`;
+  };
+
+  const filteredStaff = staff.filter(s => {
+    if (!staffSearch.trim()) return true;
+    const searchLower = staffSearch.toLowerCase();
+    return (
+      `${s.bio_data.first_name} ${s.bio_data.last_name}`.toLowerCase().includes(searchLower) ||
+      s.staff_number.toLowerCase().includes(searchLower)
+    );
+  });
+
   const filteredPromotions = promotions.filter(p => 
     filter === 'all' ? true : p.status === filter
   );
@@ -564,23 +581,58 @@ export function PromotionsPage() {
       >
         <div className="space-y-4">
           {/* Staff Selection */}
-          <div>
+          <div className="relative">
             <label className="block text-sm font-medium text-foreground mb-1">
               Select Staff Member *
             </label>
-            <select
-              value={formData.staff_id}
-              onChange={(e) => handleStaffSelect(e.target.value)}
+            <input
+              type="text"
+              value={formData.staff_id ? getSelectedStaffLabel(formData.staff_id) : staffSearch}
+              onChange={(e) => {
+                if (!formData.staff_id) {
+                  setStaffSearch(e.target.value);
+                  setShowStaffDropdown(true);
+                }
+              }}
+              onFocus={() => setShowStaffDropdown(true)}
+              onBlur={() => setTimeout(() => setShowStaffDropdown(false), 200)}
+              placeholder="Search staff by name or staff number..."
               className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
               required
-            >
-              <option value="">-- Select Staff --</option>
-              {staff.filter(s => s.status === 'active').map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.bio_data.first_name} {s.bio_data.last_name} ({s.staff_number}) - GL {s.salary_info.grade_level}/Step {s.salary_info.step}
-                </option>
-              ))}
-            </select>
+            />
+            {formData.staff_id && (
+              <button
+                type="button"
+                onClick={() => {
+                  setFormData({ ...formData, staff_id: '', old_grade_level: 0, old_step: 0 });
+                  setStaffSearch('');
+                }}
+                className="absolute right-2 top-9 text-muted-foreground hover:text-foreground"
+              >
+                ✕
+              </button>
+            )}
+            {showStaffDropdown && !formData.staff_id && (
+              <div className="absolute z-10 w-full mt-1 max-h-60 overflow-auto bg-card border border-border rounded-lg shadow-lg">
+                {filteredStaff.length === 0 ? (
+                  <div className="px-4 py-3 text-sm text-muted-foreground">No staff found</div>
+                ) : (
+                  filteredStaff.map((s) => (
+                    <div
+                      key={s.id}
+                      onClick={() => {
+                        handleStaffSelect(s.id);
+                        setStaffSearch('');
+                        setShowStaffDropdown(false);
+                      }}
+                      className="px-4 py-2 cursor-pointer hover:bg-accent text-sm"
+                    >
+                      {s.bio_data.first_name} {s.bio_data.last_name} ({s.staff_number}) - GL {s.salary_info.grade_level}/Step {s.salary_info.step}
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
           </div>
 
           {formData.staff_id && (
