@@ -324,6 +324,7 @@ export function PromotionsPage() {
   };
 
   const filteredStaff = staff.filter(s => {
+    if (s.status !== 'active') return false;
     if (!staffSearch.trim()) return true;
     const searchLower = staffSearch.toLowerCase();
     return (
