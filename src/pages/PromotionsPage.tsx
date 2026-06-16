@@ -8,6 +8,7 @@ import { useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { promotionAPI, staffAPI, settingsAPI } from '../lib/api-client';
+import { formatStaffLabelWithId, formatStaffName } from '../lib/name-utils';
 import { Promotion, Staff } from '../types/entities';
 import { PageSkeleton } from '../components/PageLoader';
 import { TrendingUp, Plus, CheckCircle, XCircle, Eye, AlertCircle, Calendar, Loader2 } from 'lucide-react';
@@ -332,7 +333,7 @@ export function PromotionsPage() {
   const getStaffName = (staffId: string): string => {
     const staffMember = staff.find(s => s.id === staffId);
     if (!staffMember) return 'Unknown';
-    return `${staffMember.bio_data.first_name} ${staffMember.bio_data.last_name}`;
+    return formatStaffName(staffMember);
   };
 
   const getStaffNumber = (staffId: string): string => {
@@ -343,16 +344,17 @@ export function PromotionsPage() {
   const getSelectedStaffLabel = (staffId: string): string => {
     const staffMember = staff.find(s => s.id === staffId);
     if (!staffMember) return '';
-    return `${staffMember.bio_data.first_name} ${staffMember.bio_data.last_name} (${staffMember.staff_number}) - GL ${staffMember.salary_info.grade_level}/Step ${staffMember.salary_info.step}`;
+    return `${formatStaffLabelWithId(staffMember)} - GL ${staffMember.salary_info.grade_level}/Step ${staffMember.salary_info.step}`;
   };
 
   const filteredStaff = staff.filter(s => {
     if (s.status !== 'active') return false;
     if (!staffSearch.trim()) return true;
     const searchLower = staffSearch.toLowerCase();
+    const searchableLabel = formatStaffLabelWithId(s).toLowerCase();
     return (
-      `${s.bio_data.first_name} ${s.bio_data.last_name}`.toLowerCase().includes(searchLower) ||
-      s.staff_number.toLowerCase().includes(searchLower)
+      searchableLabel.includes(searchLower) ||
+      (s.staff_number || '').toLowerCase().includes(searchLower)
     );
   });
 
@@ -674,7 +676,7 @@ export function PromotionsPage() {
                       }}
                       className="px-4 py-2 cursor-pointer hover:bg-accent text-sm"
                     >
-                      {s.bio_data.first_name} {s.bio_data.last_name} ({s.staff_number}) - GL {s.salary_info.grade_level}/Step {s.salary_info.step}
+                      {formatStaffLabelWithId(s)} - GL {s.salary_info.grade_level}/Step {s.salary_info.step}
                     </div>
                   ))
                 )}
