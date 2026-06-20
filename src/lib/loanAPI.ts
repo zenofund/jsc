@@ -140,6 +140,19 @@ export const loanApplicationAPI = {
     return makeApiRequest('/loans/applications', { method: 'POST', body: JSON.stringify(payload) });
   },
 
+  async update(id: string, data: {
+    approvedAmount?: number;
+    requestedAmount?: number;
+    tenureMonths?: number;
+    purpose?: string;
+    status?: string;
+  }) {
+    return makeApiRequest(`/loans/applications/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
   // Submit loan application for approval
   async submit(id: string, guarantors: { staff_id: string }[]) {
     const application = await makeApiRequest(`/loans/applications/${id}`, { method: 'GET' });
@@ -323,6 +336,7 @@ export const disbursementAPI = {
 
   // Update an existing disbursement
   async update(id: string, data: {
+    principalAmount?: number;
     amountDisbursed?: number;
     tenureMonths?: number;
     monthlyDeduction?: number;

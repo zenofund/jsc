@@ -252,6 +252,11 @@ export class UpdateDisbursementDto {
   @IsNumber()
   @Min(0)
   @IsOptional()
+  principalAmount?: number;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
   amountDisbursed?: number;
 
   @IsNumber()
@@ -287,6 +292,11 @@ export class UpdateDisbursementDto {
 }
 
 export class UpdateLoanApplicationDto {
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  approvedAmount?: number;
+
   @IsNumber()
   @Min(0)
   @IsOptional()

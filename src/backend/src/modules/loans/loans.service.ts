@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
 import { DatabaseService } from '@common/database/database.service';
 import { EmailService } from '@modules/email/email.service';
 import { NotificationsService } from '@modules/notifications/notifications.service';
@@ -34,6 +34,54 @@ export class LoansService {
     private notificationsService: NotificationsService,
     private auditService: AuditService,
   ) {}
+
+  private calculateLoanTerms(
+    principalAmount: number,
+    tenureMonths: number,
+    loanType: { interest_rate: number; interest_calculation_method?: string },
+  ) {
+    const principal = Number(principalAmount || 0);
+    const tenure = Number(tenureMonths || 0);
+    const interestAmount = (principal * Number(loanType.interest_rate || 0)) / 100;
+    const totalRepayment =
+      loanType.interest_calculation_method === 'upfront'
+        ? principal
+        : principal + interestAmount;
+    const amountDisbursed =
+      loanType.interest_calculation_method === 'upfront'
+        ? principal - interestAmount
+        : principal;
+
+    return {
+      principalAmount: principal,
+      interestAmount,
+      totalRepayment,
+      amountDisbursed: Math.max(amountDisbursed, 0),
+      monthlyDeduction: tenure > 0 ? Math.round(totalRepayment / tenure) : 0,
+    };
+  }
+
+  private calculateEndMonth(startMonth: string | null | undefined, tenureMonths: number) {
+    if (!startMonth || !/^\d{4}-\d{2}$/.test(startMonth) || !Number.isFinite(tenureMonths) || tenureMonths < 1) {
+      return null;
+    }
+
+    const [year, month] = startMonth.split('-').map(Number);
+    const date = new Date(Date.UTC(year, month - 1, 1));
+    date.setUTCMonth(date.getUTCMonth() + tenureMonths - 1);
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+  }
+
+  private async getDisbursementTotalRepaid(disbursementId: string) {
+    const totals = await this.databaseService.queryOne(
+      `SELECT COALESCE(SUM(amount), 0) as total_repaid
+       FROM loan_repayments
+       WHERE disbursement_id = $1`,
+      [disbursementId],
+    );
+
+    return Number(totals?.total_repaid || 0);
+  }
 
   // ==================== LOAN TYPES ====================
 
@@ -448,30 +496,70 @@ export class LoansService {
     return { ...application, guarantors };
   }
 
-  async updateLoanApplication(id: string, dto: UpdateLoanApplicationDto, userId: string) {
+  async updateLoanApplication(id: string, dto: UpdateLoanApplicationDto, userId: string, userRole?: string) {
     const application = await this.findOneLoanApplication(id);
+    const isDisbursedApplication = application.status === 'disbursed';
 
-    if (application.status !== 'draft') {
-      throw new BadRequestException('Can only update draft applications');
+    if (!['draft', 'disbursed'].includes(application.status)) {
+      throw new BadRequestException('Can only update draft or disbursed applications');
     }
 
+    if (isDisbursedApplication && !['admin', 'payroll_officer'].includes(String(userRole || ''))) {
+      throw new ForbiddenException('Only admin and payroll officers can edit disbursed applications');
+    }
+
+    const loanType = await this.findOneLoanType(application.loan_type_id);
+    const principalAmount = Number(
+      dto.approvedAmount ??
+        dto.requestedAmount ??
+        application.amount_approved ??
+        application.amount_requested ??
+        0,
+    );
+    const tenureMonths = Number(dto.tenureMonths ?? application.tenure_months ?? 0);
+
+    if (principalAmount < 0) {
+      throw new BadRequestException('Loan amount cannot be negative');
+    }
+
+    if (tenureMonths < 1) {
+      throw new BadRequestException('Tenure must be at least 1 month');
+    }
+
+    if (loanType.max_amount && principalAmount > Number(loanType.max_amount)) {
+      throw new BadRequestException(`Requested amount exceeds maximum of ₦${Number(loanType.max_amount).toLocaleString()}`);
+    }
+
+    if (loanType.max_tenure_months && tenureMonths > Number(loanType.max_tenure_months)) {
+      throw new BadRequestException(`Tenure exceeds maximum of ${loanType.max_tenure_months} months`);
+    }
+
+    const calculations = this.calculateLoanTerms(principalAmount, tenureMonths, loanType);
+    const previousState = { ...application };
     const updates = [];
     const values = [];
     let paramIndex = 1;
 
-    if (dto.requestedAmount) {
-      updates.push(`amount_requested = $${paramIndex++}`);
-      values.push(dto.requestedAmount);
+    updates.push(`amount_requested = $${paramIndex++}`);
+    values.push(principalAmount);
+    updates.push(`tenure_months = $${paramIndex++}`);
+    values.push(tenureMonths);
+    updates.push(`monthly_deduction = $${paramIndex++}`);
+    values.push(calculations.monthlyDeduction);
+    updates.push(`total_repayment = $${paramIndex++}`);
+    values.push(calculations.totalRepayment);
+    updates.push(`interest_amount = $${paramIndex++}`);
+    values.push(calculations.interestAmount);
+
+    if (isDisbursedApplication || dto.approvedAmount !== undefined || application.amount_approved !== null) {
+      updates.push(`amount_approved = $${paramIndex++}`);
+      values.push(principalAmount);
     }
-    if (dto.tenureMonths) {
-      updates.push(`tenure_months = $${paramIndex++}`);
-      values.push(dto.tenureMonths);
-    }
-    if (dto.purpose) {
+    if (dto.purpose !== undefined) {
       updates.push(`purpose = $${paramIndex++}`);
       values.push(dto.purpose);
     }
-    if (dto.status) {
+    if (!isDisbursedApplication && dto.status) {
       updates.push(`status = $${paramIndex++}`);
       values.push(dto.status);
     }
@@ -479,14 +567,85 @@ export class LoansService {
     updates.push(`updated_at = NOW()`);
     values.push(id);
 
-    const query = `
-      UPDATE loan_applications 
-      SET ${updates.join(', ')} 
-      WHERE id = $${paramIndex}
-      RETURNING *
-    `;
+    const updatedApplication = await this.databaseService.queryOne(
+      `UPDATE loan_applications
+       SET ${updates.join(', ')}
+       WHERE id = $${paramIndex}
+       RETURNING *`,
+      values,
+    );
 
-    return this.databaseService.queryOne(query, values);
+    let syncedDisbursement = null;
+    if (isDisbursedApplication) {
+      const linkedDisbursement = await this.databaseService.queryOne(
+        `SELECT id, start_month, status
+         FROM loan_disbursements
+         WHERE loan_application_id = $1
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [id],
+      );
+
+      if (linkedDisbursement) {
+        const totalRepaid = await this.getDisbursementTotalRepaid(linkedDisbursement.id);
+        const recalculatedBalance = Math.max(calculations.totalRepayment - totalRepaid, 0);
+        const syncedStatus =
+          linkedDisbursement.status === 'written_off'
+            ? 'written_off'
+            : recalculatedBalance <= 0
+              ? 'completed'
+              : linkedDisbursement.status === 'completed'
+                ? 'active'
+                : linkedDisbursement.status;
+
+        syncedDisbursement = await this.databaseService.queryOne(
+          `UPDATE loan_disbursements
+           SET amount_disbursed = $1,
+               tenure_months = $2,
+               monthly_deduction = $3,
+               balance_outstanding = $4,
+               end_month = $5,
+               status = $6,
+               updated_at = NOW()
+           WHERE id = $7
+           RETURNING *`,
+          [
+            calculations.amountDisbursed,
+            tenureMonths,
+            calculations.monthlyDeduction,
+            recalculatedBalance,
+            this.calculateEndMonth(linkedDisbursement.start_month, tenureMonths),
+            syncedStatus,
+            linkedDisbursement.id,
+          ],
+        );
+
+        await this.auditService.log({
+          userId,
+          action: AuditAction.UPDATE,
+          entity: 'loan_disbursements',
+          entityId: linkedDisbursement.id,
+          description: `Synchronized disbursement for edited loan application ${application.application_number}`,
+          oldValues: linkedDisbursement,
+          newValues: syncedDisbursement,
+        });
+      }
+    }
+
+    await this.auditService.log({
+      userId,
+      action: AuditAction.UPDATE,
+      entity: 'loan_applications',
+      entityId: id,
+      description: `Updated loan application ${application.application_number}`,
+      oldValues: previousState,
+      newValues: {
+        ...updatedApplication,
+        synced_disbursement: syncedDisbursement,
+      },
+    });
+
+    return this.findOneLoanApplication(id);
   }
 
   async submitLoanApplication(id: string, userId: string) {
@@ -890,7 +1049,7 @@ export class LoansService {
     status?: string;
   }) {
     let query = `
-      SELECT ld.*, la.application_number, la.loan_type_name, la.staff_name,
+      SELECT ld.*, la.application_number, la.loan_type_id, la.loan_type_name, la.staff_name,
         lt.cooperative_id, c.name as cooperative_name,
         COALESCE(la.amount_approved, la.amount_requested, ld.amount_disbursed) as principal_amount,
         COALESCE(la.interest_amount, 0) as interest_amount,
@@ -937,7 +1096,7 @@ export class LoansService {
 
   async findOneDisbursement(id: string) {
     const disbursement = await this.databaseService.queryOne(
-      `SELECT ld.*, la.application_number, la.loan_type_name, la.staff_name,
+      `SELECT ld.*, la.application_number, la.loan_type_id, la.loan_type_name, la.staff_name,
         lt.cooperative_id, c.name as cooperative_name,
         COALESCE(la.amount_approved, la.amount_requested, ld.amount_disbursed) as principal_amount,
         COALESCE(la.interest_amount, 0) as interest_amount,
@@ -972,59 +1131,84 @@ export class LoansService {
 
   async updateDisbursement(id: string, dto: UpdateDisbursementDto, userId: string) {
     const disbursement = await this.findOneDisbursement(id);
+    const loanType = await this.findOneLoanType(disbursement.loan_type_id);
+    const totalRepaid = await this.getDisbursementTotalRepaid(id);
+    const principalAmount =
+      dto.principalAmount !== undefined
+        ? Number(dto.principalAmount)
+        : dto.amountDisbursed !== undefined
+          ? loanType.interest_calculation_method === 'upfront'
+            ? Number(dto.amountDisbursed) / Math.max(1 - Number(loanType.interest_rate || 0) / 100, 0.0001)
+            : Number(dto.amountDisbursed)
+          : Number(disbursement.principal_amount ?? disbursement.amount_disbursed ?? 0);
+    const tenureMonths = Number(dto.tenureMonths ?? disbursement.tenure_months ?? 0);
 
-    const updates = [];
-    const values = [];
-    let paramIndex = 1;
-
-    if (dto.amountDisbursed !== undefined) {
-      updates.push(`amount_disbursed = $${paramIndex++}`);
-      values.push(dto.amountDisbursed);
-    }
-    if (dto.tenureMonths !== undefined) {
-      updates.push(`tenure_months = $${paramIndex++}`);
-      values.push(dto.tenureMonths);
-    }
-    if (dto.monthlyDeduction !== undefined) {
-      updates.push(`monthly_deduction = $${paramIndex++}`);
-      values.push(dto.monthlyDeduction);
-    }
-    if (dto.balanceOutstanding !== undefined) {
-      updates.push(`balance_outstanding = $${paramIndex++}`);
-      values.push(dto.balanceOutstanding);
-    }
-    if (dto.startMonth) {
-      updates.push(`start_month = $${paramIndex++}`);
-      values.push(dto.startMonth);
-    }
-    if (dto.endMonth) {
-      updates.push(`end_month = $${paramIndex++}`);
-      values.push(dto.endMonth);
-    }
-    if (dto.status) {
-      updates.push(`status = $${paramIndex++}`);
-      values.push(dto.status);
-    }
-    if (dto.remarks) {
-      updates.push(`remarks = $${paramIndex++}`);
-      values.push(dto.remarks);
+    if (principalAmount < 0) {
+      throw new BadRequestException('Loan amount cannot be negative');
     }
 
-    if (updates.length === 0) {
-      return disbursement;
+    if (tenureMonths < 1) {
+      throw new BadRequestException('Tenure must be at least 1 month');
     }
 
-    updates.push(`updated_at = NOW()`);
-    values.push(id);
+    const calculations = this.calculateLoanTerms(principalAmount, tenureMonths, loanType);
+    const startMonth = dto.startMonth || disbursement.start_deduction_month || disbursement.start_month;
+    const recalculatedBalance = Math.max(calculations.totalRepayment - totalRepaid, 0);
+    const status =
+      dto.status ||
+      (disbursement.status === 'written_off'
+        ? 'written_off'
+        : recalculatedBalance <= 0
+          ? 'completed'
+          : disbursement.status === 'completed'
+            ? 'active'
+            : disbursement.status);
 
-    const query = `
-      UPDATE loan_disbursements 
-      SET ${updates.join(', ')} 
-      WHERE id = $${paramIndex}
-      RETURNING *
-    `;
+    const updated = await this.databaseService.queryOne(
+      `UPDATE loan_disbursements
+       SET amount_disbursed = $1,
+           tenure_months = $2,
+           monthly_deduction = $3,
+           balance_outstanding = $4,
+           start_month = $5,
+           end_month = $6,
+           status = $7,
+           remarks = $8,
+           updated_at = NOW()
+       WHERE id = $9
+       RETURNING *`,
+      [
+        calculations.amountDisbursed,
+        tenureMonths,
+        calculations.monthlyDeduction,
+        recalculatedBalance,
+        startMonth || null,
+        dto.endMonth || this.calculateEndMonth(startMonth, tenureMonths),
+        status,
+        dto.remarks !== undefined ? dto.remarks : disbursement.remarks || null,
+        id,
+      ],
+    );
 
-    const updated = await this.databaseService.queryOne(query, values);
+    await this.databaseService.query(
+      `UPDATE loan_applications
+       SET amount_requested = $1,
+           amount_approved = $1,
+           tenure_months = $2,
+           monthly_deduction = $3,
+           total_repayment = $4,
+           interest_amount = $5,
+           updated_at = NOW()
+       WHERE id = $6`,
+      [
+        principalAmount,
+        tenureMonths,
+        calculations.monthlyDeduction,
+        calculations.totalRepayment,
+        calculations.interestAmount,
+        disbursement.loan_application_id,
+      ],
+    );
 
     // Log to audit trail
     await this.auditService.log({

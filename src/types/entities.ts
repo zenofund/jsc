@@ -744,6 +744,7 @@ export interface LoanDisbursement {
   id: string;
   disbursement_number: string;
   loan_application_id: string;
+  loan_type_id?: string;
   staff_id: string;
   staff_number: string;
   staff_name: string;

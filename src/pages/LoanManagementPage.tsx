@@ -25,16 +25,63 @@ import {
 
 type TabType = 'overview' | 'applications' | 'loan-types' | 'disbursements' | 'reports';
 
-type DisbursementEditForm = {
-  amountDisbursed: number;
+type ApplicationEditForm = {
+  principalAmount: number;
   tenureMonths: number;
-  monthlyDeduction: number;
-  balanceOutstanding: number;
+  purpose: string;
+};
+
+type DisbursementEditForm = {
+  principalAmount: number;
+  tenureMonths: number;
   startMonth: string;
-  endMonth: string;
   status: LoanDisbursement['status'];
   remarks: string;
 };
+
+type LoanEditPreview = {
+  interestAmount: number;
+  totalRepayment: number;
+  amountDisbursed: number;
+  monthlyDeduction: number;
+  balanceOutstanding: number;
+  endMonth: string;
+};
+
+function addMonthsToYearMonth(startMonth: string, monthsToAdd: number) {
+  if (!/^\d{4}-\d{2}$/.test(startMonth)) return '';
+  const [year, month] = startMonth.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, 1));
+  date.setUTCMonth(date.getUTCMonth() + monthsToAdd);
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function calculateLoanEditPreview(
+  loanType: LoanType | null | undefined,
+  principalAmount: number,
+  tenureMonths: number,
+  totalRepaid = 0,
+  startMonth = '',
+): LoanEditPreview {
+  const principal = Number(principalAmount || 0);
+  const tenure = Number(tenureMonths || 0);
+  const rate = Number(loanType?.interest_rate || 0);
+  const interestAmount = (principal * rate) / 100;
+  const isUpfront = loanType?.interest_calculation_method === 'upfront';
+  const totalRepayment = isUpfront ? principal : principal + interestAmount;
+  const amountDisbursed = Math.max(isUpfront ? principal - interestAmount : principal, 0);
+  const monthlyDeduction = tenure > 0 ? Math.round(totalRepayment / tenure) : 0;
+  const balanceOutstanding = Math.max(totalRepayment - Number(totalRepaid || 0), 0);
+
+  return {
+    interestAmount,
+    totalRepayment,
+    amountDisbursed,
+    monthlyDeduction,
+    balanceOutstanding,
+    endMonth: startMonth && tenure > 0 ? addMonthsToYearMonth(startMonth, tenure - 1) : '',
+  };
+}
 
 export function LoanManagementPage() {
   const { user } = useAuth();
@@ -129,13 +176,24 @@ export function LoanManagementPage() {
       {/* Tab Content */}
       {activeTab === 'overview' && <OverviewTab stats={stats} />}
       {activeTab === 'applications' && (
-        <ApplicationsTab applications={loanApplications} staffDirectory={staffDirectory} onRefresh={loadData} />
+        <ApplicationsTab
+          applications={loanApplications}
+          disbursements={disbursements}
+          loanTypes={loanTypes}
+          staffDirectory={staffDirectory}
+          onRefresh={loadData}
+        />
       )}
       {activeTab === 'loan-types' && (
         <LoanTypesTab loanTypes={loanTypes} onRefresh={loadData} />
       )}
       {activeTab === 'disbursements' && (
-        <DisbursementsTab disbursements={disbursements} staffDirectory={staffDirectory} onRefresh={loadData} />
+        <DisbursementsTab
+          disbursements={disbursements}
+          loanTypes={loanTypes}
+          staffDirectory={staffDirectory}
+          onRefresh={loadData}
+        />
       )}
       {activeTab === 'reports' && <ReportsTab />}
     </div>
@@ -187,13 +245,18 @@ function OverviewTab({ stats }: { stats: any }) {
 // Applications Tab
 function ApplicationsTab({
   applications,
+  disbursements,
+  loanTypes,
   staffDirectory,
   onRefresh,
 }: {
   applications: LoanApplication[];
+  disbursements: LoanDisbursement[];
+  loanTypes: LoanType[];
   staffDirectory: Staff[];
   onRefresh: () => void;
 }) {
+  const { user } = useAuth();
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedApp, setSelectedApp] = useState<LoanApplication | null>(null);
@@ -210,6 +273,12 @@ function ApplicationsTab({
   });
   const [approvalModal, setApprovalModal] = useState<{ open: boolean; app: LoanApplication | null; action: 'approved' | 'rejected' | null }>({ open: false, app: null, action: null });
   const [approvalComment, setApprovalComment] = useState('');
+  const [applicationEditModal, setApplicationEditModal] = useState<{ open: boolean; app: LoanApplication | null }>({
+    open: false,
+    app: null,
+  });
+  const [applicationEditData, setApplicationEditData] = useState<ApplicationEditForm | null>(null);
+  const [isUpdatingApplication, setIsUpdatingApplication] = useState(false);
 
   // Assign Loan State
   const [assignLoanData, setAssignLoanData] = useState({
@@ -272,6 +341,28 @@ function ApplicationsTab({
     });
   }, [staffDirectory, staffSearchTerm]);
 
+  const canEditDisbursedApplications = user?.role === 'admin' || user?.role === 'payroll_officer';
+  const getApplicationLoanType = (application: LoanApplication) =>
+    loanTypes.find((loanType) => loanType.id === application.loan_type_id || loanType.name === application.loan_type_name) || null;
+  const getApplicationDisbursement = (applicationId: string) =>
+    disbursements.find((disbursement) => disbursement.loan_application_id === applicationId) || null;
+
+  const applicationEditLoanType = useMemo(
+    () => (applicationEditModal.app ? getApplicationLoanType(applicationEditModal.app) : null),
+    [applicationEditModal.app, loanTypes],
+  );
+  const applicationEditPreview = useMemo(() => {
+    if (!applicationEditData || !applicationEditModal.app) return null;
+    const linkedDisbursement = getApplicationDisbursement(applicationEditModal.app.id);
+    return calculateLoanEditPreview(
+      applicationEditLoanType,
+      applicationEditData.principalAmount,
+      applicationEditData.tenureMonths,
+      Number(linkedDisbursement?.total_repaid || 0),
+      linkedDisbursement?.start_deduction_month || '',
+    );
+  }, [applicationEditData, applicationEditLoanType, applicationEditModal.app, disbursements]);
+
   const filteredApplications = applications.filter((app) => {
       const fullName = getLoanStaffFullName(app.staff_id, app.staff_number, app.staff_name).toLowerCase();
       const matchesStatus = statusFilter === 'all' || app.status === statusFilter;
@@ -281,6 +372,21 @@ function ApplicationsTab({
         app.application_number.toLowerCase().includes(searchTerm.toLowerCase());
       return matchesStatus && matchesSearch;
     });
+
+    const openApplicationEditModal = (app: LoanApplication) => {
+      setApplicationEditModal({ open: true, app });
+      setApplicationEditData({
+        principalAmount: Number(app.amount_approved ?? app.amount_requested ?? 0),
+        tenureMonths: Number(app.tenure_months ?? 1),
+        purpose: app.purpose || '',
+      });
+    };
+
+    const closeApplicationEditModal = () => {
+      if (isUpdatingApplication) return;
+      setApplicationEditModal({ open: false, app: null });
+      setApplicationEditData(null);
+    };
 
     const handleAssignLoan = async (e: React.FormEvent) => {
       e.preventDefault();
@@ -412,6 +518,63 @@ function ApplicationsTab({
       showToast.error('Error', error.message);
     } finally {
       setIsDisbursing(false);
+    }
+  };
+
+  const handleApplicationEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!applicationEditModal.app || !applicationEditData || !applicationEditLoanType || !applicationEditPreview) {
+      return;
+    }
+
+    if (applicationEditData.principalAmount <= 0) {
+      showToast.error('Loan amount must be greater than 0.');
+      return;
+    }
+
+    if (applicationEditData.tenureMonths < 1) {
+      showToast.error('Tenure must be at least 1 month.');
+      return;
+    }
+
+    if (
+      applicationEditLoanType.max_amount !== undefined &&
+      applicationEditData.principalAmount > Number(applicationEditLoanType.max_amount)
+    ) {
+      showToast.error(
+        'Invalid Amount',
+        `Maximum loan amount is ${formatCurrency(applicationEditLoanType.max_amount)}`,
+      );
+      return;
+    }
+
+    if (
+      applicationEditLoanType.max_tenure_months !== undefined &&
+      applicationEditData.tenureMonths > Number(applicationEditLoanType.max_tenure_months)
+    ) {
+      showToast.error(
+        'Invalid Tenure',
+        `Maximum tenure is ${applicationEditLoanType.max_tenure_months} months`,
+      );
+      return;
+    }
+
+    try {
+      setIsUpdatingApplication(true);
+      await loanApplicationAPI.update(applicationEditModal.app.id, {
+        approvedAmount: applicationEditData.principalAmount,
+        requestedAmount: applicationEditData.principalAmount,
+        tenureMonths: applicationEditData.tenureMonths,
+        purpose: applicationEditData.purpose,
+      });
+      showToast.success('Disbursed loan updated successfully.');
+      closeApplicationEditModal();
+      await onRefresh();
+    } catch (error: any) {
+      showToast.error(error?.message || 'Failed to update disbursed loan');
+    } finally {
+      setIsUpdatingApplication(false);
     }
   };
 
@@ -560,6 +723,16 @@ function ApplicationsTab({
                             Disburse
                           </button>
                         )}
+                        {app.status === 'disbursed' && canEditDisbursedApplications && (
+                          <button
+                            type="button"
+                            onClick={() => openApplicationEditModal(app)}
+                            className="p-2 rounded hover:bg-accent transition-colors"
+                            title="Edit disbursed loan"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -646,6 +819,131 @@ function ApplicationsTab({
             </div>
           </div>
         </div>
+      )}
+
+      {applicationEditModal.open && applicationEditModal.app && applicationEditData && applicationEditPreview && (
+        <Modal
+          isOpen={applicationEditModal.open}
+          onClose={closeApplicationEditModal}
+          title="Edit Disbursed Loan"
+          size="lg"
+        >
+          <form onSubmit={handleApplicationEditSubmit} className="space-y-5">
+            <div className="rounded-lg bg-muted p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <div className="text-sm text-muted-foreground">Application #</div>
+                <div className="text-sm text-card-foreground">{applicationEditModal.app.application_number}</div>
+              </div>
+              <div>
+                <div className="text-sm text-muted-foreground">Staff</div>
+                <div className="text-sm text-card-foreground">
+                  {getLoanStaffFullName(
+                    applicationEditModal.app.staff_id,
+                    applicationEditModal.app.staff_number,
+                    applicationEditModal.app.staff_name,
+                  )}{' '}
+                  ({applicationEditModal.app.staff_number})
+                </div>
+              </div>
+              <div>
+                <div className="text-sm text-muted-foreground">Loan Type</div>
+                <div className="text-sm text-card-foreground">{applicationEditModal.app.loan_type_name}</div>
+              </div>
+              <div>
+                <div className="text-sm text-muted-foreground">Interest Mode</div>
+                <div className="text-sm text-card-foreground capitalize">
+                  {applicationEditLoanType?.interest_calculation_method || 'amortized'}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm mb-1 text-card-foreground">Loan Amount</label>
+                <NumberInput
+                  min={1}
+                  value={applicationEditData.principalAmount}
+                  onChange={(value) => setApplicationEditData({ ...applicationEditData, principalAmount: value })}
+                />
+              </div>
+              <div>
+                <label className="block text-sm mb-1 text-card-foreground">Tenure (Months)</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={applicationEditData.tenureMonths || ''}
+                  onChange={(e) =>
+                    setApplicationEditData({
+                      ...applicationEditData,
+                      tenureMonths: Number(e.target.value),
+                    })
+                  }
+                  className="w-full px-3 py-2 rounded border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  required
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm mb-1 text-card-foreground">Purpose</label>
+              <textarea
+                value={applicationEditData.purpose}
+                onChange={(e) => setApplicationEditData({ ...applicationEditData, purpose: e.target.value })}
+                rows={3}
+                className="w-full px-3 py-2 rounded border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+
+            <div className="rounded-lg border border-border bg-muted/40 p-4 space-y-3">
+              <h4 className="text-sm font-medium text-card-foreground">Automatic Readjustment Preview</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                <div className="flex justify-between gap-4">
+                  <span className="text-muted-foreground">Interest</span>
+                  <span className="text-card-foreground">{formatCurrency(applicationEditPreview.interestAmount)}</span>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <span className="text-muted-foreground">Amount to Receive</span>
+                  <span className="text-card-foreground">{formatCurrency(applicationEditPreview.amountDisbursed)}</span>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <span className="text-muted-foreground">Total Repayment</span>
+                  <span className="text-card-foreground">{formatCurrency(applicationEditPreview.totalRepayment)}</span>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <span className="text-muted-foreground">Monthly Deduction</span>
+                  <span className="text-card-foreground">{formatCurrency(applicationEditPreview.monthlyDeduction)}/mo</span>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <span className="text-muted-foreground">Outstanding Balance</span>
+                  <span className="text-card-foreground">{formatCurrency(applicationEditPreview.balanceOutstanding)}</span>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <span className="text-muted-foreground">Projected End Month</span>
+                  <span className="text-card-foreground">{applicationEditPreview.endMonth || 'Pending start month'}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={closeApplicationEditModal}
+                disabled={isUpdatingApplication}
+                className="px-4 py-2 rounded bg-muted hover:bg-muted/80 text-foreground transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isUpdatingApplication || !applicationEditLoanType}
+                className="px-4 py-2 rounded bg-primary hover:bg-primary/90 text-primary-foreground transition-colors inline-flex items-center gap-2"
+              >
+                {isUpdatingApplication && <Loader2 className="w-4 h-4 animate-spin" />}
+                Save Changes
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
 
       {/* Approval Modal */}
@@ -1304,10 +1602,12 @@ function LoanTypesTab({
 // Disbursements Tab
 function DisbursementsTab({
   disbursements,
+  loanTypes,
   staffDirectory,
   onRefresh,
 }: {
   disbursements: LoanDisbursement[];
+  loanTypes: LoanType[];
   staffDirectory: Staff[];
   onRefresh: () => Promise<void>;
 }) {
@@ -1330,12 +1630,31 @@ function DisbursementsTab({
   const [editData, setEditData] = useState<DisbursementEditForm | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const canEditDisbursements = user?.role === 'admin' || user?.role === 'payroll_officer';
+  const getDisbursementLoanType = (disbursement: LoanDisbursement) =>
+    loanTypes.find(
+      (loanType) =>
+        loanType.id === disbursement.loan_type_id || loanType.name === disbursement.loan_type_name,
+    ) || null;
   const getLoanStaffFullName = (staffId: string, staffNumber: string, fallbackName: string) => {
     const staffMember = staffDirectory.find(
       (staff) => String(staff.id) === String(staffId) || String(staff.staff_number) === String(staffNumber),
     );
     return staffMember ? formatStaffName(staffMember) : fallbackName;
   };
+  const editLoanType = useMemo(
+    () => (editModal.disbursement ? getDisbursementLoanType(editModal.disbursement) : null),
+    [editModal.disbursement, loanTypes],
+  );
+  const editPreview = useMemo(() => {
+    if (!editModal.disbursement || !editData) return null;
+    return calculateLoanEditPreview(
+      editLoanType,
+      editData.principalAmount,
+      editData.tenureMonths,
+      Number(editModal.disbursement.total_repaid || 0),
+      editData.startMonth,
+    );
+  }, [editData, editLoanType, editModal.disbursement]);
   const filteredDisbursements = disbursements.filter((disb) => {
     const query = searchTerm.trim().toLowerCase();
     if (!query) return true;
@@ -1393,17 +1712,9 @@ function DisbursementsTab({
   const openEditModal = (disbursement: LoanDisbursement) => {
     setEditModal({ open: true, disbursement });
     setEditData({
-      amountDisbursed: Number(
-        disbursement.amount_disbursed ??
-          disbursement.total_amount ??
-          disbursement.principal_amount ??
-          0,
-      ),
+      principalAmount: Number(disbursement.principal_amount ?? disbursement.amount_disbursed ?? 0),
       tenureMonths: Number(disbursement.tenure_months ?? 0),
-      monthlyDeduction: Number(disbursement.monthly_deduction ?? 0),
-      balanceOutstanding: Number(disbursement.balance_outstanding ?? 0),
       startMonth: disbursement.start_deduction_month || '',
-      endMonth: disbursement.end_deduction_month || '',
       status: disbursement.status,
       remarks: '',
     });
@@ -1418,32 +1729,40 @@ function DisbursementsTab({
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!editModal.disbursement || !editData) return;
+    if (!editModal.disbursement || !editData || !editLoanType || !editPreview) return;
 
     if (editData.tenureMonths < 1) {
       showToast.error('Tenure must be at least 1 month.');
       return;
     }
 
-    if (editData.amountDisbursed < 0 || editData.monthlyDeduction < 0 || editData.balanceOutstanding < 0) {
+    if (editData.principalAmount < 0) {
       showToast.error('Amounts cannot be negative.');
       return;
     }
 
-    if (editData.endMonth && editData.startMonth && editData.endMonth < editData.startMonth) {
-      showToast.error('End month cannot be earlier than start month.');
+    if (
+      editLoanType.max_amount !== undefined &&
+      editData.principalAmount > Number(editLoanType.max_amount)
+    ) {
+      showToast.error('Invalid Amount', `Maximum loan amount is ${formatCurrency(editLoanType.max_amount)}`);
+      return;
+    }
+
+    if (
+      editLoanType.max_tenure_months !== undefined &&
+      editData.tenureMonths > Number(editLoanType.max_tenure_months)
+    ) {
+      showToast.error('Invalid Tenure', `Maximum tenure is ${editLoanType.max_tenure_months} months`);
       return;
     }
 
     try {
       setIsEditing(true);
       await disbursementAPI.update(editModal.disbursement.id, {
-        amountDisbursed: editData.amountDisbursed,
+        principalAmount: editData.principalAmount,
         tenureMonths: editData.tenureMonths,
-        monthlyDeduction: editData.monthlyDeduction,
-        balanceOutstanding: editData.balanceOutstanding,
         startMonth: editData.startMonth || undefined,
-        endMonth: editData.endMonth || undefined,
         status: editData.status,
         remarks: editData.remarks.trim() || undefined,
       });
@@ -1675,7 +1994,7 @@ function DisbursementsTab({
         </div>
       )}
 
-      {editModal.open && editModal.disbursement && editData && (
+      {editModal.open && editModal.disbursement && editData && editPreview && (
         <Modal
           isOpen={editModal.open}
           onClose={closeEditModal}
@@ -1711,11 +2030,11 @@ function DisbursementsTab({
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm mb-1 text-card-foreground">Amount Disbursed</label>
+                <label className="block text-sm mb-1 text-card-foreground">Loan Amount</label>
                 <NumberInput
-                  min={0}
-                  value={editData.amountDisbursed}
-                  onChange={(value) => setEditData({ ...editData, amountDisbursed: value })}
+                  min={1}
+                  value={editData.principalAmount}
+                  onChange={(value) => setEditData({ ...editData, principalAmount: value })}
                 />
               </div>
               <div>
@@ -1735,22 +2054,6 @@ function DisbursementsTab({
                 />
               </div>
               <div>
-                <label className="block text-sm mb-1 text-card-foreground">Monthly Deduction</label>
-                <NumberInput
-                  min={0}
-                  value={editData.monthlyDeduction}
-                  onChange={(value) => setEditData({ ...editData, monthlyDeduction: value })}
-                />
-              </div>
-              <div>
-                <label className="block text-sm mb-1 text-card-foreground">Outstanding Balance</label>
-                <NumberInput
-                  min={0}
-                  value={editData.balanceOutstanding}
-                  onChange={(value) => setEditData({ ...editData, balanceOutstanding: value })}
-                />
-              </div>
-              <div>
                 <label className="block text-sm mb-1 text-card-foreground">Start Month</label>
                 <input
                   type="month"
@@ -1760,13 +2063,10 @@ function DisbursementsTab({
                 />
               </div>
               <div>
-                <label className="block text-sm mb-1 text-card-foreground">End Month</label>
-                <input
-                  type="month"
-                  value={editData.endMonth}
-                  onChange={(e) => setEditData({ ...editData, endMonth: e.target.value })}
-                  className="w-full px-3 py-2 rounded border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                />
+                <label className="block text-sm mb-1 text-card-foreground">Projected End Month</label>
+                <div className="w-full px-3 py-2 rounded border border-border bg-muted text-card-foreground">
+                  {editPreview.endMonth || 'Pending start month'}
+                </div>
               </div>
               <div>
                 <label className="block text-sm mb-1 text-card-foreground">Status</label>
@@ -1785,6 +2085,38 @@ function DisbursementsTab({
                   <option value="defaulted">Defaulted</option>
                   <option value="written_off">Written Off</option>
                 </select>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-border bg-muted/40 p-4 space-y-3">
+              <h4 className="text-sm font-medium text-card-foreground">Automatic Readjustment Preview</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                <div className="flex justify-between gap-4">
+                  <span className="text-muted-foreground">Interest</span>
+                  <span className="text-card-foreground">{formatCurrency(editPreview.interestAmount)}</span>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <span className="text-muted-foreground">Amount to Receive</span>
+                  <span className="text-card-foreground">{formatCurrency(editPreview.amountDisbursed)}</span>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <span className="text-muted-foreground">Total Repayment</span>
+                  <span className="text-card-foreground">{formatCurrency(editPreview.totalRepayment)}</span>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <span className="text-muted-foreground">Monthly Deduction</span>
+                  <span className="text-card-foreground">{formatCurrency(editPreview.monthlyDeduction)}/mo</span>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <span className="text-muted-foreground">Outstanding Balance</span>
+                  <span className="text-card-foreground">{formatCurrency(editPreview.balanceOutstanding)}</span>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <span className="text-muted-foreground">Total Repaid</span>
+                  <span className="text-card-foreground">
+                    {formatCurrency(Number(editModal.disbursement.total_repaid || 0))}
+                  </span>
+                </div>
               </div>
             </div>
 

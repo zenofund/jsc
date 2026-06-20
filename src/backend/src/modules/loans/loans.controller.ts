@@ -95,7 +95,7 @@ export class LoansController {
     @Body() dto: UpdateLoanApplicationDto,
     @Request() req,
   ) {
-    return this.loansService.updateLoanApplication(id, dto, req.user.userId);
+    return this.loansService.updateLoanApplication(id, dto, req.user.userId, req.user.role);
   }
 
   @Put('applications/:id/submit')
