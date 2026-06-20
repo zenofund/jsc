@@ -14,7 +14,7 @@ import { showToast } from '../utils/toast';
 import { formatCompactCurrency, formatCurrency } from '../utils/format';
 import { Modal } from '../components/Modal';
 import { NumberInput } from '../components/NumberInput';
-import { formatStaffLabelWithId } from '../lib/name-utils';
+import { formatStaffName } from '../lib/name-utils';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -46,6 +46,7 @@ export function LoanManagementPage() {
   const [loanApplications, setLoanApplications] = useState<LoanApplication[]>([]);
   const [loanTypes, setLoanTypes] = useState<LoanType[]>([]);
   const [disbursements, setDisbursements] = useState<LoanDisbursement[]>([]);
+  const [staffDirectory, setStaffDirectory] = useState<Staff[]>([]);
   const [selectedLoan, setSelectedLoan] = useState<LoanApplication | null>(null);
   const [processingApplicationId, setProcessingApplicationId] = useState<string | null>(null);
   const [isDisbursing, setIsDisbursing] = useState<string | null>(null);
@@ -57,16 +58,18 @@ export function LoanManagementPage() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [overview, apps, types, disb] = await Promise.all([
+      const [overview, apps, types, disb, staffData] = await Promise.all([
         loanStatsAPI.getOverview(),
         loanApplicationAPI.getAll(),
         loanTypeAPI.getAll(),
         disbursementAPI.getAll(),
+        staffAPI.getAllStaff({ fetchAll: true, limit: 1000 }),
       ]);
       setStats(overview);
       setLoanApplications(apps);
       setLoanTypes(types);
       setDisbursements(disb);
+      setStaffDirectory(Array.isArray(staffData) ? staffData : staffData.data || []);
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -126,13 +129,13 @@ export function LoanManagementPage() {
       {/* Tab Content */}
       {activeTab === 'overview' && <OverviewTab stats={stats} />}
       {activeTab === 'applications' && (
-        <ApplicationsTab applications={loanApplications} onRefresh={loadData} />
+        <ApplicationsTab applications={loanApplications} staffDirectory={staffDirectory} onRefresh={loadData} />
       )}
       {activeTab === 'loan-types' && (
         <LoanTypesTab loanTypes={loanTypes} onRefresh={loadData} />
       )}
       {activeTab === 'disbursements' && (
-        <DisbursementsTab disbursements={disbursements} onRefresh={loadData} />
+        <DisbursementsTab disbursements={disbursements} staffDirectory={staffDirectory} onRefresh={loadData} />
       )}
       {activeTab === 'reports' && <ReportsTab />}
     </div>
@@ -184,9 +187,11 @@ function OverviewTab({ stats }: { stats: any }) {
 // Applications Tab
 function ApplicationsTab({
   applications,
+  staffDirectory,
   onRefresh,
 }: {
   applications: LoanApplication[];
+  staffDirectory: Staff[];
   onRefresh: () => void;
 }) {
   const [statusFilter, setStatusFilter] = useState('all');
@@ -216,7 +221,6 @@ function ApplicationsTab({
     autoApproveDisburse: false,
   });
   const [assigningLoan, setAssigningLoan] = useState(false);
-  const [staffList, setStaffList] = useState<Staff[]>([]);
   const [loanTypesList, setLoanTypesList] = useState<LoanType[]>([]);
   const [staffSearchTerm, setStaffSearchTerm] = useState('');
 
@@ -235,11 +239,7 @@ function ApplicationsTab({
     if (showAssignModal) {
       const fetchFormData = async () => {
         try {
-            const [staffData, typesData] = await Promise.all([
-              staffAPI.getAllStaff({ fetchAll: true, limit: 1000 }),
-              loanTypeAPI.getAll()
-            ]);
-            setStaffList(Array.isArray(staffData) ? staffData : staffData.data || []);
+            const typesData = await loanTypeAPI.getAll();
             setLoanTypesList(typesData.filter((t: LoanType) => t.status === 'active'));
           } catch (error) {
           console.error('Failed to load assign form data', error);
@@ -249,24 +249,34 @@ function ApplicationsTab({
     }
   }, [showAssignModal]);
 
+  const getLoanStaffFullName = (staffId: string, staffNumber: string, fallbackName: string) => {
+    const staffMember = staffDirectory.find(
+      (staff) => String(staff.id) === String(staffId) || String(staff.staff_number) === String(staffNumber),
+    );
+    return staffMember ? formatStaffName(staffMember) : fallbackName;
+  };
+
   const getStaffDisplayLabel = (staff: Staff) => {
-    return formatStaffLabelWithId(staff);
+    return `${formatStaffName(staff)} (${staff.staff_number || 'N/A'})`;
   };
 
   const filteredStaffList = useMemo(() => {
     const q = staffSearchTerm.trim().toLowerCase();
-    if (!q) return staffList;
+    if (!q) return staffDirectory;
 
-    return staffList.filter((staff) => {
+    return staffDirectory.filter((staff) => {
       const staffNo = (staff.staff_number || '').toLowerCase();
+      const fullName = formatStaffName(staff).toLowerCase();
       const label = getStaffDisplayLabel(staff).toLowerCase();
-      return staffNo.includes(q) || label.includes(q);
+      return staffNo.includes(q) || fullName.includes(q) || label.includes(q);
     });
-  }, [staffList, staffSearchTerm]);
+  }, [staffDirectory, staffSearchTerm]);
 
   const filteredApplications = applications.filter((app) => {
+      const fullName = getLoanStaffFullName(app.staff_id, app.staff_number, app.staff_name).toLowerCase();
       const matchesStatus = statusFilter === 'all' || app.status === statusFilter;
       const matchesSearch =
+        fullName.includes(searchTerm.toLowerCase()) ||
         app.staff_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         app.application_number.toLowerCase().includes(searchTerm.toLowerCase());
       return matchesStatus && matchesSearch;
@@ -320,7 +330,7 @@ function ApplicationsTab({
           );
           
           // Fetch staff bank details for disbursement
-          const staff = staffList.find(s => s.id === assignLoanData.staffId);
+          const staff = staffDirectory.find(s => s.id === assignLoanData.staffId);
           
           // Disburse
           await disbursementAPI.create({
@@ -489,7 +499,9 @@ function ApplicationsTab({
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <div className="text-sm text-card-foreground">{app.staff_name}</div>
+                      <div className="text-sm text-card-foreground">
+                        {getLoanStaffFullName(app.staff_id, app.staff_number, app.staff_name)}
+                      </div>
                       <div className="text-xs text-muted-foreground">{app.staff_number}</div>
                     </td>
                     <td className="px-6 py-4 text-sm text-card-foreground">{app.loan_type_name}</td>
@@ -1292,9 +1304,11 @@ function LoanTypesTab({
 // Disbursements Tab
 function DisbursementsTab({
   disbursements,
+  staffDirectory,
   onRefresh,
 }: {
   disbursements: LoanDisbursement[];
+  staffDirectory: Staff[];
   onRefresh: () => Promise<void>;
 }) {
   const { user } = useAuth();
@@ -1316,11 +1330,19 @@ function DisbursementsTab({
   const [editData, setEditData] = useState<DisbursementEditForm | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const canEditDisbursements = user?.role === 'admin' || user?.role === 'payroll_officer';
+  const getLoanStaffFullName = (staffId: string, staffNumber: string, fallbackName: string) => {
+    const staffMember = staffDirectory.find(
+      (staff) => String(staff.id) === String(staffId) || String(staff.staff_number) === String(staffNumber),
+    );
+    return staffMember ? formatStaffName(staffMember) : fallbackName;
+  };
   const filteredDisbursements = disbursements.filter((disb) => {
     const query = searchTerm.trim().toLowerCase();
     if (!query) return true;
 
+    const fullName = getLoanStaffFullName(disb.staff_id, disb.staff_number, disb.staff_name).toLowerCase();
     return (
+      fullName.includes(query) ||
       (disb.staff_name || '').toLowerCase().includes(query) ||
       (disb.staff_number || '').toLowerCase().includes(query) ||
       (disb.disbursement_number || '').toLowerCase().includes(query) ||
@@ -1520,7 +1542,9 @@ function DisbursementsTab({
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <div className="text-sm text-card-foreground">{disb.staff_name}</div>
+                      <div className="text-sm text-card-foreground">
+                        {getLoanStaffFullName(disb.staff_id, disb.staff_number, disb.staff_name)}
+                      </div>
                       <div className="text-xs text-muted-foreground">{disb.staff_number}</div>
                     </td>
                     <td className="px-6 py-4 text-sm text-card-foreground">{disb.loan_type_name}</td>
@@ -1663,7 +1687,12 @@ function DisbursementsTab({
               <div>
                 <div className="text-sm text-muted-foreground">Staff</div>
                 <div className="text-sm text-card-foreground">
-                  {editModal.disbursement.staff_name} ({editModal.disbursement.staff_number})
+                  {getLoanStaffFullName(
+                    editModal.disbursement.staff_id,
+                    editModal.disbursement.staff_number,
+                    editModal.disbursement.staff_name,
+                  )}{' '}
+                  ({editModal.disbursement.staff_number})
                 </div>
               </div>
               <div>
@@ -1802,7 +1831,12 @@ function DisbursementsTab({
             <div className="rounded-lg bg-muted p-4 space-y-2">
               <div className="text-sm text-muted-foreground">Staff</div>
               <div className="text-sm text-card-foreground">
-                {payoffModal.disbursement.staff_name} ({payoffModal.disbursement.staff_number})
+                {getLoanStaffFullName(
+                  payoffModal.disbursement.staff_id,
+                  payoffModal.disbursement.staff_number,
+                  payoffModal.disbursement.staff_name,
+                )}{' '}
+                ({payoffModal.disbursement.staff_number})
               </div>
               <div className="text-sm text-muted-foreground mt-2">Outstanding Balance</div>
               <div className="text-lg font-semibold text-card-foreground">
