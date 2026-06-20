@@ -735,7 +735,8 @@ export const cooperativeAPI = {
 
   // Get cooperative statistics
   async getCooperativeStats(cooperativeId: string) {
-    return makeApiRequest(`/cooperatives/${cooperativeId}/stats`, { method: 'GET' });
+    const url = cooperativeId ? `/cooperatives/${cooperativeId}/stats` : '/cooperatives/stats';
+    return makeApiRequest(url, { method: 'GET' });
   },
 };
 
