@@ -1214,6 +1214,7 @@ export function StaffListPage() {
         <DataTable
           data={filteredStaff}
           columns={columns}
+          itemsPerPage={100}
           searchable
           searchPlaceholder="Search by name, staff number, or department..."
           searchControls={

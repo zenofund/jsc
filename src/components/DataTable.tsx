@@ -15,6 +15,7 @@ interface DataTableProps<T> {
   searchPlaceholder?: string;
   onEdit?: (row: T) => void;
   searchControls?: React.ReactNode;
+  itemsPerPage?: number;
 }
 
 // Helper for deep recursive search
@@ -44,9 +45,9 @@ export function DataTable<T extends Record<string, any>>({
   searchPlaceholder = 'Search...',
   onEdit,
   searchControls,
+  itemsPerPage = 10,
 }: DataTableProps<T>) {
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(10);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortConfig, setSortConfig] = useState<{ index: number; direction: 'asc' | 'desc' } | null>(null);
 
