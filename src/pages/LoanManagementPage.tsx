@@ -676,64 +676,74 @@ function ApplicationsTab({
                     </td>
                     <td className="px-6 py-4 text-center text-sm text-card-foreground">{app.tenure_months} months</td>
                     <td className="px-6 py-4 text-center">{getStatusBadge(app.status)}</td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center justify-center gap-2">
-                        {(['draft', 'pending', 'guarantor_pending'].includes(app.status)) && (
-                          <>
-                            <button
-                              onClick={() => {
-                                setApprovalModal({ open: true, app, action: 'approved' });
-                                setApprovalComment('');
-                              }}
-                              disabled={processingId === app.id}
-                              className="p-2 rounded hover:bg-green-600 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                              title="Approve"
-                            >
-                              {processingId === app.id ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                              ) : (
-                                <CheckCircle className="w-4 h-4" />
-                              )}
-                            </button>
-                            <button
-                              onClick={() => {
-                                setApprovalModal({ open: true, app, action: 'rejected' });
-                                setApprovalComment('');
-                              }}
-                              disabled={processingId === app.id}
-                              className="p-2 rounded hover:bg-red-600 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                              title="Reject"
-                            >
-                              {processingId === app.id ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                              ) : (
-                                <XCircle className="w-4 h-4" />
-                              )}
-                            </button>
-                          </>
-                        )}
-                        {app.status === 'approved' && (
-                          <button
-                            onClick={() => {
-                              setSelectedApp(app);
-                              setShowDisbursementModal(true);
-                            }}
-                            className="px-3 py-1 bg-primary hover:bg-primary/90 text-primary-foreground rounded text-sm transition-colors"
-                          >
-                            Disburse
-                          </button>
-                        )}
-                        {app.status === 'disbursed' && canEditDisbursedApplications && (
+                    <td className="px-6 py-4 text-center">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
                           <button
                             type="button"
-                            onClick={() => openApplicationEditModal(app)}
-                            className="p-2 rounded hover:bg-accent transition-colors"
-                            title="Edit disbursed loan"
+                            disabled={processingId === app.id}
+                            className="inline-flex items-center justify-center rounded p-2 hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Actions"
                           >
-                            <Edit2 className="w-4 h-4" />
+                            {processingId === app.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                            ) : (
+                              <MoreVertical className="w-4 h-4 text-muted-foreground" />
+                            )}
                           </button>
-                        )}
-                      </div>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {['draft', 'pending', 'guarantor_pending'].includes(app.status) && (
+                            <>
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setApprovalModal({ open: true, app, action: 'approved' });
+                                  setApprovalComment('');
+                                }}
+                              >
+                                <CheckCircle className="w-4 h-4 text-green-600" />
+                                Approve
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setApprovalModal({ open: true, app, action: 'rejected' });
+                                  setApprovalComment('');
+                                }}
+                              >
+                                <XCircle className="w-4 h-4 text-red-600" />
+                                Reject
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                          {app.status === 'approved' && (
+                            <>
+                              {['draft', 'pending', 'guarantor_pending'].includes(app.status) && (
+                                <DropdownMenuSeparator />
+                              )}
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setSelectedApp(app);
+                                  setShowDisbursementModal(true);
+                                }}
+                              >
+                                <Wallet className="w-4 h-4 text-primary" />
+                                Disburse
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                          {app.status === 'disbursed' && canEditDisbursedApplications && (
+                            <>
+                              {['draft', 'pending', 'guarantor_pending', 'approved'].includes(app.status) && (
+                                <DropdownMenuSeparator />
+                              )}
+                              <DropdownMenuItem onClick={() => openApplicationEditModal(app)}>
+                                <Edit2 className="w-4 h-4" />
+                                Edit
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </td>
                   </tr>
                 ))
