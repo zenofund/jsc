@@ -91,7 +91,23 @@ export class CooperativesService {
       SELECT 
         c.*,
         (SELECT COUNT(*) FROM cooperative_members cm WHERE cm.cooperative_id = c.id AND cm.status = 'active') as total_members,
-        (SELECT COALESCE(SUM(cc.amount), 0) FROM cooperative_contributions cc WHERE cc.cooperative_id = c.id) as total_contributions
+        (SELECT COALESCE(SUM(cc.amount), 0) FROM cooperative_contributions cc WHERE cc.cooperative_id = c.id) as total_contributions,
+        (SELECT COALESCE(SUM(cc.amount), 0) FROM cooperative_contributions cc WHERE cc.cooperative_id = c.id) as total_share_capital,
+        (
+          SELECT COALESCE(SUM(ld.amount_disbursed), 0)
+          FROM loan_disbursements ld
+          JOIN loan_applications la ON ld.loan_application_id = la.id
+          JOIN loan_types lt ON la.loan_type_id = lt.id
+          WHERE lt.cooperative_id = c.id
+        ) as total_loans_disbursed,
+        (
+          SELECT COALESCE(SUM(ld.balance_outstanding), 0)
+          FROM loan_disbursements ld
+          JOIN loan_applications la ON ld.loan_application_id = la.id
+          JOIN loan_types lt ON la.loan_type_id = lt.id
+          WHERE lt.cooperative_id = c.id
+            AND ld.status = 'active'
+        ) as total_loans_outstanding
       FROM cooperatives c
     `;
     const params = [];
@@ -114,7 +130,23 @@ export class CooperativesService {
       `SELECT 
         c.*,
         (SELECT COUNT(*) FROM cooperative_members cm WHERE cm.cooperative_id = c.id AND cm.status = 'active') as member_count,
-        (SELECT COALESCE(SUM(cc.amount), 0) FROM cooperative_contributions cc WHERE cc.cooperative_id = c.id) as total_contributions
+        (SELECT COALESCE(SUM(cc.amount), 0) FROM cooperative_contributions cc WHERE cc.cooperative_id = c.id) as total_contributions,
+        (SELECT COALESCE(SUM(cc.amount), 0) FROM cooperative_contributions cc WHERE cc.cooperative_id = c.id) as total_share_capital,
+        (
+          SELECT COALESCE(SUM(ld.amount_disbursed), 0)
+          FROM loan_disbursements ld
+          JOIN loan_applications la ON ld.loan_application_id = la.id
+          JOIN loan_types lt ON la.loan_type_id = lt.id
+          WHERE lt.cooperative_id = c.id
+        ) as total_loans_disbursed,
+        (
+          SELECT COALESCE(SUM(ld.balance_outstanding), 0)
+          FROM loan_disbursements ld
+          JOIN loan_applications la ON ld.loan_application_id = la.id
+          JOIN loan_types lt ON la.loan_type_id = lt.id
+          WHERE lt.cooperative_id = c.id
+            AND ld.status = 'active'
+        ) as total_loans_outstanding
       FROM cooperatives c
       WHERE c.id = $1`,
       [id],
