@@ -201,9 +201,15 @@ const ReportsListPage: React.FC = () => {
       });
 
       setResultsDialog({ open: true, result, template, page, pageSize });
-      toast.success('Report executed successfully', {
-        description: `Retrieved ${result.meta.returnedRows || result.data.length} of ${result.meta.totalRows} rows`,
-      });
+      if ((result.meta.totalRows || 0) === 0) {
+        toast.info('Report executed with no matching rows', {
+          description: 'The report ran successfully, but no records matched the saved configuration.',
+        });
+      } else {
+        toast.success('Report executed successfully', {
+          description: `Retrieved ${result.meta.returnedRows || result.data.length} of ${result.meta.totalRows} rows`,
+        });
+      }
     } catch (error: any) {
       toast.error('Failed to execute report', {
         description: error.message,
@@ -910,6 +916,16 @@ const ReportsListPage: React.FC = () => {
                 </tbody>
               </table>
               </div>
+            </div>
+          )}
+
+          {resultsDialog.result && resultsDialog.result.data.length === 0 && (
+            <div className="py-10 text-center text-muted-foreground">
+              <Play className="mx-auto mb-3 h-10 w-10 opacity-30" />
+              <p>No rows matched this report</p>
+              <p className="mt-2 text-sm">
+                The execution completed successfully, but the saved report returned no records.
+              </p>
             </div>
           )}
         </DialogContent>

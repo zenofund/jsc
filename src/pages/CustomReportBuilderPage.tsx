@@ -407,9 +407,15 @@ const CustomReportBuilderPage: React.FC = () => {
       setPreviewMeta(result.meta);
       setPreviewPage(page);
 
-      toast.success('Report executed successfully', {
-        description: `Retrieved ${result.meta.returnedRows || result.data.length} of ${result.meta.totalRows} rows in ${reportHelpers.formatExecutionTime(result.meta.executionTimeMs)}`,
-      });
+      if ((result.meta.totalRows || 0) === 0) {
+        toast.info('Report executed with no matching rows', {
+          description: 'The report ran successfully, but no records matched the current fields and filters.',
+        });
+      } else {
+        toast.success('Report executed successfully', {
+          description: `Retrieved ${result.meta.returnedRows || result.data.length} of ${result.meta.totalRows} rows in ${reportHelpers.formatExecutionTime(result.meta.executionTimeMs)}`,
+        });
+      }
     } catch (error: any) {
       toast.error('Failed to execute report', {
         description: error.message,
@@ -1094,9 +1100,11 @@ const CustomReportBuilderPage: React.FC = () => {
                 {previewData.length === 0 ? (
                   <div className="text-center py-12 text-gray-500">
                     <Play className="h-12 w-12 mx-auto mb-2 opacity-20" />
-                    <p>No preview data</p>
+                    <p>{previewMeta ? 'No rows matched this preview' : 'No preview data'}</p>
                     <p className="text-sm mt-2">
-                      Configure your report and click "Preview" to see live data
+                      {previewMeta
+                        ? 'The query completed successfully, but your current filters returned no records.'
+                        : 'Configure your report and click "Preview" to see live data'}
                     </p>
                   </div>
                 ) : (

@@ -456,7 +456,7 @@ export class ReportsService {
     `;
 
     const query = `
-      SELECT DISTINCT ON (rt.id)
+      SELECT
         rt.*,
         u.full_name as created_by_name,
         CASE 
@@ -488,7 +488,7 @@ export class ReportsService {
         metrics.last_executed_at,
         COALESCE(metrics.average_execution_time_ms, 0) as average_execution_time_ms
       ${baseFromWhere}
-      ORDER BY rt.id, rt.created_at DESC
+      ORDER BY rt.created_at DESC, rt.id DESC
       LIMIT $${params.length + 1}
       OFFSET $${params.length + 2}
     `;
