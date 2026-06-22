@@ -30,6 +30,7 @@ import { toast } from 'sonner';
 import { PageSkeleton } from '../components/PageLoader';
 
 const REPORT_BUILDER_EDIT_KEY = 'jsc_report_builder_template_id';
+const REPORTS_LIST_FOCUS_TEMPLATE_KEY = 'jsc_reports_list_focus_template_id';
 const REPORT_BUILDER_MODES = ['create', 'edit'] as const;
 type BuilderMode = typeof REPORT_BUILDER_MODES[number];
 
@@ -446,21 +447,23 @@ const CustomReportBuilderPage: React.FC = () => {
 
       const config = buildReportConfig();
       if (editingTemplateId) {
-        await reportsAPI.updateTemplate(editingTemplateId, {
+        const updated = await reportsAPI.updateTemplate(editingTemplateId, {
           name: reportName,
           description: reportDescription,
           category: reportCategory,
           config,
           isPublic,
         });
+        sessionStorage.setItem(REPORTS_LIST_FOCUS_TEMPLATE_KEY, updated.id);
       } else {
-        await reportsAPI.createTemplate({
+        const created = await reportsAPI.createTemplate({
           name: reportName,
           description: reportDescription,
           category: reportCategory,
           config,
           isPublic,
         });
+        sessionStorage.setItem(REPORTS_LIST_FOCUS_TEMPLATE_KEY, created.id);
       }
 
       sessionStorage.removeItem(REPORT_BUILDER_EDIT_KEY);

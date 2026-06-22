@@ -49,6 +49,7 @@ import { format } from 'date-fns';
 import { PageSkeleton } from '../components/PageLoader';
 
 const REPORT_BUILDER_EDIT_KEY = 'jsc_report_builder_template_id';
+const REPORTS_LIST_FOCUS_TEMPLATE_KEY = 'jsc_reports_list_focus_template_id';
 const SHARE_ROLE_OPTIONS = [
   { value: 'admin', label: 'Admin' },
   { value: 'payroll_officer', label: 'Payroll Officer' },
@@ -154,6 +155,20 @@ const ReportsListPage: React.FC = () => {
       );
       setTemplates(response.data);
       setTemplateMeta(response.meta);
+
+      const focusTemplateId = sessionStorage.getItem(REPORTS_LIST_FOCUS_TEMPLATE_KEY);
+      if (focusTemplateId && templatePage === 1 && selectedCategory === 'all') {
+        sessionStorage.removeItem(REPORTS_LIST_FOCUS_TEMPLATE_KEY);
+        const alreadyIncluded = response.data.some((template) => template.id === focusTemplateId);
+        if (!alreadyIncluded) {
+          try {
+            const fetched = await reportsAPI.getTemplate(focusTemplateId);
+            setTemplates((prev) => [fetched, ...prev.filter((template) => template.id !== fetched.id)]);
+          } catch {
+            // ignore
+          }
+        }
+      }
     } catch (error: any) {
       toast.error('Failed to load reports', {
         description: error.message,
