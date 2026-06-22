@@ -1,12 +1,15 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, Request, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, Request, UseGuards, Res, StreamableFile, BadRequestException, NotFoundException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { ReportsService } from './reports.service';
 import { RolesGuard } from '@common/guards/roles.guard';
 import { Roles } from '@common/decorators/roles.decorator';
+import { createReadStream, existsSync } from 'fs';
+import { Response } from 'express';
 import {
   CreateReportTemplateDto,
   UpdateReportTemplateDto,
   ExecuteReportDto,
+  PreviewReportDto,
   ScheduleReportDto,
   ShareReportDto,
 } from './dto/report.dto';
@@ -15,6 +18,7 @@ import {
 @ApiBearerAuth()
 @Controller('reports')
 @UseGuards(RolesGuard)
+@Roles('admin', 'payroll_officer', 'hr_manager')
 export class ReportsController {
   constructor(private readonly reportsService: ReportsService) {}
 
@@ -80,8 +84,18 @@ export class ReportsController {
 
   @Get('templates')
   @ApiOperation({ summary: 'Get all report templates (owned, public, shared)' })
-  findAllTemplates(@Request() req, @Query('category') category?: string) {
-    return this.reportsService.findAllTemplates(req.user.userId, category);
+  findAllTemplates(
+    @Request() req,
+    @Query('category') category?: string,
+    @Query('page') page?: number,
+    @Query('pageSize') pageSize?: number,
+  ) {
+    return this.reportsService.findAllTemplates(
+      req.user.userId,
+      category,
+      page ? parseInt(String(page), 10) : 1,
+      pageSize ? parseInt(String(pageSize), 10) : undefined,
+    );
   }
 
   @Get('templates/:id')
@@ -114,18 +128,47 @@ export class ReportsController {
     return this.reportsService.executeReport(dto, req.user.userId);
   }
 
+  @Post('preview')
+  @ApiOperation({ summary: 'Preview report data without saving a template' })
+  previewReport(@Body() dto: PreviewReportDto, @Request() req) {
+    return this.reportsService.previewReport(dto, req.user.userId);
+  }
+
   @Get('executions/:templateId')
   @ApiOperation({ summary: 'Get execution history for a report' })
   getExecutionHistory(
     @Param('templateId') templateId: string,
     @Request() req,
-    @Query('limit') limit?: number,
+    @Query('page') page?: number,
+    @Query('pageSize') pageSize?: number,
   ) {
     return this.reportsService.getExecutionHistory(
       templateId,
       req.user.userId,
-      limit ? parseInt(String(limit)) : 50,
+      page ? parseInt(String(page), 10) : 1,
+      pageSize ? parseInt(String(pageSize), 10) : undefined,
     );
+  }
+
+  @Get('execution/:executionId')
+  @ApiOperation({ summary: 'Get execution status by ID' })
+  getExecutionById(@Param('executionId') executionId: string, @Request() req) {
+    return this.reportsService.getExecutionById(executionId, req.user.userId);
+  }
+
+  @Get('execution/:executionId/download')
+  @ApiOperation({ summary: 'Download generated export file for an execution' })
+  async downloadExecutionFile(@Param('executionId') executionId: string, @Request() req, @Res({ passthrough: true }) res: Response) {
+    const execution = await this.reportsService.getExecutionById(executionId, req.user.userId);
+    if (!execution.file_path) {
+      throw new BadRequestException('No export file is available for this execution');
+    }
+    if (!existsSync(execution.file_path)) {
+      throw new NotFoundException('The generated export file could not be found');
+    }
+    const fileName = execution.file_path.split(/[\\/]/).pop() || `report-${executionId}`;
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    return new StreamableFile(createReadStream(execution.file_path));
   }
 
   // ==================== REPORT SCHEDULES ====================

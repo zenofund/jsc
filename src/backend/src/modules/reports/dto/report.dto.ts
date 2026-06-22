@@ -98,12 +98,20 @@ export class ReportJoinDto {
   type: string; // 'INNER', 'LEFT', 'RIGHT'
 
   @IsString()
-  @IsNotEmpty()
-  onField: string; // Field from base table
+  @IsOptional()
+  onField?: string; // Legacy field from base/direct join source
 
   @IsString()
-  @IsNotEmpty()
-  joinField: string; // Field from joined table
+  @IsOptional()
+  joinField?: string; // Legacy field from joined table
+
+  @IsString()
+  @IsOptional()
+  fromTable?: string; // Optional source table for graph/path-based joins
+
+  @IsString()
+  @IsOptional()
+  alias?: string; // Optional preferred alias for UI/debugging
 }
 
 // Report Group By Configuration
@@ -237,6 +245,37 @@ export class ExecuteReportDto {
   @IsEnum(ExportFormat)
   @IsOptional()
   exportFormat?: ExportFormat;
+
+  @IsNumber()
+  @IsOptional()
+  page?: number;
+
+  @IsNumber()
+  @IsOptional()
+  pageSize?: number;
+}
+
+// Preview Report DTO
+export class PreviewReportDto {
+  @ValidateNested()
+  @Type(() => ReportConfigDto)
+  config: ReportConfigDto;
+
+  @IsString()
+  @IsOptional()
+  name?: string;
+
+  @IsEnum(ReportCategory)
+  @IsOptional()
+  category?: ReportCategory;
+
+  @IsNumber()
+  @IsOptional()
+  page?: number;
+
+  @IsNumber()
+  @IsOptional()
+  pageSize?: number;
 }
 
 // Schedule Report DTO
@@ -327,5 +366,16 @@ export interface DataSource {
     table: string;
     field: string;
     foreignKey: string;
+    label?: string;
+    joinTypes?: string[];
+  }>;
+  relationshipGraph?: Array<{
+    sourceTable: string;
+    targetTable: string;
+    localKey: string;
+    remoteKey: string;
+    joinTypes: string[];
+    defaultJoinType: string;
+    label: string;
   }>;
 }

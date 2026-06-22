@@ -21,6 +21,17 @@ export interface DataSource {
     table: string;
     field: string;
     foreignKey: string;
+    label?: string;
+    joinTypes?: string[];
+  }>;
+  relationshipGraph?: Array<{
+    sourceTable: string;
+    targetTable: string;
+    localKey: string;
+    remoteKey: string;
+    joinTypes: string[];
+    defaultJoinType: string;
+    label: string;
   }>;
 }
 
@@ -43,8 +54,10 @@ export interface ReportFilter {
 export interface ReportJoin {
   table: string;
   type: 'INNER' | 'LEFT' | 'RIGHT';
-  onField: string;
-  joinField: string;
+  onField?: string;
+  joinField?: string;
+  fromTable?: string;
+  alias?: string;
 }
 
 export interface ReportGroupBy {
@@ -86,6 +99,10 @@ export interface ReportTemplate {
   can_edit?: boolean;
   can_execute?: boolean;
   can_schedule?: boolean;
+  execution_count?: number;
+  failed_execution_count?: number;
+  last_executed_at?: string;
+  average_execution_time_ms?: number;
 }
 
 export interface ReportExecution {
@@ -129,9 +146,28 @@ export interface ReportExecutionResult {
   data: any[];
   meta: {
     totalRows: number;
+    returnedRows?: number;
     executionTimeMs: number;
     executedAt: string;
     executedBy: string;
+    page?: number;
+    pageSize?: number;
+    totalPages?: number;
+    hasNextPage?: boolean;
+    executionId?: string;
+    executionStatus?: string;
+    async?: boolean;
+  };
+}
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  meta: {
+    total: number;
+    page: number;
+    pageSize: number;
+    totalPages: number;
+    hasNextPage: boolean;
   };
 }
 
@@ -211,9 +247,13 @@ export const reportsAPI = {
   /**
    * Get all report templates
    */
-  async getTemplates(category?: string): Promise<ReportTemplate[]> {
-    const params = category ? `?category=${category}` : '';
-    return apiRequest<ReportTemplate[]>(`/reports/templates${params}`);
+  async getTemplates(category?: string, page: number = 1, pageSize: number = 24): Promise<PaginatedResponse<ReportTemplate>> {
+    const searchParams = new URLSearchParams();
+    if (category) searchParams.set('category', category);
+    searchParams.set('page', String(page));
+    searchParams.set('pageSize', String(pageSize));
+    const params = searchParams.toString() ? `?${searchParams.toString()}` : '';
+    return apiRequest<PaginatedResponse<ReportTemplate>>(`/reports/templates${params}`);
   },
 
   /**
@@ -261,6 +301,8 @@ export const reportsAPI = {
     templateId: string;
     runtimeFilters?: ReportFilter[];
     exportFormat?: 'pdf' | 'excel' | 'csv' | 'json';
+    page?: number;
+    pageSize?: number;
   }): Promise<ReportExecutionResult> {
     return apiRequest<ReportExecutionResult>('/reports/execute', {
       method: 'POST',
@@ -269,11 +311,45 @@ export const reportsAPI = {
   },
 
   /**
+   * Preview a report config without saving a template
+   */
+  async previewReport(data: {
+    config: ReportConfig;
+    name?: string;
+    category?: ReportTemplate['category'];
+    page?: number;
+    pageSize?: number;
+  }): Promise<ReportExecutionResult> {
+    return apiRequest<ReportExecutionResult>('/reports/preview', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
    * Get execution history for a report
    */
-  async getExecutionHistory(templateId: string, limit?: number): Promise<ReportExecution[]> {
-    const params = limit ? `?limit=${limit}` : '';
-    return apiRequest<ReportExecution[]>(`/reports/executions/${templateId}${params}`);
+  async getExecutionHistory(templateId: string, page: number = 1, pageSize: number = 20): Promise<PaginatedResponse<ReportExecution>> {
+    const params = `?page=${page}&pageSize=${pageSize}`;
+    return apiRequest<PaginatedResponse<ReportExecution>>(`/reports/executions/${templateId}${params}`);
+  },
+
+  async getExecutionById(executionId: string): Promise<ReportExecution> {
+    return apiRequest<ReportExecution>(`/reports/execution/${executionId}`);
+  },
+
+  async downloadExecutionFile(executionId: string): Promise<Blob> {
+    const token = getAuthToken();
+    const response = await fetch(`${API_BASE_URL}/reports/execution/${executionId}/download`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: response.statusText }));
+      throw new ApiError(error.message || `API Error: ${response.status}`, response.status, error);
+    }
+    return response.blob();
   },
 
   // ==================== REPORT SCHEDULES ====================

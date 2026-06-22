@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -29,6 +29,10 @@ import {
 import { toast } from 'sonner';
 import { PageSkeleton } from '../components/PageLoader';
 
+const REPORT_BUILDER_EDIT_KEY = 'jsc_report_builder_template_id';
+const REPORT_BUILDER_MODES = ['create', 'edit'] as const;
+type BuilderMode = typeof REPORT_BUILDER_MODES[number];
+
 const CustomReportBuilderPage: React.FC = () => {
   // Navigation helper
   const navigate = (view: string) => {
@@ -40,6 +44,8 @@ const CustomReportBuilderPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [executing, setExecuting] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [builderMode, setBuilderMode] = useState<BuilderMode>('create');
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
 
   // Report configuration
   const [reportName, setReportName] = useState('');
@@ -61,6 +67,8 @@ const CustomReportBuilderPage: React.FC = () => {
   // Preview data
   const [previewData, setPreviewData] = useState<any[]>([]);
   const [previewMeta, setPreviewMeta] = useState<any>(null);
+  const [previewPage, setPreviewPage] = useState(1);
+  const [previewPageSize] = useState(25);
 
   // Load data sources on mount
   useEffect(() => {
@@ -72,6 +80,10 @@ const CustomReportBuilderPage: React.FC = () => {
       setLoading(true);
       const sources = await reportsAPI.getDataSources();
       setDataSources(sources);
+      const templateId = sessionStorage.getItem(REPORT_BUILDER_EDIT_KEY);
+      if (templateId) {
+        await loadTemplate(templateId);
+      }
     } catch (error: any) {
       toast.error('Failed to load data sources', {
         description: error.message,
@@ -83,15 +95,157 @@ const CustomReportBuilderPage: React.FC = () => {
 
   // Get selected data source
   const selectedDataSource = dataSources.find(ds => ds.table === baseTable);
-
-  // Get available tables for joins
-  const availableJoinTables = dataSources.filter(ds => 
-    ds.table !== baseTable && 
-    selectedDataSource?.relationships.some(rel => rel.table === ds.table)
+  const dataSourceMap = useMemo(
+    () => new Map(dataSources.map((source) => [source.table, source])),
+    [dataSources],
   );
+  const relationshipEdges = useMemo(
+    () => dataSources.flatMap((source) => source.relationshipGraph || []),
+    [dataSources],
+  );
+
+  const getUsedTables = () =>
+    Array.from(
+      new Set([
+        ...selectedFields.map((field) => field.table),
+        ...filters.map((filter) => filter.table),
+        ...groupByFields.map((groupBy) => groupBy.table),
+        ...orderByFields.map((orderBy) => orderBy.table),
+      ]),
+    );
+
+  const connectedTables = useMemo(() => {
+    if (!baseTable) return [];
+    const resolved = new Set<string>([baseTable]);
+    let updated = true;
+
+    while (updated) {
+      updated = false;
+      joins.forEach((join) => {
+        const joinSource = join.fromTable || baseTable;
+        if (resolved.has(joinSource) && !resolved.has(join.table)) {
+          resolved.add(join.table);
+          updated = true;
+        }
+      });
+    }
+
+    return Array.from(resolved);
+  }, [baseTable, joins]);
+
+  const tableOptions = useMemo(() => {
+    if (!baseTable) return [];
+    return Array.from(new Set([baseTable, ...connectedTables, ...getUsedTables()]));
+  }, [baseTable, connectedTables, selectedFields, filters, groupByFields, orderByFields]);
+
+  const fieldTableOptions = useMemo(
+    () =>
+      tableOptions
+        .map((table) => dataSourceMap.get(table))
+        .filter((source): source is DataSource => Boolean(source)),
+    [tableOptions, dataSourceMap],
+  );
+
+  const availableJoinOptions = useMemo(() => {
+    const activeSources = connectedTables.length > 0 ? connectedTables : baseTable ? [baseTable] : [];
+    return activeSources.flatMap((sourceTable) =>
+      relationshipEdges
+        .filter((edge) => edge.sourceTable === sourceTable && !connectedTables.includes(edge.targetTable))
+        .map((edge) => ({
+          fromTable: sourceTable,
+          table: edge.targetTable,
+          type: (edge.defaultJoinType || 'LEFT') as ReportJoin['type'],
+          label: edge.label,
+          joinTypes: edge.joinTypes,
+        })),
+    );
+  }, [baseTable, connectedTables, relationshipEdges]);
+
+  const resetDependentConfig = () => {
+    setSelectedFields([]);
+    setFilters([]);
+    setJoins([]);
+    setGroupByFields([]);
+    setOrderByFields([]);
+    setPreviewData([]);
+    setPreviewMeta(null);
+    setPreviewPage(1);
+  };
+
+  const getDefaultField = (table: string) => dataSourceMap.get(table)?.fields[0]?.field || '';
+
+  const pruneToConnectedTables = (nextBaseTable: string, nextJoins: ReportJoin[]) => {
+    const resolved = new Set<string>([nextBaseTable]);
+    let updated = true;
+    while (updated) {
+      updated = false;
+      nextJoins.forEach((join) => {
+        const joinSource = join.fromTable || nextBaseTable;
+        if (resolved.has(joinSource) && !resolved.has(join.table)) {
+          resolved.add(join.table);
+          updated = true;
+        }
+      });
+    }
+
+    setSelectedFields((prev) => prev.filter((field) => resolved.has(field.table)));
+    setFilters((prev) => prev.filter((filter) => resolved.has(filter.table)));
+    setGroupByFields((prev) => prev.filter((groupBy) => resolved.has(groupBy.table)));
+    setOrderByFields((prev) => prev.filter((orderBy) => resolved.has(orderBy.table)));
+  };
+
+  const handleBaseTableChange = (nextBaseTable: string) => {
+    if (nextBaseTable === baseTable) return;
+    setBaseTable(nextBaseTable);
+    resetDependentConfig();
+    if (editingTemplateId) {
+      toast.info('Data source changed', {
+        description: 'Fields, joins, filters, grouping, sorting, and preview were reset for the new source.',
+      });
+    }
+  };
+
+  const loadTemplate = async (templateId: string) => {
+    try {
+      const template = await reportsAPI.getTemplate(templateId);
+      setBuilderMode('edit');
+      setEditingTemplateId(template.id);
+      setReportName(template.name);
+      setReportDescription(template.description || '');
+      setReportCategory(template.category);
+      setIsPublic(Boolean(template.is_public));
+      setBaseTable(template.config.fields[0]?.table || '');
+      setSelectedFields(template.config.fields || []);
+      setFilters(template.config.filters || []);
+      setJoins(template.config.joins || []);
+      setGroupByFields(template.config.groupBy || []);
+      setOrderByFields(template.config.orderBy || []);
+      setReportLimit(String(template.config.limit || 500));
+      setPreviewData([]);
+      setPreviewMeta(null);
+      setPreviewPage(1);
+    } catch (error: any) {
+      sessionStorage.removeItem(REPORT_BUILDER_EDIT_KEY);
+      setBuilderMode('create');
+      setEditingTemplateId(null);
+      toast.error('Failed to load report for editing', {
+        description: error.message,
+      });
+    }
+  };
 
   // Add field
   const addField = (table: string, field: string, label: string, aggregate?: ReportField['aggregate']) => {
+    const existingField = selectedFields.some(
+      (selectedField) =>
+        selectedField.table === table &&
+        selectedField.field === field &&
+        selectedField.aggregate === aggregate,
+    );
+    if (existingField) {
+      return;
+    }
+
     const newField: ReportField = {
       table,
       field,
@@ -110,16 +264,18 @@ const CustomReportBuilderPage: React.FC = () => {
 
   // Add filter
   const addFilter = () => {
-    if (!selectedDataSource) return;
+    if (!baseTable) return;
 
     const newFilter: ReportFilter = {
       table: baseTable,
-      field: selectedDataSource.fields[0].field,
+      field: getDefaultField(baseTable),
       operator: '=',
       value: '',
     };
 
     setFilters(prev => [...prev, newFilter]);
+    setPreviewData([]);
+    setPreviewMeta(null);
   };
 
   // Update filter
@@ -136,38 +292,56 @@ const CustomReportBuilderPage: React.FC = () => {
 
   // Add join
   const addJoin = () => {
-    if (!selectedDataSource || availableJoinTables.length === 0) return;
+    if (availableJoinOptions.length === 0) return;
+    const firstOption = availableJoinOptions[0];
+    setJoins((prev) => [
+      ...prev,
+      {
+        table: firstOption.table,
+        fromTable: firstOption.fromTable,
+        type: firstOption.type,
+      },
+    ]);
+    setPreviewData([]);
+    setPreviewMeta(null);
+  };
 
-    const firstJoinTable = availableJoinTables[0];
-    const relationship = selectedDataSource.relationships.find(rel => rel.table === firstJoinTable.table);
-
-    if (!relationship) return;
-
-    const newJoin: ReportJoin = {
-      table: firstJoinTable.table,
-      type: 'LEFT',
-      onField: relationship.field,
-      joinField: relationship.foreignKey,
-    };
-
-    setJoins(prev => [...prev, newJoin]);
+  const updateJoin = (index: number, updates: Partial<ReportJoin>) => {
+    setJoins((prev) => {
+      const nextJoins = prev.map((join, joinIndex) => {
+        if (joinIndex !== index) return join;
+        return { ...join, ...updates, onField: undefined, joinField: undefined };
+      });
+      pruneToConnectedTables(baseTable, nextJoins);
+      return nextJoins;
+    });
+    setPreviewData([]);
+    setPreviewMeta(null);
   };
 
   // Remove join
   const removeJoin = (index: number) => {
-    setJoins(prev => prev.filter((_, i) => i !== index));
+    setJoins(prev => {
+      const nextJoins = prev.filter((_, i) => i !== index);
+      pruneToConnectedTables(baseTable, nextJoins);
+      return nextJoins;
+    });
+    setPreviewData([]);
+    setPreviewMeta(null);
   };
 
   // Add group by
   const addGroupBy = () => {
-    if (!selectedDataSource) return;
+    if (!baseTable) return;
 
     const newGroupBy: ReportGroupBy = {
       table: baseTable,
-      field: selectedDataSource.fields[0].field,
+      field: getDefaultField(baseTable),
     };
 
     setGroupByFields(prev => [...prev, newGroupBy]);
+    setPreviewData([]);
+    setPreviewMeta(null);
   };
 
   // Remove group by
@@ -177,15 +351,17 @@ const CustomReportBuilderPage: React.FC = () => {
 
   // Add order by
   const addOrderBy = () => {
-    if (!selectedDataSource) return;
+    if (!baseTable) return;
 
     const newOrderBy: ReportOrderBy = {
       table: baseTable,
-      field: selectedDataSource.fields[0].field,
+      field: getDefaultField(baseTable),
       direction: 'ASC',
     };
 
     setOrderByFields(prev => [...prev, newOrderBy]);
+    setPreviewData([]);
+    setPreviewMeta(null);
   };
 
   // Remove order by
@@ -208,7 +384,7 @@ const CustomReportBuilderPage: React.FC = () => {
   };
 
   // Execute report (preview)
-  const executeReport = async () => {
+  const executeReport = async (page: number = previewPage) => {
     if (selectedFields.length === 0) {
       toast.error('No fields selected', {
         description: 'Please select at least one field to include in the report',
@@ -218,41 +394,23 @@ const CustomReportBuilderPage: React.FC = () => {
 
     try {
       setExecuting(true);
-
-      // First save as temporary template
       const config = buildReportConfig();
-      const tempTemplate = await reportsAPI.createTemplate({
-        name: reportName || `Temp Report ${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        description: reportDescription,
-        category: reportCategory,
+      const result = await reportsAPI.previewReport({
         config,
-        isPublic: false,
-      });
-
-      // Execute the report
-      const result = await reportsAPI.executeReport({
-        templateId: tempTemplate.id,
-        exportFormat: 'json',
+        name: reportName || 'Preview Report',
+        category: reportCategory,
+        page,
+        pageSize: previewPageSize,
       });
 
       setPreviewData(result.data);
       setPreviewMeta(result.meta);
+      setPreviewPage(page);
 
       toast.success('Report executed successfully', {
-        description: `Retrieved ${result.meta.totalRows} rows in ${reportHelpers.formatExecutionTime(result.meta.executionTimeMs)}`,
+        description: `Retrieved ${result.meta.returnedRows || result.data.length} of ${result.meta.totalRows} rows in ${reportHelpers.formatExecutionTime(result.meta.executionTimeMs)}`,
       });
-
-      // Delete temp template if name was auto-generated
-      if (!reportName) {
-        await reportsAPI.deleteTemplate(tempTemplate.id);
-      }
     } catch (error: any) {
-      if (error instanceof ApiError && error.status === 409) {
-        toast.error('Template name already exists', {
-          description: 'Please change the report name and try again.',
-        });
-        return;
-      }
       toast.error('Failed to execute report', {
         description: error.message,
       });
@@ -281,16 +439,29 @@ const CustomReportBuilderPage: React.FC = () => {
       setSaving(true);
 
       const config = buildReportConfig();
-      await reportsAPI.createTemplate({
-        name: reportName,
-        description: reportDescription,
-        category: reportCategory,
-        config,
-        isPublic,
-      });
+      if (editingTemplateId) {
+        await reportsAPI.updateTemplate(editingTemplateId, {
+          name: reportName,
+          description: reportDescription,
+          category: reportCategory,
+          config,
+          isPublic,
+        });
+      } else {
+        await reportsAPI.createTemplate({
+          name: reportName,
+          description: reportDescription,
+          category: reportCategory,
+          config,
+          isPublic,
+        });
+      }
 
-      toast.success('Report saved successfully', {
-        description: 'You can now access this report from the Reports page',
+      sessionStorage.removeItem(REPORT_BUILDER_EDIT_KEY);
+      toast.success(editingTemplateId ? 'Report updated successfully' : 'Report saved successfully', {
+        description: editingTemplateId
+          ? 'Your changes are now available in the report list.'
+          : 'You can now access this report from the Reports page',
       });
 
       // Navigate to reports page
@@ -320,7 +491,11 @@ const CustomReportBuilderPage: React.FC = () => {
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
           <h1 className="page-title font-semibold">Custom Report Builder</h1>
-          <p className="text-muted-foreground">Create custom reports by selecting fields and filters</p>
+          <p className="text-muted-foreground">
+            {builderMode === 'edit'
+              ? 'Update an existing report template with live preview'
+              : 'Create custom reports by selecting fields and filters'}
+          </p>
         </div>
           <div className="flex gap-2">
             <Button
@@ -332,7 +507,7 @@ const CustomReportBuilderPage: React.FC = () => {
             </Button>
             <Button
               variant="outline"
-              onClick={executeReport}
+              onClick={() => executeReport()}
               disabled={executing || selectedFields.length === 0}
             >
               {executing ? (
@@ -360,7 +535,7 @@ const CustomReportBuilderPage: React.FC = () => {
               ) : (
                 <>
                   <Save className="mr-2 h-4 w-4" />
-                  Save Report
+                  {builderMode === 'edit' ? 'Update Report' : 'Save Report'}
                 </>
               )}
             </Button>
@@ -466,7 +641,7 @@ const CustomReportBuilderPage: React.FC = () => {
                 <CardDescription>Choose the primary table for your report</CardDescription>
               </CardHeader>
               <CardContent>
-                <Select value={baseTable} onValueChange={setBaseTable}>
+                <Select value={baseTable} onValueChange={handleBaseTableChange}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select a table..." />
                   </SelectTrigger>
@@ -482,22 +657,32 @@ const CustomReportBuilderPage: React.FC = () => {
                   </SelectContent>
                 </Select>
 
-                {selectedDataSource && (
-                  <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                    <p className="text-sm font-medium mb-2">Available Fields:</p>
-                    <div className="flex flex-wrap gap-2">
-                      {selectedDataSource.fields.map((field) => (
-                        <Badge
-                          key={field.field}
-                          variant="outline"
-                          className="cursor-pointer hover:bg-[#008000] hover:text-white transition-colors"
-                          onClick={() => addField(baseTable, field.field, field.label)}
-                        >
-                          <Plus className="h-3 w-3 mr-1" />
-                          {field.label}
-                        </Badge>
-                      ))}
-                    </div>
+                {fieldTableOptions.length > 0 && (
+                  <div className="mt-4 space-y-3">
+                    <p className="text-sm font-medium">Available Fields By Connected Table:</p>
+                    {fieldTableOptions.map((source) => (
+                      <div key={source.table} className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Badge variant={source.table === baseTable ? 'default' : 'secondary'}>
+                            {source.label}
+                          </Badge>
+                          <span className="text-xs text-muted-foreground">{source.table}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {source.fields.map((field) => (
+                            <Badge
+                              key={`${source.table}.${field.field}`}
+                              variant="outline"
+                              className="cursor-pointer hover:bg-[#008000] hover:text-white transition-colors"
+                              onClick={() => addField(source.table, field.field, field.label)}
+                            >
+                              <Plus className="h-3 w-3 mr-1" />
+                              {field.label}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </CardContent>
@@ -598,7 +783,8 @@ const CustomReportBuilderPage: React.FC = () => {
                             <FilterRow
                               key={index}
                               filter={filter}
-                              dataSources={dataSources}
+                              tables={tableOptions}
+                              dataSourceMap={dataSourceMap}
                               onUpdate={(updates) => updateFilter(index, updates)}
                               onRemove={() => removeFilter(index)}
                             />
@@ -616,7 +802,7 @@ const CustomReportBuilderPage: React.FC = () => {
                         <Button 
                           size="sm" 
                           onClick={addJoin}
-                          disabled={availableJoinTables.length === 0}
+                          disabled={availableJoinOptions.length === 0}
                         >
                           <Plus className="h-4 w-4 mr-2" />
                           Add Join
@@ -628,7 +814,7 @@ const CustomReportBuilderPage: React.FC = () => {
                           <Link2 className="h-12 w-12 mx-auto mb-2 opacity-20" />
                           <p>No joins configured</p>
                           <p className="text-sm">
-                            {availableJoinTables.length === 0 
+                            {availableJoinOptions.length === 0 
                               ? 'No related tables available for this data source'
                               : 'Click "Add Join" to include data from related tables'
                             }
@@ -637,25 +823,82 @@ const CustomReportBuilderPage: React.FC = () => {
                       ) : (
                         <div className="space-y-2">
                           {joins.map((join, index) => (
-                            <div
-                              key={index}
-                              className="flex items-center gap-4 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
-                            >
-                              <div className="flex-1">
-                                <p className="font-medium">
-                                  {join.type} JOIN {join.table}
-                                </p>
-                                <p className="text-sm text-gray-600 dark:text-gray-400">
-                                  ON {baseTable}.{join.onField} = {join.table}.{join.joinField}
-                                </p>
+                            <div key={index} className="grid grid-cols-1 md:grid-cols-[1fr_1fr_160px_auto] gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                              <div>
+                                <Label className="text-xs">From Table</Label>
+                                <Select
+                                  value={join.fromTable || baseTable}
+                                  onValueChange={(value) => updateJoin(index, { fromTable: value, table: '' })}
+                                >
+                                  <SelectTrigger className="h-9 text-sm">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {connectedTables.map((table) => (
+                                      <SelectItem key={`${index}-${table}`} value={table}>
+                                        {dataSourceMap.get(table)?.label || table}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
                               </div>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => removeJoin(index)}
-                              >
-                                <Trash2 className="h-4 w-4 text-red-500" />
-                              </Button>
+                              <div>
+                                <Label className="text-xs">Join Table</Label>
+                                <Select
+                                  value={join.table}
+                                  onValueChange={(value) => updateJoin(index, { table: value })}
+                                >
+                                  <SelectTrigger className="h-9 text-sm">
+                                    <SelectValue placeholder="Select join table" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {relationshipEdges
+                                      .filter((edge) => edge.sourceTable === (join.fromTable || baseTable))
+                                      .map((edge) => (
+                                        <SelectItem key={`${index}-${edge.sourceTable}-${edge.targetTable}`} value={edge.targetTable}>
+                                          {dataSourceMap.get(edge.targetTable)?.label || edge.targetTable}
+                                        </SelectItem>
+                                      ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div>
+                                <Label className="text-xs">Join Type</Label>
+                                <Select
+                                  value={join.type}
+                                  onValueChange={(value: ReportJoin['type']) => updateJoin(index, { type: value })}
+                                >
+                                  <SelectTrigger className="h-9 text-sm">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {(
+                                      relationshipEdges.find(
+                                        (edge) =>
+                                          edge.sourceTable === (join.fromTable || baseTable) && edge.targetTable === join.table,
+                                      )?.joinTypes || ['LEFT', 'INNER', 'RIGHT']
+                                    ).map((joinType) => (
+                                      <SelectItem key={`${index}-${joinType}`} value={joinType}>
+                                        {joinType}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div className="flex items-end">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => removeJoin(index)}
+                                >
+                                  <Trash2 className="h-4 w-4 text-red-500" />
+                                </Button>
+                              </div>
+                              <div className="md:col-span-4 text-sm text-gray-600 dark:text-gray-400">
+                                {join.table
+                                  ? `${join.type} JOIN ${dataSourceMap.get(join.table)?.label || join.table} from ${dataSourceMap.get(join.fromTable || baseTable)?.label || (join.fromTable || baseTable)}`
+                                  : 'Select the table you want to join'}
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -683,22 +926,52 @@ const CustomReportBuilderPage: React.FC = () => {
                       ) : (
                         <div className="space-y-2">
                           {groupByFields.map((groupBy, index) => (
-                            <div
-                              key={index}
-                              className="flex items-center gap-4 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
-                            >
-                              <div className="flex-1">
-                                <p className="font-medium">
-                                  {groupBy.table}.{groupBy.field}
-                                </p>
+                            <div key={index} className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                              <div>
+                                <Label className="text-xs">Table</Label>
+                                <Select
+                                  value={groupBy.table}
+                                  onValueChange={(value) => setGroupByFields((prev) => prev.map((item, itemIndex) => itemIndex === index ? { table: value, field: getDefaultField(value) } : item))}
+                                >
+                                  <SelectTrigger className="h-9 text-sm">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {tableOptions.map((table) => (
+                                      <SelectItem key={`${index}-group-${table}`} value={table}>
+                                        {dataSourceMap.get(table)?.label || table}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
                               </div>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => removeGroupBy(index)}
-                              >
-                                <Trash2 className="h-4 w-4 text-red-500" />
-                              </Button>
+                              <div>
+                                <Label className="text-xs">Field</Label>
+                                <Select
+                                  value={groupBy.field}
+                                  onValueChange={(value) => setGroupByFields((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, field: value } : item))}
+                                >
+                                  <SelectTrigger className="h-9 text-sm">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {(dataSourceMap.get(groupBy.table)?.fields || []).map((field) => (
+                                      <SelectItem key={`${index}-group-field-${field.field}`} value={field.field}>
+                                        {field.label}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div className="flex items-end">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => removeGroupBy(index)}
+                                >
+                                  <Trash2 className="h-4 w-4 text-red-500" />
+                                </Button>
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -726,22 +999,67 @@ const CustomReportBuilderPage: React.FC = () => {
                       ) : (
                         <div className="space-y-2">
                           {orderByFields.map((orderBy, index) => (
-                            <div
-                              key={index}
-                              className="flex items-center gap-4 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
-                            >
-                              <div className="flex-1">
-                                <p className="font-medium">
-                                  {orderBy.table}.{orderBy.field} ({orderBy.direction})
-                                </p>
+                            <div key={index} className="grid grid-cols-1 md:grid-cols-[1fr_1fr_160px_auto] gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                              <div>
+                                <Label className="text-xs">Table</Label>
+                                <Select
+                                  value={orderBy.table}
+                                  onValueChange={(value) => setOrderByFields((prev) => prev.map((item, itemIndex) => itemIndex === index ? { table: value, field: getDefaultField(value), direction: item.direction } : item))}
+                                >
+                                  <SelectTrigger className="h-9 text-sm">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {tableOptions.map((table) => (
+                                      <SelectItem key={`${index}-order-${table}`} value={table}>
+                                        {dataSourceMap.get(table)?.label || table}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
                               </div>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => removeOrderBy(index)}
-                              >
-                                <Trash2 className="h-4 w-4 text-red-500" />
-                              </Button>
+                              <div>
+                                <Label className="text-xs">Field</Label>
+                                <Select
+                                  value={orderBy.field}
+                                  onValueChange={(value) => setOrderByFields((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, field: value } : item))}
+                                >
+                                  <SelectTrigger className="h-9 text-sm">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {(dataSourceMap.get(orderBy.table)?.fields || []).map((field) => (
+                                      <SelectItem key={`${index}-order-field-${field.field}`} value={field.field}>
+                                        {field.label}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div>
+                                <Label className="text-xs">Direction</Label>
+                                <Select
+                                  value={orderBy.direction}
+                                  onValueChange={(value: ReportOrderBy['direction']) => setOrderByFields((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, direction: value } : item))}
+                                >
+                                  <SelectTrigger className="h-9 text-sm">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="ASC">Ascending</SelectItem>
+                                    <SelectItem value="DESC">Descending</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div className="flex items-end">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => removeOrderBy(index)}
+                                >
+                                  <Trash2 className="h-4 w-4 text-red-500" />
+                                </Button>
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -783,6 +1101,29 @@ const CustomReportBuilderPage: React.FC = () => {
                   </div>
                 ) : (
                   <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-muted-foreground">
+                        Page {previewMeta?.page || 1} of {previewMeta?.totalPages || 1}
+                      </p>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => executeReport(Math.max((previewMeta?.page || 1) - 1, 1))}
+                          disabled={(previewMeta?.page || 1) <= 1 || executing}
+                        >
+                          Previous
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => executeReport((previewMeta?.page || 1) + 1)}
+                          disabled={!previewMeta?.hasNextPage || executing}
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    </div>
                     <div className="max-h-[600px] overflow-auto">
                       <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                         <thead className="bg-gray-50 dark:bg-gray-800 sticky top-0">
@@ -798,7 +1139,7 @@ const CustomReportBuilderPage: React.FC = () => {
                           </tr>
                         </thead>
                         <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
-                          {previewData.slice(0, 10).map((row, idx) => (
+                          {previewData.map((row, idx) => (
                             <tr key={idx}>
                               {Object.values(row).map((value: any, cellIdx) => (
                                 <td
@@ -813,11 +1154,9 @@ const CustomReportBuilderPage: React.FC = () => {
                         </tbody>
                       </table>
                     </div>
-                    {previewData.length > 10 && (
-                      <p className="text-xs text-gray-500 text-center">
-                        Showing first 10 of {previewData.length} rows
-                      </p>
-                    )}
+                    <p className="text-xs text-gray-500 text-center">
+                      Showing {previewMeta?.returnedRows || previewData.length} rows for this page
+                    </p>
                   </div>
                 )}
               </CardContent>
@@ -831,19 +1170,46 @@ const CustomReportBuilderPage: React.FC = () => {
 // Filter Row Component
 interface FilterRowProps {
   filter: ReportFilter;
-  dataSources: DataSource[];
+  tables: string[];
+  dataSourceMap: Map<string, DataSource>;
   onUpdate: (updates: Partial<ReportFilter>) => void;
   onRemove: () => void;
 }
 
-const FilterRow: React.FC<FilterRowProps> = ({ filter, dataSources, onUpdate, onRemove }) => {
-  const table = dataSources.find(ds => ds.table === filter.table);
+const FilterRow: React.FC<FilterRowProps> = ({ filter, tables, dataSourceMap, onUpdate, onRemove }) => {
+  const table = dataSourceMap.get(filter.table);
   const field = table?.fields.find(f => f.field === filter.field);
   const operators = reportHelpers.getOperatorsForType(field?.type || 'string');
+  const supportsListValues = ['IN', 'NOT IN', 'BETWEEN'].includes(filter.operator);
 
   return (
     <div className="flex items-start gap-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-      <div className="grid grid-cols-3 gap-2 flex-1">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-2 flex-1">
+        <div>
+          <Label className="text-xs">Table</Label>
+          <Select
+            value={filter.table}
+            onValueChange={(value: string) =>
+              onUpdate({
+                table: value,
+                field: dataSourceMap.get(value)?.fields[0]?.field || '',
+                value: '',
+                values: undefined,
+              })
+            }
+          >
+            <SelectTrigger className="h-8 text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {tables.map((tableName) => (
+                <SelectItem key={tableName} value={tableName}>
+                  {dataSourceMap.get(tableName)?.label || tableName}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <div>
           <Label className="text-xs">Field</Label>
           <Select value={filter.field} onValueChange={(value: any) => onUpdate({ field: value })}>
@@ -879,9 +1245,20 @@ const FilterRow: React.FC<FilterRowProps> = ({ filter, dataSources, onUpdate, on
           {!['IS NULL', 'IS NOT NULL'].includes(filter.operator) && (
             <Input
               className="h-8 text-sm"
-              placeholder="Enter value..."
-              value={filter.value || ''}
-              onChange={(e) => onUpdate({ value: e.target.value })}
+              placeholder={supportsListValues ? 'Use commas to separate values' : 'Enter value...'}
+              value={supportsListValues ? (filter.values || []).join(', ') : (filter.value || '')}
+              onChange={(e) => {
+                const rawValue = e.target.value;
+                if (supportsListValues) {
+                  const values = rawValue
+                    .split(',')
+                    .map((value) => value.trim())
+                    .filter(Boolean);
+                  onUpdate({ values, value: undefined });
+                  return;
+                }
+                onUpdate({ value: rawValue, values: undefined });
+              }}
             />
           )}
         </div>

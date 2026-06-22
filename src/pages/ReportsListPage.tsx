@@ -2,6 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
+import { Textarea } from '../components/ui/textarea';
+import { Checkbox } from '../components/ui/checkbox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Badge } from '../components/ui/badge';
 import {
   DropdownMenu,
@@ -18,7 +22,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../components/ui/dialog';
-import { settingsAPI } from '../lib/api-client';
 import { reportsAPI, reportHelpers, ReportTemplate, ReportExecutionResult } from '../lib/reportsAPI';
 import {
   Plus,
@@ -39,13 +42,18 @@ import {
   Users,
   Building2,
   DollarSign,
-  Briefcase,
-  Heart
+  Briefcase
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { PageSkeleton } from '../components/PageLoader';
-import { loadPdfMake } from '../utils/loadPdfMake';
+
+const REPORT_BUILDER_EDIT_KEY = 'jsc_report_builder_template_id';
+const SHARE_ROLE_OPTIONS = [
+  { value: 'admin', label: 'Admin' },
+  { value: 'payroll_officer', label: 'Payroll Officer' },
+  { value: 'hr_manager', label: 'HR Manager' },
+];
 
 const ReportsListPage: React.FC = () => {
   // Navigation helper
@@ -62,6 +70,9 @@ const ReportsListPage: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [executing, setExecuting] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [templatePage, setTemplatePage] = useState(1);
+  const [templatePageSize] = useState(12);
+  const [templateMeta, setTemplateMeta] = useState({ total: 0, page: 1, pageSize: 12, totalPages: 1, hasNextPage: false });
 
   // Delete confirmation
   const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; template: ReportTemplate | null }>({
@@ -69,46 +80,80 @@ const ReportsListPage: React.FC = () => {
     template: null,
   });
 
-  const [organizationName, setOrganizationName] = useState('Nigerian Judicial Service Committee');
-  const [organizationLogo, setOrganizationLogo] = useState('');
-
   // Execution results dialog
   const [resultsDialog, setResultsDialog] = useState<{
     open: boolean;
     result: ReportExecutionResult | null;
+    template: ReportTemplate | null;
+    page: number;
+    pageSize: number;
   }>({
     open: false,
     result: null,
+    template: null,
+    page: 1,
+    pageSize: 25,
+  });
+  const [sharing, setSharing] = useState(false);
+  const [scheduling, setScheduling] = useState(false);
+  const [shareDialog, setShareDialog] = useState<{
+    open: boolean;
+    template: ReportTemplate | null;
+    sharedWithRole: string;
+    canView: boolean;
+    canEdit: boolean;
+    canExecute: boolean;
+    canSchedule: boolean;
+    expiresAt: string;
+  }>({
+    open: false,
+    template: null,
+    sharedWithRole: 'payroll_officer',
+    canView: true,
+    canEdit: false,
+    canExecute: true,
+    canSchedule: false,
+    expiresAt: '',
+  });
+  const [scheduleDialog, setScheduleDialog] = useState<{
+    open: boolean;
+    template: ReportTemplate | null;
+    scheduleType: 'daily' | 'weekly' | 'monthly' | 'custom';
+    timeOfDay: string;
+    dayOfWeek: string;
+    dayOfMonth: string;
+    recipients: string;
+    exportFormat: 'pdf' | 'excel' | 'csv';
+  }>({
+    open: false,
+    template: null,
+    scheduleType: 'daily',
+    timeOfDay: '08:00',
+    dayOfWeek: '1',
+    dayOfMonth: '1',
+    recipients: '',
+    exportFormat: 'csv',
   });
 
   // Load templates on mount
   useEffect(() => {
     loadTemplates();
-    loadFavorites();
-    fetchSettings();
-  }, []);
+  }, [templatePage, selectedCategory]);
 
-  const fetchSettings = async () => {
-    try {
-      const settings = await settingsAPI.getSettings();
-      if (settings?.organization_name) {
-        setOrganizationName(settings.organization_name);
-      }
-      if (settings?.organization_logo) {
-        setOrganizationLogo(settings.organization_logo);
-      } else {
-        setOrganizationLogo('');
-      }
-    } catch (error) {
-      console.error('Failed to fetch settings:', error);
-    }
-  };
+  useEffect(() => {
+    loadFavorites();
+  }, []);
 
   const loadTemplates = async () => {
     try {
       setLoading(true);
-      const data = await reportsAPI.getTemplates();
-      setTemplates(data);
+      const response = await reportsAPI.getTemplates(
+        selectedCategory === 'all' ? undefined : selectedCategory,
+        templatePage,
+        templatePageSize,
+      );
+      setTemplates(response.data);
+      setTemplateMeta(response.meta);
     } catch (error: any) {
       toast.error('Failed to load reports', {
         description: error.message,
@@ -141,22 +186,23 @@ const ReportsListPage: React.FC = () => {
   const filteredTemplates = templates.filter((template) => {
     const matchesSearch = template.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       template.description?.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = selectedCategory === 'all' || template.category === selectedCategory;
-    return matchesSearch && matchesCategory;
+    return matchesSearch;
   });
 
   // Execute report
-  const executeReport = async (template: ReportTemplate) => {
+  const executeReport = async (template: ReportTemplate, page: number = 1, pageSize: number = resultsDialog.pageSize) => {
     try {
       setExecuting(template.id);
       const result = await reportsAPI.executeReport({
         templateId: template.id,
         exportFormat: 'json',
+        page,
+        pageSize,
       });
 
-      setResultsDialog({ open: true, result });
+      setResultsDialog({ open: true, result, template, page, pageSize });
       toast.success('Report executed successfully', {
-        description: `Retrieved ${result.meta.totalRows} rows`,
+        description: `Retrieved ${result.meta.returnedRows || result.data.length} of ${result.meta.totalRows} rows`,
       });
     } catch (error: any) {
       toast.error('Failed to execute report', {
@@ -207,159 +253,147 @@ const ReportsListPage: React.FC = () => {
 
   // Export data
   const exportData = async (fileFormat: 'csv' | 'excel' | 'pdf') => {
-    if (!resultsDialog.result) return;
+    if (!resultsDialog.template) return;
 
-    // Convert data to CSV
-    if (fileFormat === 'csv' || fileFormat === 'excel') {
-      if (!resultsDialog.result) return;
-      const data = resultsDialog.result.data;
-      if (data.length === 0) return;
+    try {
+      const result = await reportsAPI.executeReport({
+        templateId: resultsDialog.template.id,
+        exportFormat: fileFormat,
+      });
 
-      const headers = Object.keys(data[0]);
-      const displayHeaders = headers.map(h => h.toUpperCase());
-      const currentDate = new Date().toLocaleDateString();
-      
-      // Calculate totals for numeric columns
-      const totals: Record<string, number> = {};
-      const numericColumns = new Set<string>();
-
-      const parseNumeric = (val: any) => {
-        if (val === null || val === undefined || val === '') return null;
-        const cleaned = String(val).replace(/[^0-9.-]+/g, '');
-        if (!cleaned || !/[0-9]/.test(cleaned)) return null;
-        const num = Number(cleaned);
-        return Number.isFinite(num) ? num : null;
-      };
-
-      headers.forEach(header => {
-        const isNumeric = data.every(row => {
-          const val = row[header];
-          if (val === null || val === undefined || val === '') return true;
-          return parseNumeric(val) !== null;
+      if (result.meta.executionId) {
+        toast.success('Export queued', {
+          description: `Preparing ${fileFormat.toUpperCase()} export in the background.`,
         });
-        
-        if (isNumeric) {
-          numericColumns.add(header);
-          const sum = data.reduce((acc, row) => {
-            const num = parseNumeric(row[header]);
-            return acc + (num ?? 0);
-          }, 0);
-          totals[header] = sum;
-        }
+        await pollForExecutionDownload(result.meta.executionId);
+      }
+    } catch (error: any) {
+      toast.error('Failed to start export', {
+        description: error.message,
       });
+    }
+  };
 
-      const reportHeader = `${organizationName.toUpperCase()}\n${resultsDialog.result.template.name.toUpperCase()}\nGENERATED: ${currentDate}\n\n`;
+  const pollForExecutionDownload = async (executionId: string) => {
+    const start = Date.now();
+    const maxWaitMs = 30000;
 
-      const formatValue = (header: string, val: any) => {
-        if (!numericColumns.has(header)) return `"${val ?? ''}"`;
-        if (val === null || val === undefined || val === '') return '""';
-        const lowerHeader = header.toLowerCase();
-        if (lowerHeader.includes('id') || lowerHeader.includes('number') || lowerHeader.includes('year')) {
-          return `"${val}"`;
-        }
-        const num = parseNumeric(val);
-        if (num === null) return `"${val}"`;
-        return `"${num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}"`;
-      };
+    while (Date.now() - start < maxWaitMs) {
+      const execution = await reportsAPI.getExecutionById(executionId);
+      if (execution.status === 'completed' && execution.file_path) {
+        const blob = await reportsAPI.downloadExecutionFile(executionId);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = execution.file_path.split(/[\\/]/).pop() || `report-export-${executionId}`;
+        a.click();
+        URL.revokeObjectURL(url);
+        toast.success('Export ready', {
+          description: 'Your export file has been downloaded.',
+        });
+        return;
+      }
+      if (execution.status === 'failed') {
+        throw new Error(execution.error_message || 'Export failed');
+      }
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
 
-      const csvContent = [
-        displayHeaders.join(','),
-        ...data.map(row => headers.map(h => formatValue(h, row[h])).join(',')),
-        // Add total row if any numeric columns found
-        Object.keys(totals).length > 0 ? '\nTOTALS,' + headers.map(h => {
-            if (totals[h] !== undefined) {
-                 const lowerHeader = h.toLowerCase();
-                 if (lowerHeader.includes('id') || lowerHeader.includes('number') || lowerHeader.includes('year')) {
-                     return '';
-                 }
-                 return `"${totals[h].toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}"`;
-            }
-            return '';
-        }).slice(1).join(',') : ''
-      ].join('\n');
-      
-      const csv = reportHeader + csvContent;
+    toast.info('Export is still processing', {
+      description: 'The export is running in the background. You can check back shortly.',
+    });
+  };
 
-      const blob = new Blob([csv], { type: 'text/csv' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${String(resultsDialog.result.template.name).replace(/[^a-z0-9]/gi, '_')}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
+  const openEditBuilder = (templateId: string) => {
+    sessionStorage.setItem(REPORT_BUILDER_EDIT_KEY, templateId);
+    navigate('custom-report-builder');
+  };
 
-      toast.success(fileFormat === 'csv' ? `Exported as CSV` : `Exported as Excel-compatible CSV`);
-    } else if (fileFormat === 'pdf') {
-      if (!resultsDialog.result) return;
-      const data = resultsDialog.result.data;
-      if (data.length === 0) return;
+  const openNewBuilder = () => {
+    sessionStorage.removeItem(REPORT_BUILDER_EDIT_KEY);
+    navigate('custom-report-builder');
+  };
 
-      const headers = Object.keys(data[0]);
+  const openShareDialog = (template: ReportTemplate) => {
+    setShareDialog({
+      open: true,
+      template,
+      sharedWithRole: 'payroll_officer',
+      canView: true,
+      canEdit: false,
+      canExecute: true,
+      canSchedule: false,
+      expiresAt: '',
+    });
+  };
 
-      const tableLayout = {
-        hLineWidth: function (i: number, node: any) { return 0; },
-        vLineWidth: function (i: number, node: any) { return 0; },
-        paddingLeft: function (i: number, node: any) { return 10; },
-        paddingRight: function (i: number, node: any) { return 10; },
-        paddingTop: function (i: number, node: any) { return 8; },
-        paddingBottom: function (i: number, node: any) { return 8; },
-        fillColor: function (i: number, node: any) {
-          if (i === 0) return '#008000'; // Green header
-          return (i % 2 === 0) ? '#F9FAFB' : null; // Zebra striping
-        }
-      };
+  const submitShare = async () => {
+    if (!shareDialog.template) return;
 
-      const tableBody = [
-        headers.map(h => ({ text: h.toUpperCase(), style: 'tableHeader' }))
-      ];
-
-      data.forEach(row => {
-        tableBody.push(
-          headers.map(h => ({
-            text: row[h] !== null && row[h] !== undefined ? String(row[h]) : '',
-            style: 'tableCell'
-          }))
-        );
+    try {
+      setSharing(true);
+      await reportsAPI.shareReport({
+        templateId: shareDialog.template.id,
+        sharedWithRole: shareDialog.sharedWithRole,
+        canView: shareDialog.canView,
+        canEdit: shareDialog.canEdit,
+        canExecute: shareDialog.canExecute,
+        canSchedule: shareDialog.canSchedule,
+        expiresAt: shareDialog.expiresAt ? new Date(`${shareDialog.expiresAt}T23:59:59`).toISOString() : undefined,
       });
+      toast.success('Report shared successfully');
+      setShareDialog((prev) => ({ ...prev, open: false, template: null }));
+      loadTemplates();
+    } catch (error: any) {
+      toast.error('Failed to share report', {
+        description: error.message,
+      });
+    } finally {
+      setSharing(false);
+    }
+  };
 
-      const docDefinition: any = {
-        pageSize: 'A4',
-        pageMargins: [20, 20, 20, 20],
-        pageOrientation: headers.length > 6 ? 'landscape' : 'portrait',
-        styles: {
-          header: { fontSize: 16, bold: true, color: '#008000', alignment: 'center', margin: [0, 0, 0, 5] },
-          subheader: { fontSize: 12, alignment: 'center', margin: [0, 0, 0, 2] },
-          generated: { fontSize: 10, alignment: 'center', margin: [0, 0, 0, 10], color: '#666666' },
-          tableHeader: { bold: true, color: 'white', fontSize: 10 },
-          tableCell: { fontSize: 9 }
-        },
-        defaultStyle: { fontSize: 10, font: 'Roboto' },
-        content: [
-          ...(organizationLogo ? [{
-            columns: [
-              { width: 80, image: organizationLogo, fit: [75, 75] },
-              { width: '*', text: organizationName, style: 'header', margin: [0, 20, 0, 0] },
-              { width: 80, text: '' }
-            ]
-          }] : [{ text: organizationName, style: 'header' }]),
-          { text: resultsDialog.result.template.name, style: 'subheader' },
-          { text: `Generated: ${new Date().toLocaleDateString()}`, style: 'generated' },
-          {
-            table: {
-              headerRows: 1,
-              widths: Array(headers.length).fill('*'),
-              body: tableBody
-            },
-            layout: tableLayout
-          }
-        ]
-      };
+  const openScheduleDialog = (template: ReportTemplate) => {
+    setScheduleDialog({
+      open: true,
+      template,
+      scheduleType: 'daily',
+      timeOfDay: '08:00',
+      dayOfWeek: '1',
+      dayOfMonth: '1',
+      recipients: '',
+      exportFormat: 'csv',
+    });
+  };
 
-      const filename = `${resultsDialog.result.template.name.replace(/[^a-z0-9]/gi, '_')}_${format(new Date(), 'yyyy-MM-dd')}.pdf`;
-      const pdfMake = await loadPdfMake();
-      pdfMake.createPdf(docDefinition).download(filename);
+  const submitSchedule = async () => {
+    if (!scheduleDialog.template) return;
 
-      toast.success(`Exported as PDF`);
+    try {
+      setScheduling(true);
+      const recipients = scheduleDialog.recipients
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .map((email) => ({ email }));
+
+      await reportsAPI.scheduleReport({
+        templateId: scheduleDialog.template.id,
+        scheduleType: scheduleDialog.scheduleType,
+        timeOfDay: scheduleDialog.timeOfDay || undefined,
+        dayOfWeek: scheduleDialog.scheduleType === 'weekly' ? [Number(scheduleDialog.dayOfWeek)] : undefined,
+        dayOfMonth: scheduleDialog.scheduleType === 'monthly' ? [Number(scheduleDialog.dayOfMonth)] : undefined,
+        recipients,
+        exportFormat: scheduleDialog.exportFormat,
+      });
+      toast.success('Report schedule created successfully');
+      setScheduleDialog((prev) => ({ ...prev, open: false, template: null }));
+    } catch (error: any) {
+      toast.error('Failed to schedule report', {
+        description: error.message,
+      });
+    } finally {
+      setScheduling(false);
     }
   };
 
@@ -395,7 +429,7 @@ const ReportsListPage: React.FC = () => {
             </p>
           </div>
           <Button
-            onClick={() => navigate('custom-report-builder')}
+            onClick={openNewBuilder}
             className="bg-[#008000] hover:bg-[#006600] w-full sm:w-auto self-start"
           >
             <Plus className="mr-2 h-4 w-4" />
@@ -422,7 +456,10 @@ const ReportsListPage: React.FC = () => {
                     key={category}
                     variant={selectedCategory === category ? 'default' : 'outline'}
                     size="sm"
-                    onClick={() => setSelectedCategory(category)}
+                    onClick={() => {
+                      setSelectedCategory(category);
+                      setTemplatePage(1);
+                    }}
                     className={`whitespace-nowrap ${selectedCategory === category ? 'bg-[#008000] hover:bg-[#006600]' : ''}`}
                   >
                     {category === 'all' ? 'All' : reportHelpers.getCategoryLabel(category)}
@@ -467,6 +504,9 @@ const ReportsListPage: React.FC = () => {
               onExecute={executeReport}
               onToggleFavorite={toggleFavorite}
               onDelete={(template) => setDeleteDialog({ open: true, template })}
+              onEdit={openEditBuilder}
+              onShare={openShareDialog}
+              onSchedule={openScheduleDialog}
               getCategoryIcon={getCategoryIcon}
             />
           )}
@@ -482,6 +522,9 @@ const ReportsListPage: React.FC = () => {
               onExecute={executeReport}
               onToggleFavorite={toggleFavorite}
               onDelete={(template) => setDeleteDialog({ open: true, template })}
+              onEdit={openEditBuilder}
+              onShare={openShareDialog}
+              onSchedule={openScheduleDialog}
               getCategoryIcon={getCategoryIcon}
             />
           )}
@@ -494,6 +537,9 @@ const ReportsListPage: React.FC = () => {
               onExecute={executeReport}
               onToggleFavorite={toggleFavorite}
               onDelete={(template) => setDeleteDialog({ open: true, template })}
+              onEdit={openEditBuilder}
+              onShare={openShareDialog}
+              onSchedule={openScheduleDialog}
               getCategoryIcon={getCategoryIcon}
             />
           )}
@@ -506,8 +552,37 @@ const ReportsListPage: React.FC = () => {
               onExecute={executeReport}
               onToggleFavorite={toggleFavorite}
               onDelete={(template) => setDeleteDialog({ open: true, template })}
+              onEdit={openEditBuilder}
+              onShare={openShareDialog}
+              onSchedule={openScheduleDialog}
               getCategoryIcon={getCategoryIcon}
             />
+          )}
+
+          {activeTab === 'all' && (
+            <div className="flex items-center justify-between rounded-lg border p-4">
+              <p className="text-sm text-muted-foreground">
+                Page {templateMeta.page} of {templateMeta.totalPages} • {templateMeta.total} total reports
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setTemplatePage((prev) => Math.max(prev - 1, 1))}
+                  disabled={templateMeta.page <= 1}
+                >
+                  Previous
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setTemplatePage((prev) => prev + 1)}
+                  disabled={!templateMeta.hasNextPage}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
           )}
         </div>
 
@@ -532,10 +607,214 @@ const ReportsListPage: React.FC = () => {
         </DialogContent>
       </Dialog>
 
+      <Dialog
+        open={shareDialog.open}
+        onOpenChange={(open: boolean) => setShareDialog((prev) => ({ ...prev, open, template: open ? prev.template : null }))}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Share Report</DialogTitle>
+            <DialogDescription>
+              Grant access to "{shareDialog.template?.name}" by role and control what that role can do.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Share With Role</Label>
+              <Select
+                value={shareDialog.sharedWithRole}
+                onValueChange={(value) => setShareDialog((prev) => ({ ...prev, sharedWithRole: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SHARE_ROLE_OPTIONS.map((role) => (
+                    <SelectItem key={role.value} value={role.value}>
+                      {role.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="share-expiry">Expiry Date</Label>
+              <Input
+                id="share-expiry"
+                type="date"
+                value={shareDialog.expiresAt}
+                onChange={(e) => setShareDialog((prev) => ({ ...prev, expiresAt: e.target.value }))}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { key: 'canView', label: 'Can view' },
+                { key: 'canExecute', label: 'Can execute' },
+                { key: 'canEdit', label: 'Can edit' },
+                { key: 'canSchedule', label: 'Can schedule' },
+              ].map((permission) => (
+                <label key={permission.key} className="flex items-center gap-2 rounded-md border p-3">
+                  <Checkbox
+                    checked={Boolean(shareDialog[permission.key as keyof typeof shareDialog])}
+                    onCheckedChange={(checked) =>
+                      setShareDialog((prev) => {
+                        const next = { ...prev, [permission.key]: Boolean(checked) } as typeof prev;
+                        if (permission.key === 'canView' && !checked) {
+                          next.canEdit = false;
+                          next.canExecute = false;
+                          next.canSchedule = false;
+                        }
+                        if (permission.key !== 'canView' && checked) {
+                          next.canView = true;
+                        }
+                        return next;
+                      })
+                    }
+                  />
+                  <span className="text-sm">{permission.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShareDialog((prev) => ({ ...prev, open: false, template: null }))} disabled={sharing}>
+              Cancel
+            </Button>
+            <Button onClick={submitShare} disabled={sharing}>
+              {sharing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Share2 className="mr-2 h-4 w-4" />}
+              Share Report
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={scheduleDialog.open}
+        onOpenChange={(open: boolean) => setScheduleDialog((prev) => ({ ...prev, open, template: open ? prev.template : null }))}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Schedule Report</DialogTitle>
+            <DialogDescription>
+              Configure automatic delivery for "{scheduleDialog.template?.name}".
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Schedule Type</Label>
+                <Select
+                  value={scheduleDialog.scheduleType}
+                  onValueChange={(value: 'daily' | 'weekly' | 'monthly' | 'custom') =>
+                    setScheduleDialog((prev) => ({ ...prev, scheduleType: value }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="daily">Daily</SelectItem>
+                    <SelectItem value="weekly">Weekly</SelectItem>
+                    <SelectItem value="monthly">Monthly</SelectItem>
+                    <SelectItem value="custom">Custom</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="schedule-time">Time of Day</Label>
+                <Input
+                  id="schedule-time"
+                  type="time"
+                  value={scheduleDialog.timeOfDay}
+                  onChange={(e) => setScheduleDialog((prev) => ({ ...prev, timeOfDay: e.target.value }))}
+                />
+              </div>
+            </div>
+            {scheduleDialog.scheduleType === 'weekly' && (
+              <div className="space-y-2">
+                <Label>Day of Week</Label>
+                <Select
+                  value={scheduleDialog.dayOfWeek}
+                  onValueChange={(value) => setScheduleDialog((prev) => ({ ...prev, dayOfWeek: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[
+                      { value: '0', label: 'Sunday' },
+                      { value: '1', label: 'Monday' },
+                      { value: '2', label: 'Tuesday' },
+                      { value: '3', label: 'Wednesday' },
+                      { value: '4', label: 'Thursday' },
+                      { value: '5', label: 'Friday' },
+                      { value: '6', label: 'Saturday' },
+                    ].map((day) => (
+                      <SelectItem key={day.value} value={day.value}>
+                        {day.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {scheduleDialog.scheduleType === 'monthly' && (
+              <div className="space-y-2">
+                <Label htmlFor="schedule-day-of-month">Day of Month</Label>
+                <Input
+                  id="schedule-day-of-month"
+                  type="number"
+                  min={1}
+                  max={31}
+                  value={scheduleDialog.dayOfMonth}
+                  onChange={(e) => setScheduleDialog((prev) => ({ ...prev, dayOfMonth: e.target.value }))}
+                />
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label>Export Format</Label>
+              <Select
+                value={scheduleDialog.exportFormat}
+                onValueChange={(value: 'pdf' | 'excel' | 'csv') => setScheduleDialog((prev) => ({ ...prev, exportFormat: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="csv">CSV</SelectItem>
+                  <SelectItem value="excel">Excel</SelectItem>
+                  <SelectItem value="pdf">PDF</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="schedule-recipients">Recipient Emails</Label>
+              <Textarea
+                id="schedule-recipients"
+                rows={3}
+                placeholder="finance@example.com, hr@example.com"
+                value={scheduleDialog.recipients}
+                onChange={(e) => setScheduleDialog((prev) => ({ ...prev, recipients: e.target.value }))}
+              />
+              <p className="text-xs text-muted-foreground">Separate multiple recipients with commas.</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setScheduleDialog((prev) => ({ ...prev, open: false, template: null }))} disabled={scheduling}>
+              Cancel
+            </Button>
+            <Button onClick={submitSchedule} disabled={scheduling}>
+              {scheduling ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Clock className="mr-2 h-4 w-4" />}
+              Schedule Report
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Results Dialog */}
       <Dialog 
         open={resultsDialog.open} 
-        onOpenChange={(open: boolean) => setResultsDialog({ open, result: null })}
+        onOpenChange={(open: boolean) => setResultsDialog({ open, result: null, template: null, page: 1, pageSize: 25 })}
       >
         <DialogContent className="max-w-6xl max-h-[80vh] overflow-auto">
           <DialogHeader>
@@ -563,7 +842,45 @@ const ReportsListPage: React.FC = () => {
           </DialogHeader>
 
           {resultsDialog.result && resultsDialog.result.data.length > 0 && (
-            <div className="overflow-auto">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-muted-foreground">
+                  Showing {(resultsDialog.result.meta.page || 1)} of {resultsDialog.result.meta.totalPages || 1} pages
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      resultsDialog.template &&
+                      executeReport(
+                        resultsDialog.template,
+                        Math.max((resultsDialog.result?.meta.page || 1) - 1, 1),
+                        resultsDialog.pageSize,
+                      )
+                    }
+                    disabled={(resultsDialog.result.meta.page || 1) <= 1}
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      resultsDialog.template &&
+                      executeReport(
+                        resultsDialog.template,
+                        (resultsDialog.result?.meta.page || 1) + 1,
+                        resultsDialog.pageSize,
+                      )
+                    }
+                    disabled={!resultsDialog.result.meta.hasNextPage}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+              <div className="overflow-auto">
               <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                 <thead className="bg-gray-50 dark:bg-gray-800 sticky top-0">
                   <tr>
@@ -592,6 +909,7 @@ const ReportsListPage: React.FC = () => {
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
         </DialogContent>
@@ -607,6 +925,9 @@ interface ReportGridProps {
   onExecute: (template: ReportTemplate) => void;
   onToggleFavorite: (template: ReportTemplate) => void;
   onDelete: (template: ReportTemplate) => void;
+  onEdit: (templateId: string) => void;
+  onShare: (template: ReportTemplate) => void;
+  onSchedule: (template: ReportTemplate) => void;
   getCategoryIcon: (category: string) => React.ReactNode;
 }
 
@@ -616,13 +937,11 @@ const ReportGrid: React.FC<ReportGridProps> = ({
   onExecute,
   onToggleFavorite,
   onDelete,
+  onEdit,
+  onShare,
+  onSchedule,
   getCategoryIcon,
 }) => {
-  // Navigation helper
-  const navigate = (view: string) => {
-    (window as any).navigateTo(view);
-  };
-
   if (templates.length === 0) {
     return (
       <Card>
@@ -675,16 +994,16 @@ const ReportGrid: React.FC<ReportGridProps> = ({
                     {template.is_favorite ? 'Remove from Favorites' : 'Add to Favorites'}
                   </DropdownMenuItem>
                   {template.can_edit !== false && (
-                    <DropdownMenuItem onClick={() => navigate('custom-report-builder')}>
+                    <DropdownMenuItem onClick={() => onEdit(template.id)}>
                       <Edit className="h-4 w-4 mr-2" />
                       Edit
                     </DropdownMenuItem>
                   )}
-                  <DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onShare(template)}>
                     <Share2 className="h-4 w-4 mr-2" />
                     Share
                   </DropdownMenuItem>
-                  <DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onSchedule(template)}>
                     <Clock className="h-4 w-4 mr-2" />
                     Schedule
                   </DropdownMenuItem>
@@ -710,6 +1029,13 @@ const ReportGrid: React.FC<ReportGridProps> = ({
               <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                 <Clock className="h-4 w-4" />
                 <span>{format(new Date(template.created_at), 'MMM dd, yyyy')}</span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                <div>Runs: {template.execution_count || 0}</div>
+                <div>Failures: {template.failed_execution_count || 0}</div>
+                <div>Avg Time: {template.average_execution_time_ms ? `${template.average_execution_time_ms}ms` : '-'}</div>
+                <div>Last Run: {template.last_executed_at ? format(new Date(template.last_executed_at), 'MMM dd') : 'Never'}</div>
               </div>
 
               <div className="flex gap-2 pt-2">
