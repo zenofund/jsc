@@ -94,7 +94,7 @@ export interface ReportTemplate {
   created_by_name?: string;
   created_at: string;
   updated_at: string;
-  access_type?: 'owner' | 'shared' | 'public';
+  access_type?: 'owner' | 'shared' | 'public' | 'available';
   is_favorite?: boolean;
   can_edit?: boolean;
   can_execute?: boolean;

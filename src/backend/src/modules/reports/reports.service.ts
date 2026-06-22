@@ -444,7 +444,6 @@ export class ReportsService {
         WHERE re.template_id = rt.id
       ) metrics ON true
       WHERE ${whereConditions.join(' AND ')}
-        AND (rt.created_by = $1 OR rt.is_public = true OR (rs.id IS NOT NULL AND rs.can_view = true))
     `;
 
     const totalQuery = `
@@ -463,22 +462,15 @@ export class ReportsService {
           WHEN rt.created_by = $1 THEN 'owner'
           WHEN rs.id IS NOT NULL THEN 'shared'
           WHEN rt.is_public = true THEN 'public'
+          ELSE 'available'
         END as access_type,
         EXISTS(SELECT 1 FROM report_favorites WHERE template_id = rt.id AND user_id = $1) as is_favorite,
-        CASE
-          WHEN rt.created_by = $1 THEN true
-          WHEN rt.is_public = true THEN true
-          ELSE COALESCE(rs.can_view, false)
-        END as can_view,
+        true as can_view,
         CASE
           WHEN rt.created_by = $1 THEN true
           ELSE COALESCE(rs.can_edit, false)
         END as can_edit,
-        CASE
-          WHEN rt.created_by = $1 THEN true
-          WHEN rt.is_public = true THEN true
-          ELSE COALESCE(rs.can_execute, false)
-        END as can_execute,
+        true as can_execute,
         CASE
           WHEN rt.created_by = $1 THEN true
           ELSE COALESCE(rs.can_schedule, false)
@@ -1819,21 +1811,14 @@ export class ReportsService {
           WHEN rt.created_by = $2 THEN 'owner'
           WHEN rs.id IS NOT NULL THEN 'shared'
           WHEN rt.is_public = true THEN 'public'
+          ELSE 'available'
         END as access_type,
-        CASE
-          WHEN rt.created_by = $2 THEN true
-          WHEN rt.is_public = true THEN true
-          ELSE COALESCE(rs.can_view, false)
-        END as can_view,
+        true as can_view,
         CASE
           WHEN rt.created_by = $2 THEN true
           ELSE COALESCE(rs.can_edit, false)
         END as can_edit,
-        CASE
-          WHEN rt.created_by = $2 THEN true
-          WHEN rt.is_public = true THEN true
-          ELSE COALESCE(rs.can_execute, false)
-        END as can_execute,
+        true as can_execute,
         CASE
           WHEN rt.created_by = $2 THEN true
           ELSE COALESCE(rs.can_schedule, false)
@@ -1850,8 +1835,7 @@ export class ReportsService {
         LIMIT 1
       ) rs ON true
       WHERE rt.id = $1
-        AND rt.status = 'active'
-        AND (rt.created_by = $2 OR rt.is_public = true OR (rs.id IS NOT NULL AND rs.can_view = true))`,
+        AND rt.status = 'active'`,
       [id, userId, userRole],
     );
   }
