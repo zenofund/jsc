@@ -900,6 +900,15 @@ export const reportAPI = {
       method: 'GET',
     });
   },
+
+  async getPayeSchedule(month: string, state: string, format: 'csv' | 'json' = 'csv'): Promise<any> {
+    const params = new URLSearchParams();
+    if (state) params.append('state', state);
+    params.append('format', format);
+    return makeApiRequest(`/reports/remittance/${month}/paye-schedule?${params.toString()}`, {
+      method: 'GET',
+    });
+  },
 };
 
 // ============================================

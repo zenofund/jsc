@@ -694,6 +694,9 @@ export class PayrollService {
         code: 'TAX',
         name: 'PAYE Tax',
         amount: taxDetails.monthly_tax,
+        is_statutory: true,
+        remittance_type: 'tax',
+        remittance_key: 'PAYE',
       });
       totalDeductionsAmount += taxDetails.monthly_tax;
 

@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException, ConflictException, 
 import { DatabaseService } from '@common/database/database.service';
 import { promises as fs } from 'fs';
 import { join } from 'path';
+import { SettingsService } from '../settings/settings.service';
 import {
   CreateReportTemplateDto,
   UpdateReportTemplateDto,
@@ -60,7 +61,24 @@ export class ReportsService {
   private readonly dataSources: DataSource[] = REPORT_DATA_SOURCES;
   private readonly relationshipGraph: RelationshipEdge[] = this.buildRelationshipGraph();
 
-  constructor(private databaseService: DatabaseService) {}
+  constructor(
+    private databaseService: DatabaseService,
+    private settingsService: SettingsService,
+  ) {}
+
+  private toDeductionsArray(value: any) {
+    if (!value) return [];
+    if (Array.isArray(value)) return value;
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  }
 
   // ==================== STANDARD REPORTS ====================
 
@@ -320,38 +338,228 @@ export class ReportsService {
     if (!batch) return null;
 
     const lines = await this.databaseService.query(
-      `SELECT pl.deductions, s.staff_number, s.first_name, s.last_name
+      `SELECT pl.deductions, s.staff_number, s.first_name, s.last_name, COALESCE(s.pit_remittance_state, 'FCT') as pit_remittance_state
        FROM payroll_lines pl
        JOIN staff s ON pl.staff_id = s.id
        WHERE pl.payroll_batch_id = $1`,
       [batch.id]
     );
 
-    const remittances = lines.map((l: any) => {
-      const deds = l.deductions || [];
-      const relevant = deds.filter((d: any) => 
-        d.name.toLowerCase().includes(type.toLowerCase()) || 
-        (type === 'tax' && (d.is_statutory || d.name.toLowerCase().includes('paye'))) ||
-        (type === 'pension' && d.name.toLowerCase().includes('pension')) ||
-        (type === 'cooperative' && (d.name.toLowerCase().includes('coop') || d.name.toLowerCase().includes('contribution') || d.type === 'cooperative'))
-      );
-      
-      const amount = relevant.reduce((sum: number, d: any) => sum + parseFloat(d.amount), 0);
-      
-      return {
-        staff_number: l.staff_number,
-        staff_name: `${l.first_name} ${l.last_name}`,
-        amount
-      };
-    }).filter((r: any) => r.amount > 0);
+    const typeLower = String(type || '').toLowerCase();
+
+    const remittances = (lines || [])
+      .map((l: any) => {
+        const deds = this.toDeductionsArray(l.deductions);
+        const relevant = deds.filter((d: any) => {
+          const name = String(d?.name || '').toLowerCase();
+          const code = String(d?.code || '').toUpperCase();
+          const remittanceType = String(d?.remittance_type || '').toLowerCase();
+          const remittanceKey = String(d?.remittance_key || '').toUpperCase();
+
+          if (typeLower === 'tax') {
+            if (code === 'TAX') return true;
+            if (remittanceKey === 'PAYE') return true;
+            if (remittanceType === 'tax') return true;
+            if (d?.is_statutory === true && (name.includes('paye') || name.includes('income tax') || name.includes('tax'))) return true;
+            return name.includes('paye') || name.includes('income tax') || name.includes('tax');
+          }
+
+          if (typeLower === 'pension') {
+            if (remittanceType === 'pension') return true;
+            return name.includes('pension');
+          }
+
+          if (typeLower === 'cooperative') {
+            const t = String(d?.type || '').toLowerCase();
+            return name.includes('coop') || name.includes('contribution') || t === 'cooperative';
+          }
+
+          if (!name) return false;
+          return name.includes(typeLower);
+        });
+
+        const amount = relevant.reduce((sum: number, d: any) => {
+          const val = typeof d?.amount === 'number' ? d.amount : parseFloat(d?.amount || '0');
+          return sum + (Number.isFinite(val) ? val : 0);
+        }, 0);
+
+        const pitState = String(l.pit_remittance_state || 'FCT').trim() || 'FCT';
+
+        return {
+          staff_number: l.staff_number,
+          staff_name: `${l.first_name} ${l.last_name}`.trim(),
+          amount,
+          pit_remittance_state: pitState,
+        };
+      })
+      .filter((r: any) => r.amount > 0);
 
     const total = remittances.reduce((sum: number, r: any) => sum + r.amount, 0);
+
+    if (typeLower === 'tax') {
+      const stateOrder = ['FCT', 'Nasarawa', 'Niger'];
+      const stateRank = (s: string) => {
+        const idx = stateOrder.indexOf(s);
+        return idx === -1 ? 999 : idx;
+      };
+
+      const sorted = [...remittances].sort((a: any, b: any) => {
+        const ar = stateRank(String(a.pit_remittance_state || 'FCT'));
+        const br = stateRank(String(b.pit_remittance_state || 'FCT'));
+        if (ar !== br) return ar - br;
+        const as = String(a.pit_remittance_state || '').localeCompare(String(b.pit_remittance_state || ''), undefined, { sensitivity: 'base' });
+        if (as !== 0) return as;
+        return String(a.staff_number || '').localeCompare(String(b.staff_number || ''), undefined, { numeric: true, sensitivity: 'base' });
+      });
+
+      const groupMap = new Map<string, { state: string; total_staff: number; total_amount: number; remittances: any[] }>();
+      for (const row of sorted) {
+        const state = String(row.pit_remittance_state || 'FCT').trim() || 'FCT';
+        if (!groupMap.has(state)) {
+          groupMap.set(state, { state, total_staff: 0, total_amount: 0, remittances: [] });
+        }
+        const g = groupMap.get(state)!;
+        g.total_staff += 1;
+        g.total_amount += row.amount || 0;
+        g.remittances.push(row);
+      }
+
+      const grouped_by_state = Array.from(groupMap.values()).sort((a, b) => {
+        const ar = stateRank(a.state);
+        const br = stateRank(b.state);
+        if (ar !== br) return ar - br;
+        return String(a.state).localeCompare(String(b.state), undefined, { sensitivity: 'base' });
+      });
+
+      return {
+        total_staff: sorted.length,
+        total_amount: total,
+        grouped_by_state,
+        remittances: sorted,
+      };
+    }
 
     return {
       total_staff: remittances.length,
       total_amount: total,
       remittances
     };
+  }
+
+  async getPayeSchedule(month: string, state?: string) {
+    const batch = await this.databaseService.queryOne(
+      `SELECT * FROM payroll_batches WHERE payroll_month = $1 LIMIT 1`,
+      [month],
+    );
+
+    if (!batch) return null;
+
+    const settings = await this.settingsService.getSettings().catch(() => null);
+    const organization_name = String(settings?.organization_name || 'Judicial Service Committee');
+
+    const stateFilter = String(state || '').trim();
+    const stateLower = stateFilter.toLowerCase();
+    const shouldFilterByState = Boolean(stateFilter) && stateLower !== 'all';
+
+    const lines = await this.databaseService.query(
+      `SELECT 
+        pl.deductions,
+        s.staff_number,
+        s.first_name,
+        s.middle_name,
+        s.last_name,
+        s.tax_id,
+        COALESCE(s.pit_remittance_state, 'FCT') as pit_remittance_state
+      FROM payroll_lines pl
+      JOIN staff s ON pl.staff_id = s.id
+      WHERE pl.payroll_batch_id = $1`,
+      [batch.id],
+    );
+
+    const rows = (lines || [])
+      .map((l: any) => {
+        const deds = this.toDeductionsArray(l.deductions);
+        const payeItems = deds.filter((d: any) => {
+          const code = String(d?.code || '').toUpperCase();
+          const remittanceType = String(d?.remittance_type || '').toLowerCase();
+          const remittanceKey = String(d?.remittance_key || '').toUpperCase();
+          const name = String(d?.name || '').toLowerCase();
+          if (code === 'TAX') return true;
+          if (remittanceKey === 'PAYE') return true;
+          if (remittanceType === 'tax') return true;
+          if (d?.is_statutory === true && (name.includes('paye') || name.includes('income tax') || name.includes('tax'))) return true;
+          return false;
+        });
+
+        const amount = payeItems.reduce((sum: number, d: any) => {
+          const val = typeof d?.amount === 'number' ? d.amount : parseFloat(d?.amount || '0');
+          return sum + (Number.isFinite(val) ? val : 0);
+        }, 0);
+
+        const pitState = String(l.pit_remittance_state || 'FCT').trim() || 'FCT';
+        const staffName = [l.first_name, l.middle_name, l.last_name].filter(Boolean).join(' ').trim();
+        const taxId = String(l.tax_id || '').trim();
+
+        return {
+          staff_number: l.staff_number,
+          staff_name: staffName,
+          tax_id: taxId,
+          pit_remittance_state: pitState,
+          payroll_month: month,
+          amount,
+        };
+      })
+      .filter((r: any) => r.amount > 0)
+      .filter((r: any) => (shouldFilterByState ? String(r.pit_remittance_state || '').toLowerCase() === stateLower : true))
+      .sort((a: any, b: any) =>
+        String(a.staff_number || '').localeCompare(String(b.staff_number || ''), undefined, { numeric: true, sensitivity: 'base' }),
+      );
+
+    const validation_errors = rows
+      .filter((r: any) => !String(r.tax_id || '').trim())
+      .map((r: any) => ({
+        staff_number: r.staff_number,
+        staff_name: r.staff_name,
+        message: 'Missing tax_id',
+      }));
+
+    const total_amount = rows.reduce((sum: number, r: any) => sum + (Number(r.amount) || 0), 0);
+
+    return {
+      month,
+      state: shouldFilterByState ? stateFilter : 'ALL',
+      organization_name,
+      total_staff: rows.length,
+      total_amount,
+      missing_tax_id_count: validation_errors.length,
+      validation_errors,
+      rows,
+    };
+  }
+
+  async getPayeScheduleCsv(month: string, state?: string) {
+    const data = await this.getPayeSchedule(month, state);
+    if (!data) return null;
+
+    const csvCell = (val: any) => `"${String(val ?? '').replace(/"/g, '""')}"`;
+    const csvRow = (vals: any[]) => vals.map(csvCell).join(',') + '\n';
+
+    let csv = '';
+    csv += csvRow(['S/N', 'Staff Number', 'Staff Name', 'Tax ID', 'PIT State', 'Payroll Month', 'PAYE Amount']);
+
+    (data.rows || []).forEach((r: any, idx: number) => {
+      csv += csvRow([
+        idx + 1,
+        r.staff_number,
+        r.staff_name,
+        r.tax_id,
+        r.pit_remittance_state,
+        r.payroll_month,
+        r.amount,
+      ]);
+    });
+
+    return csv;
   }
 
   // ==================== DATA SOURCES (Available Tables & Fields) ====================

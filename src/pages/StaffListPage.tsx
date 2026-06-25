@@ -173,6 +173,7 @@ export function StaffListPage() {
     account_name: '',
     pension_pin: '',
     tax_id: '',
+    pit_remittance_state: 'FCT',
     bvn: '',
     nhf_number: '',
     status: 'active',
@@ -225,7 +226,7 @@ export function StaffListPage() {
     1: ['staff_number', 'last_name', 'first_name', 'gender', 'date_of_birth', 'state_of_origin', 'lga', 'zone', 'qualification', 'marital_status', 'phone', 'email', 'nationality', 'address'],
     2: ['nok_name', 'nok_relationship', 'nok_phone', 'nok_address'],
     3: ['post_on_first_appointment', 'appointment_date', 'confirmation_date', 'present_appointment', 'date_of_present_appointment', 'exit_date', 'exit_reason', 'appointment_type', 'employment_date', 'department', 'unit', 'cadre', 'designation'],
-    4: ['grade_level', 'step', 'bank_code', 'bank_name', 'account_number', 'account_name', 'pension_pin', 'tax_id', 'bvn', 'nhf_number'],
+    4: ['grade_level', 'step', 'bank_code', 'bank_name', 'account_number', 'account_name', 'pension_pin', 'tax_id', 'pit_remittance_state', 'bvn', 'nhf_number'],
   };
 
   const dateFields = [
@@ -488,6 +489,7 @@ export function StaffListPage() {
           bvn: item.bvn,
           pension_pin: item.pension_pin,
           tax_id: item.tax_id,
+          pit_remittance_state: item.pit_remittance_state || 'FCT',
           nhf_number: item.nhf_number
         },
         status: item.status,
@@ -601,6 +603,7 @@ export function StaffListPage() {
             accountName: r.account_name || undefined,
             pensionPin: r.pension_pin || undefined,
             taxId: r.tax_id || undefined,
+            pitRemittanceState: r.pit_remittance_state || r.pit_state || r.paye_state || 'FCT',
             bvn: r.bvn || undefined,
             nhfNumber: r.nhf_number || undefined,
             status: lower(r.status) || undefined,
@@ -718,6 +721,7 @@ export function StaffListPage() {
       account_name: staffMember.salary_info.account_name || '',
       pension_pin: staffMember.salary_info.pension_pin || '',
       tax_id: staffMember.salary_info.tax_id || '',
+      pit_remittance_state: staffMember.salary_info.pit_remittance_state || 'FCT',
       bvn: staffMember.salary_info.bvn || '',
       nhf_number: staffMember.salary_info.nhf_number || '',
       status: normalizeSelectValue(staffMember.status) || 'active',
@@ -874,6 +878,7 @@ export function StaffListPage() {
               ['BVN', viewingStaff.salary_info.bvn || ''],
               ['Pension PIN', viewingStaff.salary_info.pension_pin || ''],
               ['Tax ID', viewingStaff.salary_info.tax_id || ''],
+              ['PIT Remittance State', viewingStaff.salary_info.pit_remittance_state || 'FCT'],
               ['NHF Number', viewingStaff.salary_info.nhf_number || ''],
             ].map((row, i) => {
                if (i===0) return row;
@@ -945,6 +950,7 @@ export function StaffListPage() {
         accountName: formData.account_name || undefined,
         pensionPin: formData.pension_pin || undefined,
         taxId: formData.tax_id || undefined,
+        pitRemittanceState: formData.pit_remittance_state || 'FCT',
         bvn: formData.bvn || undefined,
         nhfNumber: formData.nhf_number || undefined,
       };
@@ -1034,6 +1040,7 @@ export function StaffListPage() {
         accountName: formData.account_name || undefined,
         pensionPin: formData.pension_pin || undefined,
         taxId: formData.tax_id || undefined,
+        pitRemittanceState: formData.pit_remittance_state || 'FCT',
         bvn: formData.bvn || undefined,
         nhfNumber: formData.nhf_number || undefined,
         
@@ -1102,6 +1109,7 @@ export function StaffListPage() {
       account_name: '',
       pension_pin: '',
       tax_id: '',
+      pit_remittance_state: 'FCT',
       bvn: '',
       nhf_number: '',
       status: 'active',
@@ -2016,6 +2024,22 @@ export function StaffListPage() {
                 </div>
               </div>
 
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1">
+                  PIT Remittance State
+                </label>
+                <select
+                  name="pit_remittance_state"
+                  value={formData.pit_remittance_state}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                >
+                  <option value="FCT">FCT</option>
+                  <option value="Nasarawa">Nasarawa</option>
+                  <option value="Niger">Niger</option>
+                </select>
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">
@@ -2066,9 +2090,9 @@ export function StaffListPage() {
               onClick={() => {
                 const csv =
                   [
-                    'staff_number,first_name,middle_name,last_name,date_of_birth,gender,marital_status,nationality,state_of_origin,lga,zone,qualification,phone,email,address,nok_name,nok_relationship,nok_phone,nok_address,post_on_first_appointment,date_of_first_appointment,confirmation_date,present_appointment,date_of_present_appointment,exit_date,exit_reason,department_name,department_id,designation,unit,cadre,appointment_type,employment_date,grade_level,step,bank_code,bank_name,account_name,account_number,pension_pin,tax_id,bvn,nhf_number,status',
-                    'JSC/2026/0001,Ada,Chioma,Okafor,1988-06-12,female,married,Nigerian,Anambra,Awka,SE,LLB,08012345678,ada.okafor@example.com,"12 Court Rd, GRA, Awka",Chinedu Okafor,Spouse,08087654321,"12 Court Rd, GRA, Awka",Legal Department,2024-04-15,2025-04-15,Senior Legal Officer,2026-01-10,2053-06-12,,Legal Department,,Senior Legal Officer,Prosecution,Legal,Permanent,,10,3,057,Zenith Bank,Ada Okafor,0123456789,PN12345678,TAX-00921,22334455667,NHF-00231,active',
-                    'JSC/2026/0002,Bello,Musa,Yusuf,1990-11-03,male,single,Nigerian,Kano,Nasarawa,NW,BSc,08123456789,bello.yusuf@example.com,"21 Civic Ave, Kano",Hauwa Yusuf,Parent,08198765432,"21 Civic Ave, Kano",Accounts Department,2024-09-01,2025-09-01,Accounts Officer,2026-02-01,2050-11-03,,Accounts Department,,Accounts Officer,Payments,Administrative,Contract,,8,2,044,Access Bank,Bello Musa Yusuf,0987654321,PN87654321,TAX-00456,33445566778,NHF-00987,on_leave',
+                    'staff_number,first_name,middle_name,last_name,date_of_birth,gender,marital_status,nationality,state_of_origin,lga,zone,qualification,phone,email,address,nok_name,nok_relationship,nok_phone,nok_address,post_on_first_appointment,date_of_first_appointment,confirmation_date,present_appointment,date_of_present_appointment,exit_date,exit_reason,department_name,department_id,designation,unit,cadre,appointment_type,employment_date,grade_level,step,bank_code,bank_name,account_name,account_number,pension_pin,tax_id,pit_remittance_state,bvn,nhf_number,status',
+                    'JSC/2026/0001,Ada,Chioma,Okafor,1988-06-12,female,married,Nigerian,Anambra,Awka,SE,LLB,08012345678,ada.okafor@example.com,"12 Court Rd, GRA, Awka",Chinedu Okafor,Spouse,08087654321,"12 Court Rd, GRA, Awka",Legal Department,2024-04-15,2025-04-15,Senior Legal Officer,2026-01-10,2053-06-12,,Legal Department,,Senior Legal Officer,Prosecution,Legal,Permanent,,10,3,057,Zenith Bank,Ada Okafor,0123456789,PN12345678,TAX-00921,FCT,22334455667,NHF-00231,active',
+                    'JSC/2026/0002,Bello,Musa,Yusuf,1990-11-03,male,single,Nigerian,Kano,Nasarawa,NW,BSc,08123456789,bello.yusuf@example.com,"21 Civic Ave, Kano",Hauwa Yusuf,Parent,08198765432,"21 Civic Ave, Kano",Accounts Department,2024-09-01,2025-09-01,Accounts Officer,2026-02-01,2050-11-03,,Accounts Department,,Accounts Officer,Payments,Administrative,Contract,,8,2,044,Access Bank,Bello Musa Yusuf,0987654321,PN87654321,TAX-00456,Nasarawa,33445566778,NHF-00987,on_leave',
                   ].join('\n');
                 const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
                 const url = URL.createObjectURL(blob);

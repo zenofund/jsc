@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '@common/database/database.service';
 
 @Injectable()
@@ -90,5 +90,25 @@ export class DepartmentsService {
     `;
     const result = await this.databaseService.queryOne(query, [...params, id]);
     return result;
+  }
+
+  async remove(id: string, userId?: string) {
+    const existing = await this.databaseService.queryOne(
+      'SELECT id FROM departments WHERE id = $1',
+      [id],
+    );
+
+    if (!existing) {
+      throw new NotFoundException(`Department with ID ${id} not found`);
+    }
+
+    return this.databaseService.queryOne(
+      `UPDATE departments
+       SET status = 'inactive',
+           updated_at = NOW()
+       WHERE id = $1
+       RETURNING *`,
+      [id],
+    );
   }
 }

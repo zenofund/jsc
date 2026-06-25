@@ -218,6 +218,11 @@ export class CreateStaffDto {
   @IsOptional()
   taxId?: string;
 
+  @ApiPropertyOptional({ enum: ['FCT', 'Nasarawa', 'Niger'], default: 'FCT', description: 'PAYE/PIT remittance state. Defaults to FCT if not provided.' })
+  @IsEnum(['FCT', 'Nasarawa', 'Niger'])
+  @IsOptional()
+  pitRemittanceState?: string;
+
   @ApiPropertyOptional()
   @IsString()
   @IsOptional()

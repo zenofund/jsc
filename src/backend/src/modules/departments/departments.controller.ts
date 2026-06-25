@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Put, Post, Body, Request } from '@nestjs/common';
+import { Controller, Get, Param, Put, Post, Body, Request, Delete } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { DepartmentsService } from './departments.service';
 
@@ -30,5 +30,11 @@ export class DepartmentsController {
   @ApiOperation({ summary: 'Update department' })
   update(@Param('id') id: string, @Body() dto: any, @Request() req) {
     return this.departmentsService.update(id, dto, req.user?.userId);
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: 'Delete department (soft delete)' })
+  remove(@Param('id') id: string, @Request() req) {
+    return this.departmentsService.remove(id, req.user?.userId);
   }
 }

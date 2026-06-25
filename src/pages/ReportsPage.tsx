@@ -27,6 +27,7 @@ export function ReportsPage() {
   const [month1, setMonth1] = useState(new Date(new Date().setMonth(new Date().getMonth() - 1)).toISOString().substring(0, 7));
   const [month2, setMonth2] = useState(new Date().toISOString().substring(0, 7));
   const [remittanceType, setRemittanceType] = useState<'pension' | 'tax' | 'cooperative'>('pension');
+  const [payeScheduleState, setPayeScheduleState] = useState('FCT');
   const [staffDepartment, setStaffDepartment] = useState('');
   const [staffStatus, setStaffStatus] = useState('');
   const [organizationName, setOrganizationName] = useState('Nigerian Judicial Service Committee');
@@ -144,6 +145,36 @@ export function ReportsPage() {
          }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const getPayeStates = () => {
+    const groups = reportData?.grouped_by_state;
+    if (remittanceType === 'tax' && Array.isArray(groups) && groups.length > 0) {
+      const values = groups
+        .map((g: any) => String(g?.state || 'FCT').trim() || 'FCT')
+        .filter(Boolean);
+      return Array.from(new Set(values));
+    }
+    return ['FCT', 'Nasarawa', 'Niger'];
+  };
+
+  const handleDownloadPayeScheduleCSV = async () => {
+    try {
+      const state = String(payeScheduleState || 'FCT').trim() || 'FCT';
+      const csvText = await reportAPI.getPayeSchedule(selectedMonth, state, 'csv');
+      const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `paye_schedule_${state}_${selectedMonth}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error: any) {
+      console.error('PAYE Schedule Export Error:', error);
+      showToast('error', error?.message || 'Failed to download PAYE schedule');
     }
   };
 
@@ -283,23 +314,46 @@ export function ReportsPage() {
         // Remittance Report CSV
         const reportTitle = `${remittanceType.toUpperCase()} REMITTANCE REPORT - ${selectedMonth}\nGENERATED: ${currentDate}\n\n`;
         
-        const totalAmount = reportData.remittances?.reduce((sum: number, rem: any) => sum + (rem.amount || 0), 0) || 0;
-        const totalStaff = reportData.remittances?.length || 0;
+        const groups = Array.isArray(reportData.grouped_by_state) ? reportData.grouped_by_state : null;
+        const rows = Array.isArray(reportData.remittances) ? reportData.remittances : [];
+        const totalAmount = rows.reduce((sum: number, rem: any) => sum + (rem.amount || 0), 0) || 0;
+        const totalStaff = rows.length || 0;
         
         const summary = [
             `TOTAL STAFF,"${totalStaff}"`,
             `TOTAL AMOUNT,"${formatCurrency(totalAmount)}"\n\n`
         ].join('\n');
 
-        const headers = ['STAFF NUMBER', 'STAFF NAME', 'AMOUNT'];
-        csv = commonHeader + reportTitle + summary + headers.join(',') + '\n';
+        csv = commonHeader + reportTitle + summary;
+
+        if (remittanceType === 'tax' && groups) {
+          csv += 'BREAKDOWN BY PIT REMITTANCE STATE\n';
+          groups.forEach((g: any) => {
+            csv += csvRow(['STATE', g.state || 'FCT']);
+            csv += csvRow(['TOTAL STAFF', g.total_staff || 0]);
+            csv += csvRow(['TOTAL AMOUNT', formatCurrency(g.total_amount || 0)]);
+            csv += '\n';
+          });
+        }
+
+        const headers = remittanceType === 'tax'
+          ? ['PIT REMITTANCE STATE', 'STAFF NUMBER', 'STAFF NAME', 'AMOUNT']
+          : ['STAFF NUMBER', 'STAFF NAME', 'AMOUNT'];
+        csv += headers.join(',') + '\n';
         
-        reportData.remittances.forEach((rem: any) => {
-          const row = [
-            rem.staff_number,
-            rem.staff_name,
-            formatCurrency(rem.amount)
-          ];
+        rows.forEach((rem: any) => {
+          const row = remittanceType === 'tax'
+            ? [
+                rem.pit_remittance_state || 'FCT',
+                rem.staff_number,
+                rem.staff_name,
+                formatCurrency(rem.amount)
+              ]
+            : [
+                rem.staff_number,
+                rem.staff_name,
+                formatCurrency(rem.amount)
+              ];
           csv += row.map(val => `"${val}"`).join(',') + '\n';
         });
         filename = `${remittanceType}_remittance_${selectedMonth}.csv`;
@@ -661,30 +715,75 @@ export function ReportsPage() {
           }
         );
 
-        const tableBody = [
-          [
-            { text: 'Staff Number', style: 'tableHeader' },
-            { text: 'Staff Name', style: 'tableHeader' },
-            { text: 'Amount', style: 'tableHeader', alignment: 'right' }
-          ]
-        ];
+        const groups = Array.isArray(reportData.grouped_by_state) ? reportData.grouped_by_state : null;
+        const rows = Array.isArray(reportData.remittances) ? reportData.remittances : [];
 
-        (reportData.remittances || []).forEach((rem: any) => {
-          tableBody.push([
-            { text: rem.staff_number || 'N/A', style: 'tableCell' },
-            { text: rem.staff_name || 'N/A', style: 'tableCell' },
-            { text: formatPDFCurrency(rem.amount || 0), style: 'tableCell', alignment: 'right' }
-          ]);
-        });
+        if (remittanceType === 'tax' && groups) {
+          groups.forEach((g: any) => {
+            docDefinition.content.push(
+              { text: `PIT Remittance State: ${g.state || 'FCT'}`, style: 'subheader', alignment: 'left', margin: [0, 10, 0, 4] },
+              {
+                columns: [
+                  { text: `Subtotal Staff: ${g.total_staff || 0}`, width: '*' },
+                  { text: `Subtotal Amount: ${formatPDFCurrency(g.total_amount || 0)}`, width: '*' }
+                ],
+                margin: [0, 0, 0, 6]
+              }
+            );
 
-        docDefinition.content.push({
-          table: {
-            headerRows: 1,
-            widths: ['auto', '*', 'auto'],
-            body: tableBody
-          },
-          layout: tableLayout
-        });
+            const tableBody = [
+              [
+                { text: 'Staff Number', style: 'tableHeader' },
+                { text: 'Staff Name', style: 'tableHeader' },
+                { text: 'Amount', style: 'tableHeader', alignment: 'right' }
+              ]
+            ];
+
+            (g.remittances || []).forEach((rem: any) => {
+              tableBody.push([
+                { text: rem.staff_number || 'N/A', style: 'tableCell' },
+                { text: rem.staff_name || 'N/A', style: 'tableCell' },
+                { text: formatPDFCurrency(rem.amount || 0), style: 'tableCell', alignment: 'right' }
+              ]);
+            });
+
+            docDefinition.content.push({
+              table: {
+                headerRows: 1,
+                widths: ['auto', '*', 'auto'],
+                body: tableBody
+              },
+              layout: tableLayout
+            });
+          });
+        } else {
+          const tableBody = [
+            [
+              ...(remittanceType === 'tax' ? [{ text: 'PIT State', style: 'tableHeader' }] : []),
+              { text: 'Staff Number', style: 'tableHeader' },
+              { text: 'Staff Name', style: 'tableHeader' },
+              { text: 'Amount', style: 'tableHeader', alignment: 'right' }
+            ]
+          ];
+
+          rows.forEach((rem: any) => {
+            tableBody.push([
+              ...(remittanceType === 'tax' ? [{ text: rem.pit_remittance_state || 'FCT', style: 'tableCell' }] : []),
+              { text: rem.staff_number || 'N/A', style: 'tableCell' },
+              { text: rem.staff_name || 'N/A', style: 'tableCell' },
+              { text: formatPDFCurrency(rem.amount || 0), style: 'tableCell', alignment: 'right' }
+            ]);
+          });
+
+          docDefinition.content.push({
+            table: {
+              headerRows: 1,
+              widths: remittanceType === 'tax' ? ['auto', 'auto', '*', 'auto'] : ['auto', '*', 'auto'],
+              body: tableBody
+            },
+            layout: tableLayout
+          });
+        }
 
         filename = `${remittanceType}_remittance_${selectedMonth}.pdf`;
       }
@@ -1351,6 +1450,35 @@ export function ReportsPage() {
                 </select>
               </div>
             </div>
+            {remittanceType === 'tax' && (
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm mb-1 text-card-foreground">
+                    Schedule State
+                  </label>
+                  <select
+                    value={payeScheduleState}
+                    onChange={(e) => setPayeScheduleState(e.target.value)}
+                    className="w-full px-3 py-2 border border-border rounded-lg bg-input-background dark:bg-gray-800 text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  >
+                    {getPayeStates().map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="md:col-span-2 flex items-end">
+                  <button
+                    onClick={handleDownloadPayeScheduleCSV}
+                    className="w-full md:w-auto flex items-center justify-center gap-2 px-4 py-2 border border-border text-foreground rounded-lg hover:bg-accent"
+                  >
+                    <Download className="w-4 h-4" />
+                    Download PAYE Schedule (CSV)
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {reportData ? (
@@ -1372,16 +1500,44 @@ export function ReportsPage() {
                 <h3 className="font-semibold text-card-foreground mb-4 capitalize">
                   {remittanceType} Remittance for {selectedMonth}
                 </h3>
-                <DataTable
-                  data={reportData.remittances || []}
-                  columns={[
-                    { header: 'Staff Number', accessor: 'staff_number' as keyof any },
-                    { header: 'Staff Name', accessor: 'staff_name' as keyof any },
-                    { header: 'Amount', accessor: (row: any) => formatCurrency(row.amount) },
-                  ]}
-                  searchable
-                  searchPlaceholder="Search remittances..."
-                />
+                {remittanceType === 'tax' && Array.isArray(reportData.grouped_by_state) ? (
+                  <div className="space-y-6">
+                    {reportData.grouped_by_state.map((g: any) => (
+                      <div key={g.state || 'FCT'} className="rounded-lg border border-border p-4 bg-muted/20">
+                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-3">
+                          <div className="font-semibold text-card-foreground">
+                            PAYE (Tax) Remittance - {g.state || 'FCT'}
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            Subtotal: {formatCurrency(g.total_amount || 0)} ({g.total_staff || 0} staff)
+                          </div>
+                        </div>
+                        <DataTable
+                          data={g.remittances || []}
+                          columns={[
+                            { header: 'Staff Number', accessor: 'staff_number' as keyof any },
+                            { header: 'Staff Name', accessor: 'staff_name' as keyof any },
+                            { header: 'Amount', accessor: (row: any) => formatCurrency(row.amount) },
+                          ]}
+                          searchable
+                          searchPlaceholder="Search PAYE remittances..."
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <DataTable
+                    data={reportData.remittances || []}
+                    columns={[
+                      ...(remittanceType === 'tax' ? [{ header: 'PIT State', accessor: 'pit_remittance_state' as keyof any }] : []),
+                      { header: 'Staff Number', accessor: 'staff_number' as keyof any },
+                      { header: 'Staff Name', accessor: 'staff_name' as keyof any },
+                      { header: 'Amount', accessor: (row: any) => formatCurrency(row.amount) },
+                    ]}
+                    searchable
+                    searchPlaceholder="Search remittances..."
+                  />
+                )}
               </div>
             </>
           ) : (

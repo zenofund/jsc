@@ -5,6 +5,7 @@ import { RolesGuard } from '@common/guards/roles.guard';
 import { Roles } from '@common/decorators/roles.decorator';
 import { createReadStream, existsSync } from 'fs';
 import { Response } from 'express';
+import { Readable } from 'stream';
 import {
   CreateReportTemplateDto,
   UpdateReportTemplateDto,
@@ -64,6 +65,41 @@ export class ReportsController {
     @Query('type') type: string,
   ) {
     return this.reportsService.getRemittanceReport(month, type);
+  }
+
+  @Get('remittance/:month/paye-schedule')
+  @ApiOperation({ summary: 'Get PAYE schedule (CSV or JSON)' })
+  async getPayeSchedule(
+    @Param('month') month: string,
+    @Query('state') state: string,
+    @Query('format') format: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const fmt = String(format || 'csv').toLowerCase();
+    if (fmt === 'json') {
+      const data = await this.reportsService.getPayeSchedule(month, state);
+      if (!data) {
+        throw new NotFoundException('No payroll batch found for the selected month');
+      }
+      return data;
+    }
+
+    if (fmt !== 'csv') {
+      throw new BadRequestException('Unsupported format. Use format=csv or format=json');
+    }
+
+    const csv = await this.reportsService.getPayeScheduleCsv(month, state);
+    if (!csv) {
+      throw new NotFoundException('No payroll batch found for the selected month');
+    }
+
+    const safeState = String(state || 'ALL').trim() || 'ALL';
+    const safeMonth = String(month || '').trim() || 'month';
+    const fileName = `paye_schedule_${safeState}_${safeMonth}.csv`.replace(/[^\w.\-]/g, '_');
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    return new StreamableFile(Readable.from([csv]));
   }
 
   // ==================== DATA SOURCES ====================

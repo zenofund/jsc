@@ -97,6 +97,7 @@ export function CooperativeManagementPage() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [memberCooperativeFilter, setMemberCooperativeFilter] = useState<string>('all');
   const [selectedCooperative, setSelectedCooperative] = useState<Cooperative | null>(null);
   const [selectedMember, setSelectedMember] = useState<CooperativeMember | null>(null);
   const [dbError, setDbError] = useState(false);
@@ -139,7 +140,7 @@ export function CooperativeManagementPage() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, filterStatus, viewMode]);
+  }, [searchTerm, filterStatus, memberCooperativeFilter, viewMode]);
 
   const loadStats = async () => {
     try {
@@ -584,14 +585,15 @@ export function CooperativeManagementPage() {
         (member.member_number || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
         (member.cooperative_name || '').toLowerCase().includes(searchTerm.toLowerCase());
       const matchesStatus = filterStatus === 'all' || member.status === filterStatus;
-      return matchesSearch && matchesStatus;
+      const matchesCooperative = memberCooperativeFilter === 'all' || member.cooperative_id === memberCooperativeFilter;
+      return matchesSearch && matchesStatus && matchesCooperative;
     });
 
     // Apply pagination
     const indexOfLastMember = currentPage * membersPerPage;
     const indexOfFirstMember = indexOfLastMember - membersPerPage;
     return filtered.slice(indexOfFirstMember, indexOfLastMember);
-  }, [members, searchTerm, filterStatus, currentPage, membersPerPage]);
+  }, [members, searchTerm, filterStatus, memberCooperativeFilter, currentPage, membersPerPage]);
 
   const totalMemberPages = Math.ceil(members.filter(member => {
     const matchesSearch =
@@ -600,7 +602,8 @@ export function CooperativeManagementPage() {
       (member.member_number || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (member.cooperative_name || '').toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = filterStatus === 'all' || member.status === filterStatus;
-    return matchesSearch && matchesStatus;
+    const matchesCooperative = memberCooperativeFilter === 'all' || member.cooperative_id === memberCooperativeFilter;
+    return matchesSearch && matchesStatus && matchesCooperative;
   }).length / membersPerPage);
 
   const handlePageChange = (pageNumber: number) => {
@@ -748,6 +751,22 @@ export function CooperativeManagementPage() {
             </button>
           )}
         </div>
+        {viewMode === 'members' && (
+          <select
+            value={memberCooperativeFilter}
+            onChange={(e) => setMemberCooperativeFilter(e.target.value)}
+            className="px-4 py-2 rounded-lg border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+          >
+            <option value="all">All Cooperatives</option>
+            {[...cooperatives]
+              .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }))
+              .map((coop) => (
+                <option key={coop.id} value={coop.id}>
+                  {coop.name}
+                </option>
+              ))}
+          </select>
+        )}
         {viewMode !== 'contributions' && (
           <select
             value={filterStatus}

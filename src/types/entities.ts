@@ -103,6 +103,7 @@ export interface Staff {
     bvn?: string;
     pension_pin?: string;
     tax_id?: string;
+    pit_remittance_state?: 'FCT' | 'Nasarawa' | 'Niger' | string;
     nhf_number?: string;
   };
   status: 'active' | 'suspended' | 'on_leave' | 'retired' | 'terminated' | 'resigned' | 'secondment' | 'interdiction';

@@ -41,6 +41,8 @@ export class StaffService implements OnModuleInit {
       await this.databaseService.query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS present_appointment VARCHAR(255)`);
       await this.databaseService.query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS date_of_present_appointment DATE`);
       await this.databaseService.query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS bank_code VARCHAR(20)`);
+      await this.databaseService.query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS pit_remittance_state VARCHAR(20) DEFAULT 'FCT'`);
+      await this.databaseService.query(`UPDATE staff SET pit_remittance_state = 'FCT' WHERE pit_remittance_state IS NULL`).catch(() => null);
 
       await this.databaseService.query(`
         DO $$
@@ -135,7 +137,7 @@ export class StaffService implements OnModuleInit {
         department_id, designation, employment_type, employment_date, date_of_first_appointment, post_on_first_appointment, present_appointment, date_of_present_appointment, exit_date, exit_reason, confirmation_date, retirement_date,
         grade_level, step, current_basic_salary,
         bank_name, bank_code, account_number, account_name, bvn,
-        tax_id, pension_pin, nhf_number,
+        tax_id, pit_remittance_state, pension_pin, nhf_number,
         nok_name, nok_relationship, nok_phone, nok_address,
         unit, cadre,
         status, created_by
@@ -145,10 +147,10 @@ export class StaffService implements OnModuleInit {
         $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
         $28, $29, $30,
         $31, $32, $33, $34, $35,
-        $36, $37, $38,
-        $39, $40, $41, $42,
-        $43, $44,
-        $45, $46
+        $36, $37, $38, $39,
+        $40, $41, $42, $43,
+        $44, $45,
+        $46, $47
       ) RETURNING *`,
       [
         staffNumber,
@@ -187,6 +189,7 @@ export class StaffService implements OnModuleInit {
         createStaffDto.accountName,
         createStaffDto.bvn || null,
         createStaffDto.taxId || null,
+        createStaffDto.pitRemittanceState || 'FCT',
         createStaffDto.pensionPin || null,
         createStaffDto.nhfNumber || null,
         createStaffDto.nokName || null,
@@ -1196,6 +1199,7 @@ export class StaffService implements OnModuleInit {
             account_name: record.accountName,
             bvn: record.bvn || null,
             tax_id: record.taxId || null,
+            pit_remittance_state: record.pitRemittanceState || 'FCT',
             pension_pin: record.pensionPin || null,
             nhf_number: record.nhfNumber || null,
             nok_name: record.nokName || null,

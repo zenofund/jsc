@@ -50,6 +50,13 @@ BEGIN
   END IF;
 
   IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'staff' AND column_name = 'pit_remittance_state'
+  ) THEN
+    ALTER TABLE staff ADD COLUMN pit_remittance_state VARCHAR(20) DEFAULT 'FCT';
+  END IF;
+
+  IF NOT EXISTS (
     SELECT 1
     FROM information_schema.table_constraints
     WHERE constraint_name = 'staff_zone_allowed'
