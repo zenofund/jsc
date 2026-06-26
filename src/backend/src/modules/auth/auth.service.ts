@@ -287,7 +287,7 @@ export class AuthService {
    */
   async getProfile(userId: string) {
     const user = await this.databaseService.queryOne(
-      `SELECT u.id, u.email, u.full_name, u.role, u.permissions, u.department_id, u.staff_id, u.status, u.last_login,
+      `SELECT u.id, u.email, u.full_name, u.role, u.permissions, u.department_id, u.staff_id, u.status, u.last_login, u.must_change_password,
               d.name as department_name, d.code as department_code,
               s.staff_number, s.first_name, s.last_name, s.designation
        FROM users u
@@ -358,7 +358,7 @@ export class AuthService {
     // Update password
     await this.databaseService.query(
       `UPDATE users 
-       SET password_hash = $1
+       SET password_hash = $1, must_change_password = FALSE, updated_at = NOW()
        WHERE id = $2`,
       [passwordHash, userId],
     );

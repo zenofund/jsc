@@ -265,8 +265,8 @@ export class StaffService implements OnModuleInit {
 
     // Create user account with default password
     const user = await this.databaseService.queryOne(
-      `INSERT INTO users (email, password_hash, full_name, role, staff_id, status)
-       VALUES ($1, $2, $3, 'staff', $4, 'active')
+      `INSERT INTO users (email, password_hash, full_name, role, staff_id, status, must_change_password)
+       VALUES ($1, $2, $3, 'staff', $4, 'active', TRUE)
        RETURNING id, email, full_name, role`,
       [email, passwordHash, fullName, staffId],
     );
@@ -1231,6 +1231,7 @@ export class StaffService implements OnModuleInit {
               role: 'staff',
               staff_id: staffId,
               status: 'active',
+              must_change_password: true,
               created_at: new Date()
             });
           }
@@ -1372,8 +1373,8 @@ export class StaffService implements OnModuleInit {
 
     // Create user account
     const user = await this.databaseService.queryOne(
-      `INSERT INTO users (email, password_hash, full_name, role, staff_id, status)
-       VALUES ($1, $2, $3, $4, $5, 'active')
+      `INSERT INTO users (email, password_hash, full_name, role, staff_id, status, must_change_password)
+       VALUES ($1, $2, $3, $4, $5, 'active', TRUE)
        RETURNING id, email, full_name, role`,
       [
         staff.email,

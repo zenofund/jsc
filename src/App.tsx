@@ -73,6 +73,13 @@ function AppContent() {
     return () => window.removeEventListener('navigate' as any, handleNavigation);
   }, []);
 
+  useEffect(() => {
+    if (!user) return;
+    if (user.must_change_password && currentView !== 'change-password') {
+      setCurrentView('change-password');
+    }
+  }, [user, currentView]);
+
   // Create custom navigation helper
   useEffect(() => {
     (window as any).navigateTo = (view: string) => {
@@ -126,6 +133,10 @@ function AppContent() {
 
   return (
     <Layout>
+      {user.must_change_password ? (
+        <ChangePasswordPage />
+      ) : (
+        <>
       {currentView === 'dashboard' && <DashboardPage />}
       {currentView === 'hr-dashboard' && <HRDashboardPage />}
       {currentView === 'cashier-dashboard' && <CashierDashboardPage />}
@@ -156,6 +167,8 @@ function AppContent() {
       {currentView === 'smtp-settings' && <SmtpSettingsPage />}
       {currentView === 'tax-configuration' && <TaxConfigurationPage />}
       {currentView === 'change-password' && <ChangePasswordPage />}
+        </>
+      )}
     </Layout>
   );
 }

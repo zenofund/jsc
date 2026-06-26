@@ -3,7 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { userAPI, settingsAPI, auditAPI } from '../lib/api-client';
 import { User, SystemSettings } from '../types/entities';
-import { Users, Shield, Settings as SettingsIcon, Activity, Plus, Edit, Trash2, Loader2, Save, X, Eye, EyeOff, Lock, Image as ImageIcon } from 'lucide-react';
+import { Users, Shield, Settings as SettingsIcon, Activity, Plus, Edit, Trash2, Loader2, Save, X, Eye, EyeOff, Lock, Image as ImageIcon, MoreVertical } from 'lucide-react';
 import { Building } from 'lucide-react';
 import { showToast } from '../utils/toast';
 import { Modal } from '../components/Modal';
@@ -13,6 +13,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import { PageSkeleton } from '../components/PageLoader';
 
 import { Skeleton } from '../components/ui/skeleton';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '../components/ui/dropdown-menu';
 
 type PermissionCatalogItem = {
   permission_key: string;
@@ -469,50 +470,63 @@ export function AdminPage() {
     {
       header: 'Actions',
       accessor: (row: User) => (
-        <div className="flex items-center gap-2">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setEditingUser(row);
-              setUserForm({
-                email: row.email,
-                password: '',
-                password_confirm: '',
-                full_name: row.full_name,
-                role: normalizeRole(row.role) as User['role'],
-                department: row.department || '',
-                status: row.status,
-              });
-              const existingPermissions = Array.isArray((row as any).permissions) ? (row as any).permissions : [];
-              const templatePermissions = getTemplatePermissions(row.role);
-              setSelectedPermissions(existingPermissions.length > 0 ? existingPermissions : templatePermissions);
-              setCustomPermissionsEnabled(existingPermissions.length > 0);
-              setShowUserModal(true);
-            }}
-            className="p-1 hover:bg-gray-100 rounded"
-            title="Edit"
-            disabled={deletingUserId === row.id}
-          >
-            <Edit className="w-4 h-4 text-blue-600" />
-          </button>
-          {row.id !== user?.id && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDeleteUser(row.id);
-              }}
-              className="p-1 hover:bg-gray-100 rounded"
-              title="Delete"
+              type="button"
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex items-center justify-center p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground"
+              aria-label="Actions"
               disabled={deletingUserId === row.id}
             >
-              {deletingUserId === row.id ? (
-                <Loader2 className="w-4 h-4 animate-spin text-red-600" />
-              ) : (
-                <Trash2 className="w-4 h-4 text-red-600" />
-              )}
+              <MoreVertical className="w-4 h-4" />
             </button>
-          )}
-        </div>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation();
+                setEditingUser(row);
+                setUserForm({
+                  email: row.email,
+                  password: '',
+                  password_confirm: '',
+                  full_name: row.full_name,
+                  role: normalizeRole(row.role) as User['role'],
+                  department: row.department || '',
+                  status: row.status,
+                });
+                const existingPermissions = Array.isArray((row as any).permissions) ? (row as any).permissions : [];
+                const templatePermissions = getTemplatePermissions(row.role);
+                setSelectedPermissions(existingPermissions.length > 0 ? existingPermissions : templatePermissions);
+                setCustomPermissionsEnabled(existingPermissions.length > 0);
+                setShowUserModal(true);
+              }}
+            >
+              <Edit className="h-4 w-4 mr-2" />
+              Edit
+            </DropdownMenuItem>
+            {row.id !== user?.id && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteUser(row.id);
+                  }}
+                  className="text-red-600"
+                >
+                  {deletingUserId === row.id ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-4 w-4 mr-2" />
+                  )}
+                  Delete
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
       ),
     },
   ];
