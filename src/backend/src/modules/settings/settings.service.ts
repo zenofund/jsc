@@ -16,7 +16,16 @@ export class SettingsService {
     );
 
     if (result?.value) {
+      const securityDefaults = {
+        enforce_2fa: false,
+        single_session_only: false,
+        inactivity_logout_minutes: 30,
+        max_failed_login_attempts: 5,
+        lockout_minutes: 15,
+      };
+
       return {
+        ...securityDefaults,
         ...result.value,
         allowed_grades: Array.isArray(result.value.allowed_grades)
           ? result.value.allowed_grades
@@ -36,6 +45,11 @@ export class SettingsService {
       approval_workflow: [],
       tax_zones: [],
       allowed_grades: [3,4,5,6,7,8,9,10,12,13,14,15,16,17],
+      enforce_2fa: false,
+      single_session_only: false,
+      inactivity_logout_minutes: 30,
+      max_failed_login_attempts: 5,
+      lockout_minutes: 15,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -55,7 +69,12 @@ export class SettingsService {
       app_version,
       approval_workflow,
       tax_zones,
-      allowed_grades
+      allowed_grades,
+      enforce_2fa,
+      single_session_only,
+      inactivity_logout_minutes,
+      max_failed_login_attempts,
+      lockout_minutes,
     } = settings;
 
     const value = {
@@ -69,7 +88,18 @@ export class SettingsService {
       tax_zones,
       allowed_grades: Array.isArray(allowed_grades)
         ? allowed_grades
-        : [3,4,5,6,7,8,9,10,12,13,14,15,16,17]
+        : [3,4,5,6,7,8,9,10,12,13,14,15,16,17],
+      enforce_2fa: Boolean(enforce_2fa),
+      single_session_only: Boolean(single_session_only),
+      inactivity_logout_minutes: Number.isFinite(Number(inactivity_logout_minutes))
+        ? Math.max(0, Number(inactivity_logout_minutes))
+        : 30,
+      max_failed_login_attempts: Number.isFinite(Number(max_failed_login_attempts))
+        ? Math.max(1, Number(max_failed_login_attempts))
+        : 5,
+      lockout_minutes: Number.isFinite(Number(lockout_minutes))
+        ? Math.max(1, Number(lockout_minutes))
+        : 15,
     };
 
     await this.databaseService.query(

@@ -8,6 +8,7 @@ import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { LoginDto } from './dto/login.dto';
 import { JwtPayload } from './interfaces/jwt-payload.interface';
+import { buildOtpAuthUrl, generateTotpSecret, verifyTotp } from './totp.util';
 
 @Injectable()
 export class AuthService {
@@ -81,7 +82,8 @@ export class AuthService {
    */
   async validateUser(email: string, password: string): Promise<any> {
     const user = await this.databaseService.queryOne(
-      `SELECT id, email, password_hash, full_name, role, permissions, department_id, staff_id, status
+      `SELECT id, email, password_hash, full_name, role, permissions, department_id, staff_id, status,
+              totp_secret, totp_enabled, current_session_id, must_change_password
        FROM users 
        WHERE email = $1 AND status = 'active'`,
       [email],
@@ -112,6 +114,37 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    const settingsRow = await this.databaseService.queryOne(
+      `SELECT value FROM system_settings WHERE key = 'general_settings'`,
+    );
+
+    const enforce2fa = Boolean(settingsRow?.value?.enforce_2fa);
+    const singleSessionOnly = Boolean(settingsRow?.value?.single_session_only);
+
+    const isTwoFactorEnabled = Boolean(user.totp_enabled);
+    const requiresTwoFactor = enforce2fa || isTwoFactorEnabled;
+    const needsTwoFactorSetup = enforce2fa && !isTwoFactorEnabled;
+
+    if (requiresTwoFactor) {
+      if (!user.totp_secret) {
+        return { requires_totp_setup: true };
+      }
+
+      if (needsTwoFactorSetup) {
+        return { requires_totp_setup: true };
+      }
+
+      const totpCode = String(loginDto.totp_code || loginDto.totpCode || '').trim();
+      if (!totpCode) {
+        return { requires_totp: true };
+      }
+
+      const validTotp = verifyTotp({ secret: user.totp_secret, token: totpCode, window: 1 });
+      if (!validTotp) {
+        throw new UnauthorizedException('Invalid 2FA code');
+      }
+    }
+
     const effectivePermissions = await this.resolveUserPermissions(user);
 
     // Update last login
@@ -136,6 +169,17 @@ export class AuthService {
       }
     }
 
+    let sid: string | undefined = undefined;
+    if (singleSessionOnly) {
+      sid = crypto.randomUUID();
+      await this.databaseService.query(
+        `UPDATE users
+         SET current_session_id = $1, updated_at = NOW()
+         WHERE id = $2`,
+        [sid, user.id],
+      );
+    }
+
     const payload: JwtPayload = {
       sub: user.id,
       email: user.email,
@@ -143,6 +187,7 @@ export class AuthService {
       permissions: effectivePermissions,
       departmentId: user.department_id,
       staffId: user.staff_id,
+      sid,
     };
 
     const accessToken = this.jwtService.sign(payload);
@@ -167,8 +212,74 @@ export class AuthService {
         permissions: effectivePermissions,
         department_id: user.department_id,
         staff_id: user.staff_id,
+        must_change_password: Boolean(user.must_change_password),
       },
     };
+  }
+
+  async setupTwoFactor(email: string, password: string) {
+    const user = await this.validateUser(email, password);
+    if (!user) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const settingsRow = await this.databaseService.queryOne(
+      `SELECT value FROM system_settings WHERE key = 'general_settings'`,
+    );
+    const issuer = String(settingsRow?.value?.organization_name || 'JSC Payroll').trim() || 'JSC Payroll';
+
+    const secret = generateTotpSecret(20);
+    const otpauth_url = buildOtpAuthUrl({ issuer, account: user.email, secret });
+
+    await this.databaseService.query(
+      `UPDATE users
+       SET totp_secret = $1, totp_enabled = FALSE, updated_at = NOW()
+       WHERE id = $2`,
+      [secret, user.id],
+    );
+
+    await this.auditService.log({
+      userId: user.id,
+      action: AuditAction.UPDATE,
+      entity: 'user',
+      entityId: user.id,
+      description: '2FA setup initiated',
+    });
+
+    return { issuer, account: user.email, secret, otpauth_url };
+  }
+
+  async enableTwoFactor(email: string, password: string, totpCode: string) {
+    const user = await this.validateUser(email, password);
+    if (!user) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    if (!user.totp_secret) {
+      throw new BadRequestException('2FA is not set up for this account');
+    }
+
+    const ok = verifyTotp({ secret: user.totp_secret, token: totpCode, window: 1 });
+    if (!ok) {
+      throw new UnauthorizedException('Invalid 2FA code');
+    }
+
+    await this.databaseService.query(
+      `UPDATE users
+       SET totp_enabled = TRUE, updated_at = NOW()
+       WHERE id = $1`,
+      [user.id],
+    );
+
+    await this.auditService.log({
+      userId: user.id,
+      action: AuditAction.UPDATE,
+      entity: 'user',
+      entityId: user.id,
+      description: '2FA enabled',
+    });
+
+    return { message: '2FA enabled successfully' };
   }
 
   /**

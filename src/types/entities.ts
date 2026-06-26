@@ -450,6 +450,11 @@ export interface SystemSettings {
   };
   created_at: string;
   updated_at: string;
+  enforce_2fa?: boolean;
+  single_session_only?: boolean;
+  inactivity_logout_minutes?: number;
+  max_failed_login_attempts?: number;
+  lockout_minutes?: number;
 }
 
 // ============================================

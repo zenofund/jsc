@@ -100,20 +100,38 @@ async function makeApiRequest(endpoint: string, options: RequestInit = {}): Prom
 // ============================================
 
 export const authAPI = {
-  login: async (email: string, password: string): Promise<User | null> => {
+  login: async (
+    email: string,
+    password: string,
+    totpCode?: string,
+  ): Promise<
+    | { status: 'success'; user: User }
+    | { status: 'totp_required' }
+    | { status: 'totp_setup_required' }
+    | { status: 'error'; message?: string }
+  > => {
     // NestJS implementation
     try {
       const response = await fetch(`${API_CONFIG.baseURL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email, password, totp_code: totpCode })
       });
 
       if (!response.ok) {
-        return null;
+        const raw = await response.text().catch(() => '');
+        return { status: 'error', message: raw || 'Login failed' };
       }
 
       const data = await response.json();
+
+      if (data?.requires_totp_setup) {
+        return { status: 'totp_setup_required' };
+      }
+
+      if (data?.requires_totp) {
+        return { status: 'totp_required' };
+      }
       
       // Store the auth token
       if (data.access_token) {
@@ -121,22 +139,45 @@ export const authAPI = {
       }
       
       // Return user object in expected format
+      if (!data?.access_token || !data?.user) {
+        return { status: 'error', message: 'Unexpected login response' };
+      }
+
       return {
-        id: data.user.id,
-        email: data.user.email,
-        full_name: data.user.name,
-        role: data.user.role,
-        department: data.user.department_id,
-        staff_id: data.user.staff_id || data.user.staffId,
-        permissions: data.user.permissions || [],
-        status: data.user.status || 'active',
-        must_change_password: data.user.must_change_password || false,
-        created_at: data.user.created_at || new Date().toISOString(),
+        status: 'success',
+        user: {
+          id: data.user.id,
+          email: data.user.email,
+          full_name: data.user.name,
+          role: data.user.role,
+          department: data.user.department_id,
+          staff_id: data.user.staff_id || data.user.staffId,
+          permissions: data.user.permissions || [],
+          status: data.user.status || 'active',
+          must_change_password: data.user.must_change_password || false,
+          created_at: data.user.created_at || new Date().toISOString(),
+        },
       };
     } catch (error) {
       console.error('Login error:', error);
-      return null;
+      return { status: 'error', message: 'Login failed' };
     }
+  },
+
+  setupTwoFactor: async (email: string, password: string) => {
+    return makeApiRequest('/auth/2fa/setup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Skip-Auth-Handler': 'true' } as any,
+      body: JSON.stringify({ email, password }),
+    });
+  },
+
+  enableTwoFactor: async (email: string, password: string, totpCode: string) => {
+    return makeApiRequest('/auth/2fa/enable', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Skip-Auth-Handler': 'true' } as any,
+      body: JSON.stringify({ email, password, totp_code: totpCode }),
+    });
   },
 
   getCurrentUser: async (): Promise<User | null> => {

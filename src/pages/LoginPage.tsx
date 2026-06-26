@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Lock, Mail, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { Button } from '../components/ui/button';
+import { authAPI } from '../lib/api-client';
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -11,19 +12,75 @@ export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [stage, setStage] = useState<'credentials' | 'totp' | 'totp-setup'>('credentials');
+  const [totpCode, setTotpCode] = useState('');
+  const [setup, setSetup] = useState<{ otpauth_url: string; secret: string; issuer?: string; account?: string } | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
-    const success = await login(email, password);
-    
-    if (!success) {
-      setError('Invalid email or password');
+    try {
+      if (stage === 'credentials') {
+        const result = await login(email, password);
+        if (result.status === 'success') {
+          setLoading(false);
+          return;
+        }
+        if (result.status === 'totp_required') {
+          setStage('totp');
+          setLoading(false);
+          return;
+        }
+        if (result.status === 'totp_setup_required') {
+          const setupData = await authAPI.setupTwoFactor(email, password);
+          setSetup(setupData);
+          setStage('totp-setup');
+          setLoading(false);
+          return;
+        }
+        setError(result.message || 'Invalid email or password');
+        setLoading(false);
+        return;
+      }
+
+      if (stage === 'totp') {
+        const result = await login(email, password, totpCode);
+        if (result.status === 'success') {
+          setLoading(false);
+          return;
+        }
+        if (result.status === 'totp_setup_required') {
+          const setupData = await authAPI.setupTwoFactor(email, password);
+          setSetup(setupData);
+          setStage('totp-setup');
+          setLoading(false);
+          return;
+        }
+        setError(result.message || 'Invalid verification code');
+        setLoading(false);
+        return;
+      }
+
+      if (stage === 'totp-setup') {
+        if (!totpCode || totpCode.trim().length < 6) {
+          setError('Enter the 6-digit verification code from your authenticator app');
+          setLoading(false);
+          return;
+        }
+        await authAPI.enableTwoFactor(email, password, totpCode);
+        const result = await login(email, password, totpCode);
+        if (result.status !== 'success') {
+          setError(result.message || 'Login failed');
+        }
+        setLoading(false);
+        return;
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Login failed');
+      setLoading(false);
     }
-    
-    setLoading(false);
   };
 
   return (
@@ -40,7 +97,11 @@ export function LoginPage() {
 
         {/* Login Card */}
         <div className="bg-card border border-border rounded-lg shadow-lg p-5 sm:p-6">
-          <h2 className="text-card-foreground mb-3 sm:mb-4 text-center text-sm sm:text-base font-bold">Sign In to Your Account</h2>
+          <h2 className="text-card-foreground mb-3 sm:mb-4 text-center text-sm sm:text-base font-bold">
+            {stage === 'credentials' && 'Sign In to Your Account'}
+            {stage === 'totp' && 'Two-Factor Verification'}
+            {stage === 'totp-setup' && 'Set Up Two-Factor Authentication'}
+          </h2>
 
           {error && (
             <div className="mb-3 p-2.5 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 rounded-lg flex items-center gap-2 text-red-800 dark:text-red-400">
@@ -57,6 +118,7 @@ export function LoginPage() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  disabled={stage !== 'credentials'}
                   className="w-full pl-9 sm:pl-10 pr-3 sm:pr-4 py-2 text-sm sm:text-base bg-input-background border border-border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-foreground"
                   placeholder="Email Address"
                   required
@@ -71,6 +133,7 @@ export function LoginPage() {
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  disabled={stage !== 'credentials'}
                   className="w-full pl-9 sm:pl-10 pr-10 sm:pr-12 py-2 text-sm sm:text-base bg-input-background border border-border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-foreground"
                   placeholder="Password"
                   required
@@ -86,24 +149,75 @@ export function LoginPage() {
               </div>
             </div>
 
+            {stage !== 'credentials' && (
+              <div>
+                <label className="block text-xs sm:text-sm text-muted-foreground mb-1">
+                  Verification Code
+                </label>
+                <input
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  className="w-full px-3 py-2 text-sm sm:text-base bg-input-background border border-border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-foreground tracking-widest text-center"
+                  placeholder="123456"
+                  required
+                />
+              </div>
+            )}
+
+            {stage === 'totp-setup' && setup?.otpauth_url && (
+              <div className="rounded-lg border border-border bg-muted/20 p-3">
+                <div className="flex flex-col items-center gap-3">
+                  <img
+                    alt="2FA QR Code"
+                    className="w-40 h-40 rounded-md border border-border bg-white"
+                    src={`https://chart.googleapis.com/chart?cht=qr&chs=200x200&chl=${encodeURIComponent(setup.otpauth_url)}`}
+                  />
+                  <div className="w-full">
+                    <div className="text-xs text-muted-foreground mb-1">Manual setup key</div>
+                    <div className="text-sm font-mono break-all text-card-foreground">{setup.secret}</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <Button
               type="submit"
               isLoading={loading}
               className="w-full"
             >
-              Sign In
+              {stage === 'credentials' && 'Sign In'}
+              {stage === 'totp' && 'Verify & Sign In'}
+              {stage === 'totp-setup' && 'Enable 2FA & Sign In'}
             </Button>
+
+            {stage !== 'credentials' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setStage('credentials');
+                  setTotpCode('');
+                  setSetup(null);
+                  setError('');
+                }}
+                className="w-full text-xs sm:text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Use a different account
+              </button>
+            )}
           </form>
 
-          {/* Forgot Password Link */}
-          <div className="mt-3 sm:mt-4 text-center">
-            <Link
-              to="/forgot-password"
-              className="text-xs sm:text-sm text-primary hover:text-primary/80 transition-colors"
-            >
-              Forgot your password?
-            </Link>
-          </div>
+          {stage === 'credentials' && (
+            <div className="mt-3 sm:mt-4 text-center">
+              <Link
+                to="/forgot-password"
+                className="text-xs sm:text-sm text-primary hover:text-primary/80 transition-colors"
+              >
+                Forgot your password?
+              </Link>
+            </div>
+          )}
         </div>
 
         <p className="text-center text-xs text-gray-500 mt-4 sm:mt-5">

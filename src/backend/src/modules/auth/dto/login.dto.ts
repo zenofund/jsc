@@ -1,4 +1,4 @@
-import { IsEmail, IsNotEmpty, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class LoginDto {
@@ -12,4 +12,14 @@ export class LoginDto {
   @IsNotEmpty()
   @MinLength(6)
   password: string;
+
+  @ApiProperty({ required: false, example: '123456', description: 'TOTP code for 2FA (if enabled/enforced)' })
+  @IsOptional()
+  @IsString()
+  totp_code?: string;
+
+  @ApiProperty({ required: false, example: '123456', description: 'Alias for totp_code' })
+  @IsOptional()
+  @IsString()
+  totpCode?: string;
 }

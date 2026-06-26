@@ -9,12 +9,14 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { LocalStrategy } from './strategies/local.strategy';
 import { EmailModule } from '@modules/email/email.module';
 import { AuditModule } from '@modules/audit/audit.module';
+import { SettingsModule } from '@modules/settings/settings.module';
 
 @Module({
   imports: [
     PassportModule,
     EmailModule,
     AuditModule,
+    SettingsModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({

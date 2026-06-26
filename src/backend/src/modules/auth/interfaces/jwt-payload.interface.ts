@@ -5,4 +5,5 @@ export interface JwtPayload {
   permissions?: string[];
   departmentId?: string;
   staffId?: string;
+  sid?: string;
 }

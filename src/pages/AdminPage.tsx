@@ -26,7 +26,7 @@ export function AdminPage() {
   const { user } = useAuth();
   const confirm = useConfirm();
   // Removed conflicting useToast hook usage
-  const [activeTab, setActiveTab] = useState<'users' | 'settings'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'settings' | 'app-security'>('users');
   const [users, setUsers] = useState<User[]>([]);
   const [settings, setSettings] = useState<SystemSettings | null>(null);
   const [allowedGradesInput, setAllowedGradesInput] = useState<string>('');
@@ -182,7 +182,7 @@ export function AdminPage() {
       if (activeTab === 'users') {
         const usersData = await userAPI.getAllUsers();
         setUsers(usersData);
-      } else if (activeTab === 'settings') {
+      } else if (activeTab === 'settings' || activeTab === 'app-security') {
         const settingsData = await settingsAPI.getSettings();
         setSettings(settingsData);
         if (Array.isArray(settingsData?.allowed_grades)) {
@@ -354,6 +354,20 @@ export function AdminPage() {
     }
   };
 
+  const handleSaveAppSecurity = async () => {
+    if (!settings || !user) return;
+    setIsSubmitting(true);
+    try {
+      const saved = await settingsAPI.updateSettings(settings, user.id, user.email);
+      setSettings(saved);
+      showToast.success('App security settings updated successfully');
+    } catch (error) {
+      showToast.error('Failed to update app security settings');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const processLogoToSquare = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -508,6 +522,7 @@ export function AdminPage() {
   const tabs = [
     { id: 'users', label: 'User Management', icon: Users },
     { id: 'settings', label: 'System Settings', icon: SettingsIcon },
+    { id: 'app-security', label: 'App Security', icon: Shield },
   ];
 
   return (
@@ -519,22 +534,24 @@ export function AdminPage() {
           <h1 className="page-title">System Administration</h1>
           <p className="text-muted-foreground">Manage users, system settings, and audit logs</p>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => {
-              setIdempotencyKey(crypto.randomUUID());
-              setEditingUser(null);
-              resetUserForm();
-              setSelectedPermissions(getTemplatePermissions('staff'));
-              setCustomPermissionsEnabled(false);
-              setShowUserModal(true);
-            }}
-            className="bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90 flex items-center gap-2 transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            Add User
-          </button>
-        </div>
+        {activeTab === 'users' && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                setIdempotencyKey(crypto.randomUUID());
+                setEditingUser(null);
+                resetUserForm();
+                setSelectedPermissions(getTemplatePermissions('staff'));
+                setCustomPermissionsEnabled(false);
+                setShowUserModal(true);
+              }}
+              className="bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90 flex items-center gap-2 transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              Add User
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Tabs */}
@@ -856,6 +873,96 @@ export function AdminPage() {
         </div>
         )
         )}
+        </>
+      )}
+
+      {activeTab === 'app-security' && (
+        <>
+          {loading ? (
+            <PageSkeleton mode="grid" />
+          ) : (
+            settings && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="bg-card border border-border rounded-lg p-6">
+                  <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
+                    <Shield className="w-5 h-5 text-primary" />
+                    App Security
+                  </h3>
+
+                  <div className="space-y-5">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <div className="text-sm font-medium text-foreground">Google 2FA (All Users)</div>
+                        <div className="text-xs text-muted-foreground">
+                          When enabled, users must authenticate using a 6-digit authenticator code.
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(settings.enforce_2fa)}
+                        onChange={(e) => setSettings({ ...settings, enforce_2fa: e.target.checked })}
+                        className="w-4 h-4 text-primary rounded focus:ring-2 focus:ring-primary"
+                      />
+                    </div>
+
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <div className="text-sm font-medium text-foreground">Single Login Session</div>
+                        <div className="text-xs text-muted-foreground">
+                          When enabled, signing in again invalidates any previous session for that user.
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(settings.single_session_only)}
+                        onChange={(e) => setSettings({ ...settings, single_session_only: e.target.checked })}
+                        className="w-4 h-4 text-primary rounded focus:ring-2 focus:ring-primary"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-foreground mb-1">
+                        Inactivity Logout (Minutes)
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={Number(settings.inactivity_logout_minutes ?? 0)}
+                        onChange={(e) =>
+                          setSettings({ ...settings, inactivity_logout_minutes: Number(e.target.value || 0) })
+                        }
+                        className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                        placeholder="e.g., 30"
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Set to 0 to disable inactivity logout.
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleSaveAppSecurity}
+                    disabled={isSubmitting}
+                    className="mt-6 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                    Save Changes
+                  </button>
+                </div>
+
+                <div className="bg-card border border-border rounded-lg p-6">
+                  <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
+                    <Activity className="w-5 h-5 text-primary" />
+                    Notes
+                  </h3>
+                  <div className="text-sm text-muted-foreground space-y-2">
+                    <div>2FA setup is completed at login when required.</div>
+                    <div>Single session is enforced on every API request.</div>
+                  </div>
+                </div>
+              </div>
+            )
+          )}
         </>
       )}
 

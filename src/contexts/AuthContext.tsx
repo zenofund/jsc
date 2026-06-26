@@ -1,10 +1,14 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User } from '../types/entities';
-import { authAPI } from '../lib/api-client';
+import { authAPI, settingsAPI } from '../lib/api-client';
 
 interface AuthContextType {
   user: User | null;
-  login: (email: string, password: string) => Promise<boolean>;
+  login: (
+    email: string,
+    password: string,
+    totpCode?: string,
+  ) => Promise<{ status: 'success' | 'totp_required' | 'totp_setup_required' | 'error'; message?: string }>;
   logout: () => void;
   isLoading: boolean;
 }
@@ -77,18 +81,70 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => clearInterval(intervalId);
   }, [user]);
 
-  const login = async (email: string, password: string): Promise<boolean> => {
-    try {
-      const loggedInUser = await authAPI.login(email, password);
-      if (loggedInUser) {
-        setUser(loggedInUser);
-        localStorage.setItem('jsc_user', JSON.stringify(loggedInUser));
-        return true;
+  useEffect(() => {
+    if (!user) return;
+
+    let timerId: number | null = null;
+    const events = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart'];
+
+    const clearTimer = () => {
+      if (timerId) window.clearTimeout(timerId);
+      timerId = null;
+    };
+
+    const start = async () => {
+      let minutes = 0;
+      try {
+        const settings = await settingsAPI.getSettings({ headers: { 'X-Skip-Auth-Handler': 'true' } as any });
+        minutes = Number(settings?.inactivity_logout_minutes || 0);
+      } catch {
+        minutes = 0;
       }
-      return false;
+
+      if (!Number.isFinite(minutes) || minutes <= 0) return;
+
+      const reset = () => {
+        clearTimer();
+        timerId = window.setTimeout(() => {
+          logout();
+        }, minutes * 60 * 1000);
+      };
+
+      for (const evt of events) window.addEventListener(evt, reset, { passive: true } as any);
+      reset();
+
+      return () => {
+        clearTimer();
+        for (const evt of events) window.removeEventListener(evt, reset as any);
+      };
+    };
+
+    let cleanup: undefined | (() => void) = undefined;
+    start().then((fn) => {
+      cleanup = fn || undefined;
+    });
+
+    return () => {
+      if (cleanup) cleanup();
+    };
+  }, [user]);
+
+  const login = async (
+    email: string,
+    password: string,
+    totpCode?: string,
+  ): Promise<{ status: 'success' | 'totp_required' | 'totp_setup_required' | 'error'; message?: string }> => {
+    try {
+      const result = await authAPI.login(email, password, totpCode);
+      if (result.status === 'success') {
+        setUser(result.user);
+        localStorage.setItem('jsc_user', JSON.stringify(result.user));
+        return { status: 'success' };
+      }
+      return result;
     } catch (error) {
       console.error('Login error:', error);
-      return false;
+      return { status: 'error', message: 'Login failed' };
     }
   };
 
@@ -112,7 +168,7 @@ export function useAuth() {
   if (context === undefined) {
     return {
       user: null,
-      login: async () => false,
+      login: async () => ({ status: 'error' as const }),
       logout: () => {},
       isLoading: true,
     } as any;

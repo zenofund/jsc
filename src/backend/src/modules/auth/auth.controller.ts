@@ -5,6 +5,7 @@ import { LoginDto } from './dto/login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { TwoFactorEnableDto, TwoFactorSetupDto } from './dto/two-factor.dto';
 import { Public } from '@common/decorators/public.decorator';
 import { Roles } from '@common/decorators/roles.decorator';
 import { BadRequestException } from '@nestjs/common';
@@ -21,6 +22,20 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
   async login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto);
+  }
+
+  @Public()
+  @Post('2fa/setup')
+  @ApiOperation({ summary: 'Start 2FA setup (returns secret + otpauth URL)' })
+  async setupTwoFactor(@Body() dto: TwoFactorSetupDto) {
+    return this.authService.setupTwoFactor(dto.email, dto.password);
+  }
+
+  @Public()
+  @Post('2fa/enable')
+  @ApiOperation({ summary: 'Enable 2FA after verifying a TOTP code' })
+  async enableTwoFactor(@Body() dto: TwoFactorEnableDto) {
+    return this.authService.enableTwoFactor(dto.email, dto.password, dto.totp_code);
   }
 
   @Get('profile')
