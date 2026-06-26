@@ -2648,11 +2648,25 @@ function ReportsTab() {
       let disb = disbursements;
       let coops = cooperatives;
       if (force || applications.length === 0 || disbursements.length === 0 || cooperatives.length === 0) {
-        const [appsData, disbData, coopsData] = await Promise.all([
+        const [appsRaw, disbRaw, coopsRaw] = await Promise.all([
           loanApplicationAPI.getAll(),
           disbursementAPI.getAll(),
           cooperativeAPI.getAll(),
         ]);
+
+        const normalizeArray = (v: any) => {
+          if (!v) return [];
+          if (Array.isArray(v)) return v;
+          if (Array.isArray(v.data)) return v.data;
+          if (Array.isArray(v.items)) return v.items;
+          if (Array.isArray(v.rows)) return v.rows;
+          return [];
+        };
+
+        const appsData = normalizeArray(appsRaw);
+        const disbData = normalizeArray(disbRaw);
+        const coopsData = normalizeArray(coopsRaw);
+
         apps = appsData;
         disb = disbData;
         coops = coopsData;

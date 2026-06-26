@@ -68,6 +68,30 @@ export function AdminPage() {
     return r;
   };
 
+  const normalizeSettings = (value: Partial<SystemSettings> | null | undefined): SystemSettings | null => {
+    if (!value) return null;
+
+    return {
+      ...value,
+      approval_workflow: Array.isArray(value.approval_workflow) ? value.approval_workflow : [],
+      tax_zones: Array.isArray(value.tax_zones) ? value.tax_zones : [],
+      allowed_grades: Array.isArray(value.allowed_grades)
+        ? value.allowed_grades
+        : [3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 17],
+      enforce_2fa: Boolean(value.enforce_2fa),
+      single_session_only: Boolean(value.single_session_only),
+      inactivity_logout_minutes: Number.isFinite(Number(value.inactivity_logout_minutes))
+        ? Math.max(0, Number(value.inactivity_logout_minutes))
+        : 30,
+      max_failed_login_attempts: Number.isFinite(Number(value.max_failed_login_attempts))
+        ? Math.max(1, Number(value.max_failed_login_attempts))
+        : 5,
+      lockout_minutes: Number.isFinite(Number(value.lockout_minutes))
+        ? Math.max(1, Number(value.lockout_minutes))
+        : 15,
+    } as SystemSettings;
+  };
+
   const formatRoleLabel = (role: any) => {
     const r = normalizeRole(role);
     if (r === 'cpo') return 'CPO';
@@ -141,10 +165,11 @@ export function AdminPage() {
     if (!settings || !user) return;
     setIsSubmitting(true);
     try {
-      const updatedSettings = {
+      const updatedSettings = normalizeSettings({
         ...settings,
-        approval_workflow: workflowStages
-      };
+        approval_workflow: workflowStages,
+      });
+      if (!updatedSettings) return;
       await settingsAPI.updateSettings(updatedSettings, user!.id, user!.email);
       setSettings(updatedSettings);
       setIsEditingWorkflow(false);
@@ -185,9 +210,10 @@ export function AdminPage() {
         setUsers(usersData);
       } else if (activeTab === 'settings' || activeTab === 'app-security') {
         const settingsData = await settingsAPI.getSettings();
-        setSettings(settingsData);
-        if (Array.isArray(settingsData?.allowed_grades)) {
-          setAllowedGradesInput(settingsData.allowed_grades.join(', '));
+        const normalizedSettings = normalizeSettings(settingsData);
+        setSettings(normalizedSettings);
+        if (Array.isArray(normalizedSettings?.allowed_grades)) {
+          setAllowedGradesInput(normalizedSettings.allowed_grades.join(', '));
         }
       }
     } catch (error) {
@@ -341,8 +367,8 @@ export function AdminPage() {
       }
       setAllowedGradesError('');
 
-      const updated = { ...settings, allowed_grades: allowedGrades } as any;
-      const saved = await settingsAPI.updateSettings(updated, user!.id, user!.email);
+      const updated = normalizeSettings({ ...settings, allowed_grades: allowedGrades }) as any;
+      const saved = normalizeSettings(await settingsAPI.updateSettings(updated, user!.id, user!.email));
       setSettings(saved);
       if (Array.isArray(saved?.allowed_grades)) {
         setAllowedGradesInput(saved.allowed_grades.join(', '));
@@ -359,7 +385,9 @@ export function AdminPage() {
     if (!settings || !user) return;
     setIsSubmitting(true);
     try {
-      const saved = await settingsAPI.updateSettings(settings, user.id, user.email);
+      const normalizedSettings = normalizeSettings(settings);
+      if (!normalizedSettings) return;
+      const saved = normalizeSettings(await settingsAPI.updateSettings(normalizedSettings, user.id, user.email));
       setSettings(saved);
       showToast.success('App security settings updated successfully');
     } catch (error) {
@@ -914,7 +942,7 @@ export function AdminPage() {
                       <input
                         type="checkbox"
                         checked={Boolean(settings.enforce_2fa)}
-                        onChange={(e) => setSettings({ ...settings, enforce_2fa: e.target.checked })}
+                        onChange={(e) => setSettings((prev) => normalizeSettings(prev ? { ...prev, enforce_2fa: e.target.checked } : null))}
                         className="w-4 h-4 text-primary rounded focus:ring-2 focus:ring-primary"
                       />
                     </div>
@@ -929,7 +957,7 @@ export function AdminPage() {
                       <input
                         type="checkbox"
                         checked={Boolean(settings.single_session_only)}
-                        onChange={(e) => setSettings({ ...settings, single_session_only: e.target.checked })}
+                        onChange={(e) => setSettings((prev) => normalizeSettings(prev ? { ...prev, single_session_only: e.target.checked } : null))}
                         className="w-4 h-4 text-primary rounded focus:ring-2 focus:ring-primary"
                       />
                     </div>
@@ -943,7 +971,7 @@ export function AdminPage() {
                         min={0}
                         value={Number(settings.inactivity_logout_minutes ?? 0)}
                         onChange={(e) =>
-                          setSettings({ ...settings, inactivity_logout_minutes: Number(e.target.value || 0) })
+                          setSettings((prev) => normalizeSettings(prev ? { ...prev, inactivity_logout_minutes: Number(e.target.value || 0) } : null))
                         }
                         className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
                         placeholder="e.g., 30"
