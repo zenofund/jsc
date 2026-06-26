@@ -49,6 +49,7 @@ export function AdminPage() {
   const [userForm, setUserForm] = useState({
     email: '',
     password: '',
+    password_confirm: '',
     full_name: '',
     role: 'staff' as User['role'],
     department: '',
@@ -231,14 +232,35 @@ export function AdminPage() {
     
     setIsSubmitting(true);
     try {
-      await userAPI.updateUser(
-        editingUser.id,
-        {
-          ...userForm,
-          permissions: selectedPermissions,
+      if (userForm.password || userForm.password_confirm) {
+        if (!userForm.password) {
+          showToast.error('New password is required');
+          return;
         }
-      );
-      showToast.success('User updated successfully');
+        if (userForm.password !== userForm.password_confirm) {
+          showToast.error('New password and confirm password do not match');
+          return;
+        }
+      }
+
+      await userAPI.updateUser(editingUser.id, {
+        email: userForm.email,
+        full_name: userForm.full_name,
+        role: userForm.role,
+        department: userForm.department,
+        status: userForm.status,
+        permissions: selectedPermissions,
+      });
+
+      if (userForm.password) {
+        await userAPI.setUserPassword(editingUser.id, {
+          newPassword: userForm.password,
+          confirmPassword: userForm.password_confirm,
+          mustChangePassword: true,
+        });
+      }
+
+      showToast.success(userForm.password ? 'User and password updated successfully' : 'User updated successfully');
       setShowUserModal(false);
       setEditingUser(null);
       resetUserForm();
@@ -391,6 +413,7 @@ export function AdminPage() {
     setUserForm({
       email: '',
       password: '',
+      password_confirm: '',
       full_name: '',
       role: 'staff',
       department: '',
@@ -440,6 +463,7 @@ export function AdminPage() {
               setUserForm({
                 email: row.email,
                 password: '',
+                password_confirm: '',
                 full_name: row.full_name,
                 role: normalizeRole(row.role) as User['role'],
                 department: row.department || '',
@@ -897,30 +921,50 @@ export function AdminPage() {
             />
           </div>
 
-          {!editingUser && (
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">
+              {editingUser ? 'New Password' : 'Password *'}
+            </label>
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <input
+                type={showUserPassword ? 'text' : 'password'}
+                value={userForm.password}
+                onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
+                className="w-full pl-9 pr-10 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                required={!editingUser}
+                placeholder={editingUser ? 'Leave blank to keep current password' : ''}
+              />
+              <button
+                type="button"
+                onClick={() => setShowUserPassword(!showUserPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                aria-label={showUserPassword ? 'Hide password' : 'Show password'}
+              >
+                {showUserPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+              </button>
+            </div>
+            {!editingUser && (
+              <p className="text-xs text-muted-foreground mt-1">User will be required to change password on first login</p>
+            )}
+          </div>
+
+          {editingUser && (
             <div>
               <label className="block text-sm font-medium text-foreground mb-1">
-                Password *
+                Confirm New Password
               </label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <input
                   type={showUserPassword ? 'text' : 'password'}
-                  value={userForm.password}
-                  onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
+                  value={userForm.password_confirm}
+                  onChange={(e) => setUserForm({ ...userForm, password_confirm: e.target.value })}
                   className="w-full pl-9 pr-10 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-                  required
+                  placeholder="Re-enter new password"
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowUserPassword(!showUserPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  aria-label={showUserPassword ? 'Hide password' : 'Show password'}
-                >
-                  {showUserPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                </button>
               </div>
-              <p className="text-xs text-muted-foreground mt-1">User will be required to change password on first login</p>
+              <p className="text-xs text-muted-foreground mt-1">User will be required to change password on next login</p>
             </div>
           )}
 
@@ -1041,9 +1085,9 @@ export function AdminPage() {
           </div>
 
           {editingUser && (
-            <div className="p-4 bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-900 rounded-lg">
-              <p className="text-sm text-yellow-800 dark:text-yellow-400">
-                <strong>Note:</strong> Password cannot be changed here. User must use password reset functionality.
+            <div className="p-4 bg-muted/30 border border-border rounded-lg">
+              <p className="text-sm text-muted-foreground">
+                Leave password fields empty to keep the current password.
               </p>
             </div>
           )}

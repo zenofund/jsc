@@ -715,6 +715,13 @@ export const userAPI = {
       method: 'DELETE',
     });
   },
+
+  async setUserPassword(userId: string, data: { newPassword: string; confirmPassword: string; mustChangePassword?: boolean }) {
+    return makeApiRequest(`/users/${userId}/password`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
 };
 
 // ============================================

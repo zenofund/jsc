@@ -45,7 +45,7 @@ export class ReportsService {
   private readonly exportDirectory = join(process.cwd(), 'storage', 'report-exports');
   private readonly validTablePattern = /^[a-z0-9_]+$/i;
   private readonly validFieldPattern = /^[a-z0-9_]+$/i;
-  private readonly validAliasPattern = /^[a-z0-9 _()\-]+$/i;
+  private readonly validAliasPattern = /^[a-z0-9 _()-]+$/i;
   private isTemplateNameUniqueViolation(error: any): boolean {
     const code = String(error?.code || '');
     const constraint = String(error?.constraint || '');

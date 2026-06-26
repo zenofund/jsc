@@ -95,7 +95,7 @@ export class ReportsController {
 
     const safeState = String(state || 'ALL').trim() || 'ALL';
     const safeMonth = String(month || '').trim() || 'month';
-    const fileName = `paye_schedule_${safeState}_${safeMonth}.csv`.replace(/[^\w.\-]/g, '_');
+    const fileName = `paye_schedule_${safeState}_${safeMonth}.csv`.replace(/[^\w.-]/g, '_');
 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);

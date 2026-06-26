@@ -145,14 +145,15 @@ export function PromotionsPage() {
   };
 
   const handleStaffSelect = (staffId: string) => {
-    const selectedStaff = staff.find(s => s.id === staffId);
+    const staffKey = String(staffId);
+    const selectedStaff = staff.find((s) => String(s.id) === staffKey);
     if (selectedStaff) {
-      setFormData({
-        ...formData,
-        staff_id: staffId,
+      setFormData((prev) => ({
+        ...prev,
+        staff_id: staffKey,
         old_grade_level: Number(selectedStaff.salary_info.grade_level) || 0,
         old_step: selectedStaff.salary_info.step,
-      });
+      }));
     }
   };
 
@@ -331,18 +332,18 @@ export function PromotionsPage() {
   };
 
   const getStaffName = (staffId: string): string => {
-    const staffMember = staff.find(s => s.id === staffId);
+    const staffMember = staff.find((s) => String(s.id) === String(staffId));
     if (!staffMember) return 'Unknown';
     return formatStaffName(staffMember);
   };
 
   const getStaffNumber = (staffId: string): string => {
-    const staffMember = staff.find(s => s.id === staffId);
+    const staffMember = staff.find((s) => String(s.id) === String(staffId));
     return staffMember?.staff_number || 'N/A';
   };
 
   const getSelectedStaffLabel = (staffId: string): string => {
-    const staffMember = staff.find(s => s.id === staffId);
+    const staffMember = staff.find((s) => String(s.id) === String(staffId));
     if (!staffMember) return '';
     return `${formatStaffLabelWithId(staffMember)} - GL ${staffMember.salary_info.grade_level}/Step ${staffMember.salary_info.step}`;
   };
@@ -675,7 +676,7 @@ export function PromotionsPage() {
               <button
                 type="button"
                 onClick={() => {
-                  setFormData({ ...formData, staff_id: '', old_grade_level: 0, old_step: 0 });
+                  setFormData((prev) => ({ ...prev, staff_id: '', old_grade_level: 0, old_step: 0 }));
                   setStaffSearch('');
                 }}
                 className="absolute right-2 top-9 text-muted-foreground hover:text-foreground"
@@ -702,8 +703,9 @@ export function PromotionsPage() {
                   filteredStaff.map((s) => (
                     <div
                       key={s.id}
-                      onClick={() => {
-                        handleStaffSelect(s.id);
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        handleStaffSelect(String(s.id));
                         setStaffSearch('');
                         setShowStaffDropdown(false);
                       }}

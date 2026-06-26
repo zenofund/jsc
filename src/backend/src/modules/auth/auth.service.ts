@@ -267,6 +267,41 @@ export class AuthService {
     };
   }
 
+  async adminSetUserPassword(targetUserId: string, newPassword: string, adminUserId: string, mustChangePassword = true) {
+    const user = await this.databaseService.queryOne(
+      'SELECT id, email, full_name FROM users WHERE id = $1',
+      [targetUserId],
+    );
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (String(newPassword || '').length < 8) {
+      throw new BadRequestException('Password must be at least 8 characters long');
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+
+    await this.databaseService.query(
+      `UPDATE users
+       SET password_hash = $1, must_change_password = $2, updated_at = NOW()
+       WHERE id = $3`,
+      [passwordHash, mustChangePassword, targetUserId],
+    );
+
+    await this.auditService.log({
+      userId: adminUserId,
+      action: AuditAction.UPDATE,
+      entity: 'user',
+      entityId: targetUserId,
+      description: `Admin updated password for ${user.email}`,
+      newValues: { must_change_password: mustChangePassword },
+    });
+
+    return { message: 'Password updated successfully' };
+  }
+
   async getAllUsers() {
     const users = await this.databaseService.query(
       `SELECT u.id, u.email, u.full_name, u.role, u.permissions, u.department_id, u.status, u.last_login,

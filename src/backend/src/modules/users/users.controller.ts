@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Delete, Put, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Delete, Put, Patch, UseGuards, Request, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger';
 import { AuthService } from '../auth/auth.service';
 import { RolesGuard } from '@common/guards/roles.guard';
@@ -41,6 +41,25 @@ export class UsersController {
   @ApiResponse({ status: 200, description: 'User updated successfully' })
   async updateUser(@Param('id') id: string, @Body() updateUserDto: any, @Request() req) {
     return this.authService.updateUser(id, updateUserDto, req.user.userId);
+  }
+
+  @Patch(':id/password')
+  @Roles('admin')
+  @ApiOperation({ summary: 'Set user password (Admin only)' })
+  @ApiResponse({ status: 200, description: 'Password updated successfully' })
+  async setUserPassword(@Param('id') id: string, @Body() body: any, @Request() req) {
+    const newPassword = String(body?.newPassword || '').trim();
+    const confirmPassword = String(body?.confirmPassword || '').trim();
+
+    if (!newPassword) {
+      throw new BadRequestException('New password is required');
+    }
+    if (newPassword !== confirmPassword) {
+      throw new BadRequestException('New password and confirm password do not match');
+    }
+
+    const mustChangePassword = body?.must_change_password ?? body?.mustChangePassword ?? true;
+    return this.authService.adminSetUserPassword(id, newPassword, req.user.userId, Boolean(mustChangePassword));
   }
 
   @Delete(':id')

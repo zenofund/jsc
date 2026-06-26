@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { DataTable } from '../components/DataTable';
 import { Modal } from '../components/Modal';
@@ -34,6 +34,22 @@ export function ReportsPage() {
   const [organizationLogo, setOrganizationLogo] = useState('');
 
   const isCashier = user?.role === 'cashier';
+
+  const staffStatusOptions = useMemo(() => {
+    return ['active', 'suspended', 'on_leave', 'retired', 'terminated', 'resigned', 'secondment', 'interdiction'];
+  }, []);
+
+  const formatStatusLabel = (status: string) => {
+    return String(status || '')
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (m) => m.toUpperCase());
+  };
+
+  useEffect(() => {
+    if (staffStatus && !staffStatusOptions.includes(staffStatus)) {
+      setStaffStatus('');
+    }
+  }, [staffStatus, staffStatusOptions]);
 
   const toNumber = (value: any) => {
     const num = typeof value === 'number' ? value : parseInt(String(value ?? ''), 10);
@@ -1000,8 +1016,11 @@ export function ReportsPage() {
                   className="w-full px-3 py-2 border border-border rounded-lg bg-input-background dark:bg-gray-800 text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 >
                   <option value="">All Status</option>
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
+                  {staffStatusOptions.map((status) => (
+                    <option key={status} value={status}>
+                      {formatStatusLabel(status)}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div className="flex items-end">
