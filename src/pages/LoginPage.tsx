@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import QRCode from 'qrcode';
 import { Lock, Mail, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { authAPI } from '../lib/api-client';
@@ -9,12 +10,35 @@ export function LoginPage() {
   const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [qrSrc, setQrSrc] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [stage, setStage] = useState<'credentials' | 'totp' | 'totp-setup'>('credentials');
   const [totpCode, setTotpCode] = useState('');
   const [setup, setSetup] = useState<{ otpauth_url: string; secret: string; issuer?: string; account?: string } | null>(null);
+
+  useEffect(() => {
+    async function buildQr() {
+      if (!setup?.otpauth_url) {
+        setQrSrc(null);
+        return;
+      }
+
+      try {
+        const dataUrl = await QRCode.toDataURL(setup.otpauth_url, {
+          width: 200,
+          margin: 1,
+        });
+        setQrSrc(dataUrl);
+      } catch (err) {
+        console.error('Failed to generate 2FA QR code:', err);
+        setQrSrc(null);
+      }
+    }
+
+    buildQr();
+  }, [setup?.otpauth_url]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -169,11 +193,17 @@ export function LoginPage() {
             {stage === 'totp-setup' && setup?.otpauth_url && (
               <div className="rounded-lg border border-border bg-muted/20 p-3">
                 <div className="flex flex-col items-center gap-3">
-                  <img
-                    alt="2FA QR Code"
-                    className="w-40 h-40 rounded-md border border-border bg-white"
-                    src={`https://chart.googleapis.com/chart?cht=qr&chs=200x200&chl=${encodeURIComponent(setup.otpauth_url)}`}
-                  />
+                  <div className="w-40 h-40 rounded-md border border-border bg-white grid place-items-center">
+                    {qrSrc ? (
+                      <img
+                        alt="2FA QR Code"
+                        className="w-36 h-36"
+                        src={qrSrc}
+                      />
+                    ) : (
+                      <span className="text-xs text-muted-foreground">Generating QR code...</span>
+                    )}
+                  </div>
                   <div className="w-full">
                     <div className="text-xs text-muted-foreground mb-1">Manual setup key</div>
                     <div className="text-sm font-mono break-all text-card-foreground">{setup.secret}</div>

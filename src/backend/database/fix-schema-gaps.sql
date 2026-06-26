@@ -12,6 +12,9 @@ BEGIN
     END IF;
 END $$;
 
+-- Fix users table timestamp columns
+ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+
 -- Create leave_balances
 CREATE TABLE IF NOT EXISTS leave_balances (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
