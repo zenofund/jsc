@@ -59,7 +59,10 @@ export class UsersController {
     }
 
     const mustChangePassword = body?.must_change_password ?? body?.mustChangePassword ?? true;
-    return this.authService.adminSetUserPassword(id, newPassword, req.user.userId, Boolean(mustChangePassword));
+    const service = this.authService as AuthService & {
+      adminSetUserPassword: (targetUserId: string, nextPassword: string, adminUserId: string, mustChangePassword?: boolean) => any;
+    };
+    return service.adminSetUserPassword(id, newPassword, req.user.userId, Boolean(mustChangePassword));
   }
 
   @Delete(':id')
