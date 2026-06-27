@@ -2289,6 +2289,23 @@ function ReportsTab() {
     return (toYear - fromYear) * 12 + (toMonth - fromMonth);
   };
 
+  const normalizeMonth = (value: unknown) => {
+    const raw = String(value ?? '').trim();
+    if (!raw) return '';
+    if (/^\d{4}-\d{2}$/.test(raw)) return raw;
+    if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 7);
+    const date = new Date(raw);
+    return Number.isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 7);
+  };
+
+  const addMonths = (startMonth: string, monthsToAdd: number) => {
+    if (!/^\d{4}-\d{2}$/.test(startMonth)) return '';
+    const [year, month] = startMonth.split('-').map(Number);
+    const date = new Date(Date.UTC(year, month - 1, 1));
+    date.setUTCMonth(date.getUTCMonth() + monthsToAdd);
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+  };
+
   const exportCSV = () => {
     if (!selectedReport || reportRows.length === 0 || reportColumns.length === 0) {
       showToast.warning('No data to export');
@@ -2436,15 +2453,29 @@ function ReportsTab() {
 
     if (key === 'repayment-schedule') {
       const scheduleStatus = (d: LoanDisbursement) => {
+        const startMonth = getScheduleStartMonth(d);
+        const endMonth = getScheduleEndMonth(d);
         if (d.status === 'completed' || toNumber(d.balance_outstanding) <= 0) return 'completed';
-        if (currentMonth < d.start_deduction_month) return 'upcoming';
-        if (currentMonth > d.end_deduction_month && toNumber(d.balance_outstanding) > 0) return 'overdue';
+        if (startMonth && currentMonth < startMonth) return 'upcoming';
+        if (endMonth && currentMonth > endMonth && toNumber(d.balance_outstanding) > 0) return 'overdue';
         return 'active';
+      };
+      const getScheduleStartMonth = (d: LoanDisbursement) => (
+        normalizeMonth((d as any).start_deduction_month || (d as any).start_month || d.disbursement_date)
+      );
+      const getScheduleEndMonth = (d: LoanDisbursement) => {
+        const explicitEnd = normalizeMonth((d as any).end_deduction_month || (d as any).end_month);
+        if (explicitEnd) return explicitEnd;
+        const startMonth = getScheduleStartMonth(d);
+        const tenureMonths = toNumber(d.tenure_months);
+        return startMonth && tenureMonths > 0 ? addMonths(startMonth, tenureMonths - 1) : '';
       };
       const filtered = disb.filter((d) => {
         if (!matchesCooperative(d.cooperative_id)) return false;
-        if (!d.start_deduction_month || !d.end_deduction_month) return true; // Include if no date range
-        return d.start_deduction_month <= rangeEndMonth && d.end_deduction_month >= rangeStartMonth;
+        const startMonth = getScheduleStartMonth(d);
+        const endMonth = getScheduleEndMonth(d);
+        if (!startMonth || !endMonth) return true;
+        return startMonth <= rangeEndMonth && endMonth >= rangeStartMonth;
       });
       const scoped = filtered.filter((d) => statusFilter === 'all' || scheduleStatus(d) === statusFilter);
       const activeCount = filtered.filter((d) => scheduleStatus(d) === 'active').length;
@@ -2472,8 +2503,8 @@ function ReportsTab() {
         staff_number: d.staff_number,
         loan_type_name: d.loan_type_name,
         monthly_deduction: formatCurrency(d.monthly_deduction),
-        start_deduction_month: d.start_deduction_month,
-        end_deduction_month: d.end_deduction_month,
+        start_deduction_month: getScheduleStartMonth(d) || '-',
+        end_deduction_month: getScheduleEndMonth(d) || '-',
         balance_outstanding: formatCurrency(d.balance_outstanding),
         schedule_status: scheduleStatus(d),
       }));
@@ -2695,6 +2726,11 @@ function ReportsTab() {
     if (!selectedReport) return;
     setStatusFilter('all');
     setCooperativeFilter('all');
+    if (selectedReport === 'repayment-schedule') {
+      const year = new Date().getFullYear();
+      setDateFrom(`${year}-01-01`);
+      setDateTo(`${year}-12-31`);
+    }
   }, [selectedReport]);
 
   const statusOptions = selectedReport === 'applications'

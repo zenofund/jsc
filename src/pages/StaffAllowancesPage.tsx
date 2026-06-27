@@ -35,6 +35,18 @@ export function StaffAllowancesPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  const unwrapApiData = <T,>(value: T[] | { data?: T[] } | null | undefined): T[] => {
+    if (Array.isArray(value)) return value;
+    return Array.isArray(value?.data) ? value.data : [];
+  };
+
+  const isActive = (item: any) => String(item?.status ?? 'active').toLowerCase() === 'active';
+
+  const isStaffSpecificCatalogItem = (item: any) => {
+    const value = item?.applies_to_all ?? item?.appliesToAll;
+    return value === false || value === 0 || value === '0' || String(value).toLowerCase() === 'false';
+  };
+
   useEffect(() => {
     if (selectedStaff) {
       loadStaffItems();
@@ -48,8 +60,12 @@ export function StaffAllowancesPage() {
           allowanceAPI.getAllAllowances(),
           deductionAPI.getAllDeductions(),
         ]);
-        const filteredAllowances = (allowances || []).filter((a: any) => a.status === 'active' && a.applies_to_all === false);
-        const filteredDeductions = (deductions || []).filter((d: any) => d.status === 'active' && d.applies_to_all === false);
+        const filteredAllowances = unwrapApiData<Allowance>(allowances).filter(
+          (a: any) => isActive(a) && isStaffSpecificCatalogItem(a),
+        );
+        const filteredDeductions = unwrapApiData<Deduction>(deductions).filter(
+          (d: any) => isActive(d) && isStaffSpecificCatalogItem(d),
+        );
         setAllowanceOptions(filteredAllowances);
         setDeductionOptions(filteredDeductions);
       } catch (error: any) {
@@ -69,8 +85,8 @@ export function StaffAllowancesPage() {
         staffDeductionAPI.getStaffDeductions(selectedStaff.id),
       ]);
       
-      setStaffAllowances(allowances);
-      setStaffDeductions(deductions);
+      setStaffAllowances(unwrapApiData<StaffAllowance>(allowances));
+      setStaffDeductions(unwrapApiData<StaffDeduction>(deductions));
     } catch (error) {
       showToast('error', 'Failed to load staff items');
     }

@@ -12,9 +12,49 @@ interface StaffSearchProps {
 export function StaffSearch({ onSelect, selectedStaff }: StaffSearchProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Staff[]>([]);
+  const [staffDirectory, setStaffDirectory] = useState<Staff[]>([]);
   const [loading, setLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
+
+  const normalizeStaff = (item: any): Staff => {
+    if (item?.bio_data && item?.appointment && item?.salary_info) {
+      return item as Staff;
+    }
+
+    return {
+      id: item.id,
+      staff_number: item.staff_number,
+      bio_data: {
+        first_name: item.first_name,
+        last_name: item.surname || item.last_name,
+        middle_name: item.other_names || item.middle_name,
+        email: item.email,
+        date_of_birth: item.date_of_birth,
+        gender: item.gender,
+        state_of_origin: item.state_of_origin,
+        lga_of_origin: item.lga_of_origin,
+      },
+      next_of_kin: {},
+      appointment: {
+        department: item.department_name || item.department,
+        current_posting: item.current_posting,
+        designation: item.designation,
+        date_of_first_appointment: item.date_of_first_appointment,
+        employment_date: item.employment_date,
+      },
+      salary_info: {
+        grade_level: item.grade_level,
+        step: item.step,
+        bank_name: item.bank_name,
+        account_number: item.account_number,
+      },
+      status: item.status,
+      created_at: item.created_at,
+      updated_at: item.updated_at,
+      created_by: item.created_by,
+    };
+  };
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -27,6 +67,33 @@ export function StaffSearch({ onSelect, selectedStaff }: StaffSearchProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadStaffDirectory = async () => {
+      setLoading(true);
+      try {
+        const response = await staffAPI.getAllStaff({ fetchAll: true, limit: 1000 });
+        const data = Array.isArray(response) ? response : (response.data || []);
+        if (!cancelled) {
+          setStaffDirectory(data.map(normalizeStaff));
+        }
+      } catch (error) {
+        console.error('Failed to load staff directory:', error);
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadStaffDirectory();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Debounced search
   useEffect(() => {
     if (!query) {
@@ -34,54 +101,22 @@ export function StaffSearch({ onSelect, selectedStaff }: StaffSearchProps) {
       return;
     }
 
-    const timer = setTimeout(async () => {
-      setLoading(true);
-      try {
-        // Fetch all staff and filter client-side since API search might be limited
-        // In a real app, this should be a search endpoint
-        const response = await staffAPI.getAllStaff({ fetchAll: true });
-        const allStaff = response.data || [];
+    const timer = setTimeout(() => {
+      const searchLower = query.toLowerCase();
+      const filtered = staffDirectory.filter((staff: Staff) => {
+        const name = formatStaffName(staff).toLowerCase();
+        const staffNo = staff.staff_number?.toLowerCase() || '';
+        const dept = staff.appointment?.department?.toLowerCase() || '';
         
-        const searchLower = query.toLowerCase();
-        const filtered = allStaff.filter((staff: any) => {
-          const name = `${staff.first_name} ${staff.surname || staff.last_name} ${staff.other_names || ''}`.toLowerCase();
-          const staffNo = staff.staff_number?.toLowerCase() || '';
-          const dept = (staff.department_name || staff.department)?.toLowerCase() || '';
-          
-          return name.includes(searchLower) || staffNo.includes(searchLower) || dept.includes(searchLower);
-        }).slice(0, 10); // Limit to 10 results
+        return name.includes(searchLower) || staffNo.includes(searchLower) || dept.includes(searchLower);
+      }).slice(0, 10);
 
-        // Map to standard Staff type
-        const mapped = filtered.map((item: any) => ({
-          id: item.id,
-          staff_number: item.staff_number,
-          bio_data: {
-            first_name: item.first_name,
-            last_name: item.surname || item.last_name,
-            middle_name: item.other_names || item.middle_name,
-            email: item.email,
-          },
-          appointment: {
-            department: item.department_name || item.department,
-          },
-          salary_info: {
-            grade_level: item.grade_level,
-            step: item.step,
-          },
-          status: item.status,
-        }));
-
-        setResults(mapped);
-        setIsOpen(true);
-      } catch (error) {
-        console.error('Search failed:', error);
-      } finally {
-        setLoading(false);
-      }
+      setResults(filtered);
+      setIsOpen(true);
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [query]);
+  }, [query, staffDirectory]);
 
   return (
     <div className="relative" ref={wrapperRef}>
