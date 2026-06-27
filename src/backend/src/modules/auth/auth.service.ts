@@ -9,6 +9,7 @@ import * as crypto from 'crypto';
 import { LoginDto } from './dto/login.dto';
 import { JwtPayload } from './interfaces/jwt-payload.interface';
 import { buildOtpAuthUrl, generateTotpSecret, verifyTotp } from './totp.util';
+import { evaluateGeoFencingPolicy } from './geo-fencing.util';
 
 @Injectable()
 export class AuthService {
@@ -107,7 +108,7 @@ export class AuthService {
   /**
    * Login user and generate JWT token
    */
-  async login(loginDto: LoginDto) {
+  async login(loginDto: LoginDto, request?: any) {
     const user = await this.validateUser(loginDto.email, loginDto.password);
 
     if (!user) {
@@ -120,6 +121,16 @@ export class AuthService {
 
     const enforce2fa = Boolean(settingsRow?.value?.enforce_2fa);
     const singleSessionOnly = Boolean(settingsRow?.value?.single_session_only);
+
+    const geoPolicyResult = evaluateGeoFencingPolicy({
+      settings: settingsRow?.value || {},
+      requestHeaders: request?.headers as Record<string, string | string[] | undefined>,
+      remoteIp: request?.ip || request?.socket?.remoteAddress || '',
+    });
+
+    if (!geoPolicyResult.allowed) {
+      throw new UnauthorizedException(geoPolicyResult.message || 'Access denied: you must be within the office perimeter.');
+    }
 
     const isTwoFactorEnabled = Boolean(user.totp_enabled);
     const requiresTwoFactor = enforce2fa || isTwoFactorEnabled;

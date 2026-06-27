@@ -135,6 +135,9 @@ export function LoginPage() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              For secure sign-in, the app may request location access to verify office access when geo fencing is enabled.
+            </p>
             <div>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-muted-foreground" />

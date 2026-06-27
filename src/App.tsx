@@ -45,6 +45,7 @@ import { settingsAPI } from './lib/api-client';
 function AppContent() {
   const { user, isLoading } = useAuth();
   const [currentView, setCurrentView] = useState<'dashboard' | 'hr-dashboard' | 'cashier-dashboard' | 'staff' | 'staff-portal' | 'staff-request-status' | 'staff-requests' | 'payroll' | 'promotions' | 'arrears' | 'approvals' | 'payslips' | 'reports' | 'setup' | 'admin' | 'loan-management' | 'department-management' | 'staff-allowances' | 'staff-adjustment-approvals' | 'leave-management' | 'bank-payments' | 'notifications' | 'cooperative-reports' | 'cooperative-management' | 'custom-report-builder' | 'reports-list' | 'smtp-settings' | 'change-password' | 'audit-log' | 'tax-configuration'>('dashboard');
+  const [geoFenceBanner, setGeoFenceBanner] = useState<string | null>(null);
 
   // Set initial view based on user role
   useEffect(() => {
@@ -79,6 +80,16 @@ function AppContent() {
       setCurrentView('change-password');
     }
   }, [user, currentView]);
+
+  useEffect(() => {
+    const handleGeoFenceDenied = (event: Event) => {
+      const customEvent = event as CustomEvent<{ message?: string }>;
+      setGeoFenceBanner(customEvent.detail?.message || 'Access denied: you must be within the office perimeter.');
+    };
+
+    window.addEventListener('geo-fencing-denied', handleGeoFenceDenied as EventListener);
+    return () => window.removeEventListener('geo-fencing-denied', handleGeoFenceDenied as EventListener);
+  }, []);
 
   // Create custom navigation helper
   useEffect(() => {
@@ -133,6 +144,11 @@ function AppContent() {
 
   return (
     <Layout>
+      {geoFenceBanner && (
+        <div className="mb-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+          {geoFenceBanner}
+        </div>
+      )}
       {user.must_change_password ? (
         <ChangePasswordPage />
       ) : (

@@ -455,6 +455,12 @@ export interface SystemSettings {
   inactivity_logout_minutes?: number;
   max_failed_login_attempts?: number;
   lockout_minutes?: number;
+  geo_fencing_enabled?: boolean;
+  office_latitude?: number | null;
+  office_longitude?: number | null;
+  office_radius_meters?: number;
+  allowed_ip_range?: string;
+  trusted_network_fallback?: string;
 }
 
 // ============================================

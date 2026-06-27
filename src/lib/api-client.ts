@@ -18,6 +18,80 @@ const API_CONFIG = {
   }
 };
 
+function getGeoContextHeaders() {
+  try {
+    const raw = localStorage.getItem('jsc_geo_context');
+    if (!raw) return {};
+    const geoContext = JSON.parse(raw);
+    return {
+      'X-Location-Latitude': String(geoContext.latitude ?? ''),
+      'X-Location-Longitude': String(geoContext.longitude ?? ''),
+      'X-Location-Accuracy': String(geoContext.accuracy ?? ''),
+      'X-Location-Source': String(geoContext.source ?? 'browser'),
+    };
+  } catch {
+    return {};
+  }
+}
+
+async function captureGeoContext() {
+  try {
+    const existing = localStorage.getItem('jsc_geo_context');
+    if (existing) return JSON.parse(existing);
+    if (typeof navigator === 'undefined' || !navigator.geolocation) return null;
+    return await new Promise<any>((resolve) => {
+      navigator.geolocation.getCurrentPosition(
+        (position) => resolve({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+          source: 'browser',
+        }),
+        () => resolve(null),
+        { enableHighAccuracy: false, timeout: 4000 },
+      );
+    });
+  } catch {
+    return null;
+  }
+}
+
+function normalizeErrorMessage(payload: unknown, fallback: string): string {
+  if (typeof payload === 'string') {
+    const trimmed = payload.trim();
+    if (!trimmed) return fallback;
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      return normalizeErrorMessage(parsed, fallback);
+    } catch {
+      return trimmed;
+    }
+  }
+
+  if (Array.isArray(payload)) {
+    const joined = payload
+      .map((item) => normalizeErrorMessage(item, ''))
+      .filter(Boolean)
+      .join('; ');
+    return joined || fallback;
+  }
+
+  if (payload && typeof payload === 'object') {
+    const record = payload as Record<string, any>;
+    const message = record.message ?? record.error ?? record.detail ?? record.error_message;
+    if (typeof message === 'string' && message.trim()) {
+      return message.trim();
+    }
+
+    if (Array.isArray(record.errors)) {
+      return normalizeErrorMessage(record.errors, fallback);
+    }
+  }
+
+  return fallback;
+}
+
 // Helper function for making API requests
 async function makeApiRequest(endpoint: string, options: RequestInit = {}): Promise<any> {
   const url = `${API_CONFIG.baseURL}${endpoint}`;
@@ -32,6 +106,7 @@ async function makeApiRequest(endpoint: string, options: RequestInit = {}): Prom
       ...options,
       headers: {
         ...defaultHeaders,
+        ...getGeoContextHeaders(),
         ...options.headers,
       },
     });
@@ -63,10 +138,12 @@ async function makeApiRequest(endpoint: string, options: RequestInit = {}): Prom
       const rawText = await response.text().catch(() => '');
       let parsed: any = null;
       try { parsed = rawText ? JSON.parse(rawText) : null; } catch {}
-      let msg: any = parsed?.message ?? parsed?.error ?? null;
-      if (Array.isArray(msg)) msg = msg.join('; ');
       const fallback = `HTTP ${response.status}: ${response.statusText}`;
-      throw new Error((typeof msg === 'string' && msg.trim()) ? msg : fallback);
+      const message = normalizeErrorMessage(parsed ?? rawText, fallback);
+      if (response.status === 403 && message.includes('office perimeter')) {
+        window.dispatchEvent(new CustomEvent('geo-fencing-denied', { detail: { message } }));
+      }
+      throw new Error(message);
     }
 
     if (response.status === 204) {
@@ -112,15 +189,30 @@ export const authAPI = {
   > => {
     // NestJS implementation
     try {
+      const geoContext = await captureGeoContext();
+      if (geoContext) {
+        localStorage.setItem('jsc_geo_context', JSON.stringify(geoContext));
+      }
+
       const response = await fetch(`${API_CONFIG.baseURL}/auth/login`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(geoContext ? {
+            'X-Location-Latitude': String(geoContext.latitude ?? ''),
+            'X-Location-Longitude': String(geoContext.longitude ?? ''),
+            'X-Location-Accuracy': String(geoContext.accuracy ?? ''),
+            'X-Location-Source': String(geoContext.source ?? 'browser'),
+          } : {}),
+        },
         body: JSON.stringify({ email, password, totp_code: totpCode })
       });
 
       if (!response.ok) {
         const raw = await response.text().catch(() => '');
-        return { status: 'error', message: raw || 'Login failed' };
+        let parsed: any = null;
+        try { parsed = raw ? JSON.parse(raw) : null; } catch {}
+        return { status: 'error', message: normalizeErrorMessage(parsed ?? raw, 'Invalid email or password') };
       }
 
       const data = await response.json();

@@ -143,7 +143,7 @@ export class DeductionsService {
 
     await this.databaseService.transaction(async (client) => {
       await client.query('DELETE FROM staff_deductions WHERE deduction_id = $1', [id]);
-      await client.query('DELETE FROM deductions WHERE id = $1', [id]);
+      await client.query('DELETE FROM deductions WHERE id = $1 RETURNING id', [id]);
     });
 
     this.logger.log(`Global deduction ${id} deleted by user ${userId}`);

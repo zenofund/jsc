@@ -22,6 +22,12 @@ export class SettingsService {
         inactivity_logout_minutes: 30,
         max_failed_login_attempts: 5,
         lockout_minutes: 15,
+        geo_fencing_enabled: false,
+        office_latitude: null,
+        office_longitude: null,
+        office_radius_meters: 100,
+        allowed_ip_range: '',
+        trusted_network_fallback: '',
       };
 
       return {
@@ -50,6 +56,12 @@ export class SettingsService {
       inactivity_logout_minutes: 30,
       max_failed_login_attempts: 5,
       lockout_minutes: 15,
+      geo_fencing_enabled: false,
+      office_latitude: null,
+      office_longitude: null,
+      office_radius_meters: 100,
+      allowed_ip_range: '',
+      trusted_network_fallback: '',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -75,6 +87,12 @@ export class SettingsService {
       inactivity_logout_minutes,
       max_failed_login_attempts,
       lockout_minutes,
+      geo_fencing_enabled,
+      office_latitude,
+      office_longitude,
+      office_radius_meters,
+      allowed_ip_range,
+      trusted_network_fallback,
     } = settings;
 
     const value = {
@@ -100,6 +118,14 @@ export class SettingsService {
       lockout_minutes: Number.isFinite(Number(lockout_minutes))
         ? Math.max(1, Number(lockout_minutes))
         : 15,
+      geo_fencing_enabled: Boolean(geo_fencing_enabled),
+      office_latitude: Number.isFinite(Number(office_latitude)) ? Number(office_latitude) : null,
+      office_longitude: Number.isFinite(Number(office_longitude)) ? Number(office_longitude) : null,
+      office_radius_meters: Number.isFinite(Number(office_radius_meters)) && Number(office_radius_meters) > 0
+        ? Number(office_radius_meters)
+        : 100,
+      allowed_ip_range: typeof allowed_ip_range === 'string' ? allowed_ip_range.trim() : '',
+      trusted_network_fallback: typeof trusted_network_fallback === 'string' ? trusted_network_fallback.trim() : '',
     };
 
     await this.databaseService.query(

@@ -45,6 +45,7 @@ export function AdminPage() {
   const [roleTemplates, setRoleTemplates] = useState<Record<string, string[]>>({});
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
   const [customPermissionsEnabled, setCustomPermissionsEnabled] = useState(false);
+  const [geoDetecting, setGeoDetecting] = useState(false);
 
   // User form state
   const [userForm, setUserForm] = useState({
@@ -89,6 +90,14 @@ export function AdminPage() {
       lockout_minutes: Number.isFinite(Number(value.lockout_minutes))
         ? Math.max(1, Number(value.lockout_minutes))
         : 15,
+      geo_fencing_enabled: Boolean(value.geo_fencing_enabled),
+      office_latitude: Number.isFinite(Number(value.office_latitude)) ? Number(value.office_latitude) : null,
+      office_longitude: Number.isFinite(Number(value.office_longitude)) ? Number(value.office_longitude) : null,
+      office_radius_meters: Number.isFinite(Number(value.office_radius_meters)) && Number(value.office_radius_meters) > 0
+        ? Number(value.office_radius_meters)
+        : 100,
+      allowed_ip_range: typeof value.allowed_ip_range === 'string' ? value.allowed_ip_range : '',
+      trusted_network_fallback: typeof value.trusted_network_fallback === 'string' ? value.trusted_network_fallback : '',
     } as SystemSettings;
   };
 
@@ -129,6 +138,40 @@ export function AdminPage() {
       role: normalizeRole(s.role),
     })));
     setIsEditingWorkflow(true);
+  };
+
+  const handleGeoFencingToggle = (enabled: boolean) => {
+    setSettings((prev) => normalizeSettings(prev ? { ...prev, geo_fencing_enabled: enabled } : null));
+    
+    if (enabled) {
+      // Auto-detect coordinates when enabling geo-fencing
+      if (typeof navigator === 'undefined' || !navigator.geolocation) {
+        showToast.warning('Geolocation is not supported. Please enter coordinates manually.');
+        return;
+      }
+
+      setGeoDetecting(true);
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setGeoDetecting(false);
+          setSettings((prev) => normalizeSettings(prev ? {
+            ...prev,
+            geo_fencing_enabled: true,
+            office_latitude: position.coords.latitude,
+            office_longitude: position.coords.longitude,
+          } : null));
+          showToast.success('Office coordinates detected', `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`);
+        },
+        (error) => {
+          setGeoDetecting(false);
+          const message = error.code === error.PERMISSION_DENIED
+            ? 'Location access was denied. You can manually enter the office coordinates below.'
+            : 'Unable to detect location. Please enter the office coordinates manually below.';
+          showToast.warning(message);
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    }
   };
 
   const handleCancelWorkflow = () => {
@@ -980,6 +1023,73 @@ export function AdminPage() {
                         Set to 0 to disable inactivity logout.
                       </p>
                     </div>
+
+                    <div className="border-t border-border pt-4 mt-2">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <div className="text-sm font-medium text-foreground">Geo Fencing</div>
+                          <div className="text-xs text-muted-foreground">
+                            {geoDetecting ? 'Detecting your location...' : 'Limit access to approved office coordinates and trusted networks.'}
+                          </div>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(settings.geo_fencing_enabled)}
+                          onChange={(e) => handleGeoFencingToggle(e.target.checked)}
+                          disabled={geoDetecting}
+                          className="w-4 h-4 text-primary rounded focus:ring-2 focus:ring-primary disabled:opacity-50"
+                        />
+                      </div>
+
+                      {Boolean(settings.geo_fencing_enabled) && (
+                        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-sm font-medium text-foreground mb-1">Office Latitude</label>
+                            <input
+                              type="number"
+                              step="any"
+                              value={settings.office_latitude ?? ''}
+                              onChange={(e) => setSettings((prev) => normalizeSettings(prev ? { ...prev, office_latitude: Number(e.target.value || 0) } : null))}
+                              className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                              placeholder="e.g., 5.55"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-foreground mb-1">Office Longitude</label>
+                            <input
+                              type="number"
+                              step="any"
+                              value={settings.office_longitude ?? ''}
+                              onChange={(e) => setSettings((prev) => normalizeSettings(prev ? { ...prev, office_longitude: Number(e.target.value || 0) } : null))}
+                              className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                              placeholder="e.g., -0.2"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-foreground mb-1">Radius (Meters)</label>
+                            <input
+                              type="number"
+                              min={1}
+                              value={settings.office_radius_meters ?? 100}
+                              onChange={(e) => setSettings((prev) => normalizeSettings(prev ? { ...prev, office_radius_meters: Number(e.target.value || 100) } : null))}
+                              className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                              placeholder="e.g., 200"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-foreground mb-1">Allowed IP Range</label>
+                            <input
+                              type="text"
+                              value={settings.allowed_ip_range ?? ''}
+                              onChange={(e) => setSettings((prev) => normalizeSettings(prev ? { ...prev, allowed_ip_range: e.target.value } : null))}
+                              className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                              placeholder="e.g., 10.0.0.0/24"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                    </div>
                   </div>
 
                   <button
@@ -1000,6 +1110,8 @@ export function AdminPage() {
                   <div className="text-sm text-muted-foreground space-y-2">
                     <div>2FA setup is completed at login when required.</div>
                     <div>Single session is enforced on every API request.</div>
+                    <div>Geo fencing restricts access to approved office coordinates and trusted networks.</div>
+                    <div>Users outside the configured radius are denied access unless a trusted network is configured.</div>
                   </div>
                 </div>
               </div>
