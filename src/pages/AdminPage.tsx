@@ -93,9 +93,13 @@ export function AdminPage() {
       geo_fencing_enabled: Boolean(value.geo_fencing_enabled),
       office_latitude: Number.isFinite(Number(value.office_latitude)) ? Number(value.office_latitude) : null,
       office_longitude: Number.isFinite(Number(value.office_longitude)) ? Number(value.office_longitude) : null,
-      office_radius_meters: Number.isFinite(Number(value.office_radius_meters)) && Number(value.office_radius_meters) > 0
-        ? Number(value.office_radius_meters)
-        : 100,
+      office_radius_meters: (function(v) {
+        // Accept numbers or numeric strings; coerce and ensure positive.
+        if (v === null || v === undefined) return 100;
+        const cleaned = String(v).trim().replace(/[^0-9.]/g, '');
+        const num = cleaned === '' ? NaN : Number(cleaned);
+        return Number.isFinite(num) && num > 0 ? num : 100;
+      })(value.office_radius_meters),
       allowed_ip_range: typeof value.allowed_ip_range === 'string' ? value.allowed_ip_range : '',
       trusted_network_fallback: typeof value.trusted_network_fallback === 'string' ? value.trusted_network_fallback : '',
     } as SystemSettings;
@@ -1068,10 +1072,15 @@ export function AdminPage() {
                           <div>
                             <label className="block text-sm font-medium text-foreground mb-1">Radius (Meters)</label>
                             <input
-                              type="number"
-                              min={1}
-                              value={settings.office_radius_meters ?? 100}
-                              onChange={(e) => setSettings((prev) => normalizeSettings(prev ? { ...prev, office_radius_meters: Number(e.target.value || 100) } : null))}
+                              type="text"
+                              inputMode="numeric"
+                              pattern="[0-9]*"
+                              value={String(settings.office_radius_meters ?? 100)}
+                              onChange={(e) => {
+                                const cleaned = String(e.target.value || '').trim().replace(/[^0-9.]/g, '');
+                                const parsed = cleaned === '' ? NaN : Number(cleaned);
+                                setSettings((prev) => normalizeSettings(prev ? { ...prev, office_radius_meters: Number.isFinite(parsed) ? parsed : (prev?.office_radius_meters ?? 100) } : null));
+                              }}
                               className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
                               placeholder="e.g., 200"
                             />
