@@ -95,6 +95,16 @@ export class SettingsService {
       trusted_network_fallback,
     } = settings;
 
+    const parseBoolean = (v: any) => {
+      if (typeof v === 'boolean') return v;
+      if (typeof v === 'number') return v !== 0;
+      if (typeof v === 'string') {
+        const s = v.trim().toLowerCase();
+        return s === 'true' || s === '1' || s === 'yes' || s === 'on';
+      }
+      return false;
+    };
+
     const value = {
       organization_name,
       organization_logo,
@@ -107,8 +117,8 @@ export class SettingsService {
       allowed_grades: Array.isArray(allowed_grades)
         ? allowed_grades
         : [3,4,5,6,7,8,9,10,12,13,14,15,16,17],
-      enforce_2fa: Boolean(enforce_2fa),
-      single_session_only: Boolean(single_session_only),
+      enforce_2fa: parseBoolean(enforce_2fa),
+      single_session_only: parseBoolean(single_session_only),
       inactivity_logout_minutes: Number.isFinite(Number(inactivity_logout_minutes))
         ? Math.max(0, Number(inactivity_logout_minutes))
         : 30,
@@ -118,7 +128,7 @@ export class SettingsService {
       lockout_minutes: Number.isFinite(Number(lockout_minutes))
         ? Math.max(1, Number(lockout_minutes))
         : 15,
-      geo_fencing_enabled: Boolean(geo_fencing_enabled),
+      geo_fencing_enabled: parseBoolean(geo_fencing_enabled),
       office_latitude: Number.isFinite(Number(office_latitude)) ? Number(office_latitude) : null,
       office_longitude: Number.isFinite(Number(office_longitude)) ? Number(office_longitude) : null,
       office_radius_meters: Number.isFinite(Number(office_radius_meters)) && Number(office_radius_meters) > 0
