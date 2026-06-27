@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { settingsAPI } from '../lib/api-client';
+import { getPwaInstallPromptState } from '../lib/pwa-install';
 import { NotificationDropdown } from './NotificationDropdown';
 import { 
   X, User, LogOut, Lock,
@@ -63,6 +64,26 @@ export function Layout({ children }: LayoutProps) {
   const [isInstalled, setIsInstalled] = useState(false);
   const installReminderMs = 8 * 60 * 60 * 1000;
 
+  const installPromptState = React.useMemo(() => {
+    if (typeof window === 'undefined') {
+      return getPwaInstallPromptState({
+        userAgent: '',
+        isStandalone: false,
+        isInstalled,
+        hasDeferredPrompt: Boolean(deferredPrompt),
+      });
+    }
+
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone === true;
+
+    return getPwaInstallPromptState({
+      userAgent: navigator.userAgent,
+      isStandalone,
+      isInstalled,
+      hasDeferredPrompt: Boolean(deferredPrompt),
+    });
+  }, [deferredPrompt, isInstalled]);
+
   React.useEffect(() => {
     const fetchSettings = async () => {
       try {
@@ -102,12 +123,9 @@ export function Layout({ children }: LayoutProps) {
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone === true;
     if (storedInstalled || isStandalone) {
       setIsInstalled(true);
+      setShowInstallPrompt(false);
+      return;
     }
-
-    const canShowPrompt = () => {
-      const lastPrompt = Number(localStorage.getItem('pwaInstallPromptLastShown') || '0');
-      return !isInstalled && !!deferredPrompt && Date.now() - lastPrompt >= installReminderMs;
-    };
 
     const handleBeforeInstallPrompt = (event: Event) => {
       event.preventDefault();
@@ -129,8 +147,16 @@ export function Layout({ children }: LayoutProps) {
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     window.addEventListener('appinstalled', handleAppInstalled);
 
+    const lastPrompt = Number(localStorage.getItem('pwaInstallPromptLastShown') || '0');
+    const shouldAutoShowPrompt = installPromptState.shouldPrompt && Date.now() - lastPrompt >= installReminderMs;
+
+    if (shouldAutoShowPrompt) {
+      setShowInstallPrompt(true);
+    }
+
     const intervalId = window.setInterval(() => {
-      if (canShowPrompt()) {
+      const nextPrompt = Number(localStorage.getItem('pwaInstallPromptLastShown') || '0');
+      if (installPromptState.shouldPrompt && Date.now() - nextPrompt >= installReminderMs) {
         setShowInstallPrompt(true);
       }
     }, 30 * 60 * 1000);
@@ -140,10 +166,15 @@ export function Layout({ children }: LayoutProps) {
       window.removeEventListener('appinstalled', handleAppInstalled);
       window.clearInterval(intervalId);
     };
-  }, [deferredPrompt, isInstalled]);
+  }, [installPromptState.shouldPrompt, isInstalled, installReminderMs]);
 
   const handleInstallApp = async () => {
-    if (!deferredPrompt) return;
+    if (!deferredPrompt) {
+      localStorage.setItem('pwaInstallPromptLastShown', Date.now().toString());
+      setShowInstallPrompt(false);
+      return;
+    }
+
     await deferredPrompt.prompt();
     const choice = await deferredPrompt.userChoice;
     localStorage.setItem('pwaInstallPromptLastShown', Date.now().toString());
@@ -460,9 +491,9 @@ export function Layout({ children }: LayoutProps) {
           <div className="bg-card border border-border rounded-lg shadow-lg p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <div className="text-sm font-medium text-foreground">Install JSC PMS</div>
+                <div className="text-sm font-medium text-foreground">{installPromptState.title}</div>
                 <div className="text-xs text-muted-foreground">
-                  Get faster access and an app-like experience.
+                  {installPromptState.message}
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -476,7 +507,7 @@ export function Layout({ children }: LayoutProps) {
                   onClick={handleInstallApp}
                   className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
                 >
-                  Install
+                  {installPromptState.actionLabel}
                 </button>
               </div>
             </div>
