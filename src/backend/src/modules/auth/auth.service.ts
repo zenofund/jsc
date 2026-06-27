@@ -26,6 +26,16 @@ export class AuthService {
     return String(role || '').trim().toLowerCase();
   }
 
+  private parseBoolean(v: any): boolean {
+    if (typeof v === 'boolean') return v;
+    if (typeof v === 'number') return v !== 0;
+    if (typeof v === 'string') {
+      const s = v.trim().toLowerCase();
+      return s === 'true' || s === '1' || s === 'yes' || s === 'on';
+    }
+    return false;
+  }
+
   private async getRoleTemplatePermissions(role: string): Promise<string[]> {
     const normalizedRole = this.normalizeRole(role);
     if (!normalizedRole) return [];
@@ -119,8 +129,8 @@ export class AuthService {
       `SELECT value FROM system_settings WHERE key = 'general_settings'`,
     );
 
-    const enforce2fa = Boolean(settingsRow?.value?.enforce_2fa);
-    const singleSessionOnly = Boolean(settingsRow?.value?.single_session_only);
+    const enforce2fa = this.parseBoolean(settingsRow?.value?.enforce_2fa);
+    const singleSessionOnly = this.parseBoolean(settingsRow?.value?.single_session_only);
 
     const geoPolicyResult = evaluateGeoFencingPolicy({
       settings: settingsRow?.value || {},
