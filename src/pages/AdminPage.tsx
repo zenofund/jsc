@@ -72,6 +72,16 @@ export function AdminPage() {
   const normalizeSettings = (value: Partial<SystemSettings> | null | undefined): SystemSettings | null => {
     if (!value) return null;
 
+    const parseBoolean = (v: any) => {
+      if (typeof v === 'boolean') return v;
+      if (typeof v === 'number') return v !== 0;
+      if (typeof v === 'string') {
+        const s = v.trim().toLowerCase();
+        return s === 'true' || s === '1' || s === 'yes' || s === 'on';
+      }
+      return false;
+    };
+
     return {
       ...value,
       approval_workflow: Array.isArray(value.approval_workflow) ? value.approval_workflow : [],
@@ -79,8 +89,8 @@ export function AdminPage() {
       allowed_grades: Array.isArray(value.allowed_grades)
         ? value.allowed_grades
         : [3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 17],
-      enforce_2fa: Boolean(value.enforce_2fa),
-      single_session_only: Boolean(value.single_session_only),
+      enforce_2fa: parseBoolean(value.enforce_2fa),
+      single_session_only: parseBoolean(value.single_session_only),
       inactivity_logout_minutes: Number.isFinite(Number(value.inactivity_logout_minutes))
         ? Math.max(0, Number(value.inactivity_logout_minutes))
         : 30,
