@@ -13,6 +13,109 @@ export class DeductionsService {
     return `${String(value).substring(0, 7)}-01`;
   }
 
+  private cleanString(value: any): string | null {
+    if (value === undefined || value === null) return null;
+    const normalized = String(value).trim();
+    return normalized ? normalized : null;
+  }
+
+  private hasOwn(dto: any, key: string): boolean {
+    return Object.prototype.hasOwnProperty.call(dto || {}, key);
+  }
+
+  private hasStaffDeductionDefinitionInput(dto: any): boolean {
+    return [
+      'deduction_id',
+      'deductionId',
+      'deduction_code',
+      'deductionCode',
+      'deduction_name',
+      'deductionName',
+      'type',
+      'entry_mode',
+      'entryMode',
+    ].some((key) => this.hasOwn(dto, key));
+  }
+
+  private getEntryMode(dto: any): 'configured' | 'custom' | undefined {
+    const rawMode = this.cleanString(dto.entry_mode ?? dto.entryMode);
+    if (rawMode === 'configured' || rawMode === 'custom') {
+      return rawMode;
+    }
+    return undefined;
+  }
+
+  private deriveCustomCode(name: string, prefix: string): string {
+    const slug = name
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 40);
+
+    return `${prefix}_${slug || 'ITEM'}`;
+  }
+
+  private async resolveStaffDeductionDefinition(dto: any) {
+    const requestedMode = this.getEntryMode(dto);
+    const deductionId = this.cleanString(dto.deduction_id ?? dto.deductionId);
+    const deductionCode = this.cleanString(dto.deduction_code ?? dto.deductionCode);
+    const deductionName = this.cleanString(dto.deduction_name ?? dto.deductionName);
+    const deductionType = this.cleanString(dto.type);
+
+    let configuredDeduction = null;
+    if (deductionId) {
+      configuredDeduction = await this.databaseService.queryOne(
+        'SELECT * FROM deductions WHERE id = $1',
+        [deductionId],
+      );
+    } else if (deductionCode && requestedMode !== 'custom') {
+      configuredDeduction = await this.databaseService.queryOne(
+        'SELECT * FROM deductions WHERE code = $1',
+        [deductionCode],
+      );
+    }
+
+    const shouldUseConfigured =
+      requestedMode === 'configured' ||
+      Boolean(deductionId) ||
+      (requestedMode !== 'custom' && Boolean(configuredDeduction));
+
+    if (shouldUseConfigured) {
+      if (!configuredDeduction) {
+        throw new BadRequestException('Please select a valid deduction from Payroll Setup');
+      }
+      if (configuredDeduction.applies_to_all) {
+        throw new BadRequestException('Global deductions cannot be assigned as staff-specific');
+      }
+      if (configuredDeduction.status !== 'active') {
+        throw new BadRequestException('Selected deduction is not active');
+      }
+
+      return {
+        entryMode: 'configured' as const,
+        deductionId: configuredDeduction.id,
+        deductionCode: configuredDeduction.code,
+        deductionName: configuredDeduction.name,
+        type: configuredDeduction.type,
+      };
+    }
+
+    if (!deductionName) {
+      throw new BadRequestException('Custom deduction name is required');
+    }
+    if (deductionType !== 'fixed' && deductionType !== 'percentage') {
+      throw new BadRequestException('Custom deduction type must be fixed or percentage');
+    }
+
+    return {
+      entryMode: 'custom' as const,
+      deductionId: null,
+      deductionCode: deductionCode || this.deriveCustomCode(deductionName, 'DEDUCT'),
+      deductionName,
+      type: deductionType,
+    };
+  }
+
   // ==================== GLOBAL DEDUCTIONS ====================
 
   async createGlobalDeduction(dto: any, userId: string) {
@@ -153,50 +256,29 @@ export class DeductionsService {
   // ==================== STAFF-SPECIFIC DEDUCTIONS ====================
 
   async createStaffDeduction(dto: any, userId: string, userRole?: string) {
-    const deductionCode = dto.deduction_code || dto.deductionCode;
-    const deductionName = dto.deduction_name || dto.deductionName;
-    const deductionId = dto.deduction_id || dto.deductionId;
-
     // Determine initial status based on role
     let initialStatus = 'active';
     if (userRole === 'payroll_loader') {
       initialStatus = 'pending';
     }
 
-    let deduction = null;
-    if (deductionId) {
-      deduction = await this.databaseService.queryOne(
-        'SELECT * FROM deductions WHERE id = $1',
-        [deductionId],
-      );
-    } else if (deductionCode) {
-      deduction = await this.databaseService.queryOne(
-        'SELECT * FROM deductions WHERE code = $1',
-        [deductionCode],
-      );
-    }
-    if (!deduction) {
-      throw new BadRequestException('Deduction must be selected from Payroll Setup');
-    }
-    if (deduction.applies_to_all) {
-      throw new BadRequestException('Global deductions cannot be assigned as staff-specific');
-    }
-    if (deduction.status !== 'active') {
-      throw new BadRequestException('Selected deduction is not active');
-    }
+    const definition = await this.resolveStaffDeductionDefinition(dto);
 
-    // 3. Create staff deduction linked to (potentially new) global deduction
     const staffDeduction = await this.databaseService.queryOne(
       `INSERT INTO staff_deductions (
-        staff_id, deduction_id, amount, percentage,
+        staff_id, deduction_id, custom_deduction_code, custom_deduction_name,
+        custom_type, amount, percentage,
         effective_from, effective_to, frequency, status, created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       RETURNING *`,
       [
         dto.staff_id || dto.staffId,
-        deduction.id,
-        deduction.type === 'fixed' ? (dto.amount || null) : null,
-        deduction.type === 'percentage' ? (dto.percentage || null) : null,
+        definition.deductionId,
+        definition.entryMode === 'custom' ? definition.deductionCode : null,
+        definition.entryMode === 'custom' ? definition.deductionName : null,
+        definition.entryMode === 'custom' ? definition.type : null,
+        definition.type === 'fixed' ? (dto.amount ?? null) : null,
+        definition.type === 'percentage' ? (dto.percentage ?? null) : null,
         this.toMonthStart(dto.effective_from || dto.startMonth),
         this.toMonthStart(dto.effective_to || dto.endMonth),
         dto.frequency || 'recurring',
@@ -205,7 +287,9 @@ export class DeductionsService {
       ],
     );
 
-    this.logger.log(`Staff deduction created for staff ${dto.staffId} by user ${userId} with status ${initialStatus}`);
+    this.logger.log(
+      `Staff deduction created for staff ${dto.staff_id || dto.staffId} by user ${userId} with status ${initialStatus}`,
+    );
     return staffDeduction;
   }
 
@@ -229,9 +313,10 @@ export class DeductionsService {
 
     const data = await this.databaseService.query(
       `SELECT sd.*, 
-              d.name as deduction_name, 
-              d.code as deduction_code, 
-              d.type
+              COALESCE(sd.custom_deduction_name, d.name) as deduction_name, 
+              COALESCE(sd.custom_deduction_code, d.code) as deduction_code, 
+              COALESCE(sd.custom_type, d.type) as type,
+              CASE WHEN sd.deduction_id IS NULL THEN 'custom' ELSE 'configured' END as entry_mode
        FROM staff_deductions sd
        LEFT JOIN deductions d ON sd.deduction_id = d.id
        ${whereClause} 
@@ -262,9 +347,10 @@ export class DeductionsService {
               s.staff_number,
               s.first_name,
               s.last_name,
-              d.name as deduction_name, 
-              d.code as deduction_code,
-              d.type
+              COALESCE(sd.custom_deduction_name, d.name) as deduction_name, 
+              COALESCE(sd.custom_deduction_code, d.code) as deduction_code,
+              COALESCE(sd.custom_type, d.type) as type,
+              CASE WHEN sd.deduction_id IS NULL THEN 'custom' ELSE 'configured' END as entry_mode
       FROM staff_deductions sd
       JOIN staff s ON sd.staff_id = s.id
       LEFT JOIN deductions d ON sd.deduction_id = d.id
@@ -291,30 +377,16 @@ export class DeductionsService {
       throw new NotFoundException(`Staff deduction with ID ${id} not found`);
     }
 
-    // Handle potential deduction code/name change (Upsert logic)
-    let deductionId = existing.deduction_id;
-    const newCode = dto.deduction_code || dto.deductionCode;
-    const newName = dto.deduction_name || dto.deductionName;
-
-    if (newCode) {
-       let deduction = await this.databaseService.queryOne(
-        'SELECT * FROM deductions WHERE code = $1',
-        [newCode],
-      );
-
-      if (!deduction && newName) {
-        deduction = await this.createGlobalDeduction({
-          code: newCode,
-          name: newName,
-          type: dto.type || 'fixed',
-          appliesToAll: false,
-        }, userId);
-      }
-
-      if (deduction) {
-        deductionId = deduction.id;
-      }
-    }
+    const hasDefinitionInput = this.hasStaffDeductionDefinitionInput(dto);
+    const definition = hasDefinitionInput
+      ? await this.resolveStaffDeductionDefinition(dto)
+      : {
+          entryMode: existing.deduction_id ? ('configured' as const) : ('custom' as const),
+          deductionId: existing.deduction_id || null,
+          deductionCode: existing.custom_deduction_code || null,
+          deductionName: existing.custom_deduction_name || null,
+          type: existing.custom_type || null,
+        };
 
     const effectiveFrom = this.toMonthStart(dto.effective_from ?? dto.startMonth);
     const effectiveTo = this.toMonthStart(dto.effective_to ?? dto.endMonth);
@@ -322,25 +394,36 @@ export class DeductionsService {
     const updated = await this.databaseService.queryOne(
       `UPDATE staff_deductions
        SET deduction_id = $1,
-           amount = COALESCE($2, amount),
-           percentage = COALESCE($3, percentage),
-           effective_from = COALESCE($4, effective_from),
-           effective_to = CASE WHEN $5::date IS NULL AND $8::boolean THEN NULL ELSE COALESCE($5, effective_to) END,
-           frequency = COALESCE($6, frequency),
-           status = COALESCE($7, status),
+           custom_deduction_code = $2,
+           custom_deduction_name = $3,
+           custom_type = $4,
+           amount = CASE WHEN $11::boolean THEN $5 ELSE COALESCE($5, amount) END,
+           percentage = CASE WHEN $11::boolean THEN $6 ELSE COALESCE($6, percentage) END,
+           effective_from = COALESCE($7, effective_from),
+           effective_to = CASE WHEN $10::date IS NULL AND $13::boolean THEN NULL ELSE COALESCE($10, effective_to) END,
+           frequency = COALESCE($8, frequency),
+           status = COALESCE($9, status),
            updated_at = NOW()
-       WHERE id = $9
+       WHERE id = $12
        RETURNING *`,
       [
-        deductionId,
-        dto.amount,
-        dto.percentage,
+        definition.deductionId,
+        definition.entryMode === 'custom' ? definition.deductionCode : null,
+        definition.entryMode === 'custom' ? definition.deductionName : null,
+        definition.entryMode === 'custom' ? definition.type : null,
+        hasDefinitionInput
+          ? (definition.type === 'fixed' ? (dto.amount ?? null) : null)
+          : dto.amount,
+        hasDefinitionInput
+          ? (definition.type === 'percentage' ? (dto.percentage ?? null) : null)
+          : dto.percentage,
         effectiveFrom,
-        effectiveTo,
         dto.frequency,
         dto.status,
+        effectiveTo,
+        hasDefinitionInput,
+        id,
         dto.effective_to === null || dto.effective_to === '',
-        id
       ],
     );
 

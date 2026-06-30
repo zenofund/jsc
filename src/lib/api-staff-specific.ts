@@ -27,12 +27,22 @@ async function makeApiRequest(endpoint: string, options: RequestInit = {}): Prom
   return response.json();
 }
 
+type StaffAllowancePayload = Omit<StaffAllowance, 'id' | 'created_at' | 'updated_at'> & {
+  allowance_id?: string | null;
+  entry_mode?: 'configured' | 'custom';
+};
+
+type StaffDeductionPayload = Omit<StaffDeduction, 'id' | 'created_at' | 'updated_at'> & {
+  deduction_id?: string | null;
+  entry_mode?: 'configured' | 'custom';
+};
+
 // ============================================
 // STAFF ALLOWANCE APIs
 // ============================================
 
 export const staffAllowanceAPI = {
-  async createStaffAllowance(data: Omit<StaffAllowance, 'id' | 'created_at' | 'updated_at'>, userId: string, userEmail: string): Promise<StaffAllowance> {
+  async createStaffAllowance(data: StaffAllowancePayload, userId: string, userEmail: string): Promise<StaffAllowance> {
     return makeApiRequest('/allowances/staff', {
       method: 'POST',
       body: JSON.stringify({ ...data, userId, userEmail }),
@@ -62,7 +72,7 @@ export const staffAllowanceAPI = {
     return makeApiRequest(`/allowances/staff/${staffId}?month=${month}&status=active`, { method: 'GET' });
   },
 
-  async updateStaffAllowance(id: string, updates: Partial<StaffAllowance>, userId: string, userEmail: string): Promise<StaffAllowance> {
+  async updateStaffAllowance(id: string, updates: Partial<StaffAllowancePayload>, userId: string, userEmail: string): Promise<StaffAllowance> {
     return makeApiRequest(`/allowances/staff/${id}`, {
       method: 'PATCH', // Controller uses Patch
       body: JSON.stringify({ ...updates, userId, userEmail }),
@@ -116,7 +126,7 @@ export const staffAllowanceAPI = {
 // ============================================
 
 export const staffDeductionAPI = {
-  async createStaffDeduction(data: Omit<StaffDeduction, 'id' | 'created_at' | 'updated_at'>, userId: string, userEmail: string): Promise<StaffDeduction> {
+  async createStaffDeduction(data: StaffDeductionPayload, userId: string, userEmail: string): Promise<StaffDeduction> {
     return makeApiRequest('/deductions/staff', {
       method: 'POST',
       body: JSON.stringify({ ...data, userId, userEmail }),
@@ -140,7 +150,7 @@ export const staffDeductionAPI = {
     return makeApiRequest(`/deductions/staff/${staffId}?month=${month}&status=active`, { method: 'GET' });
   },
 
-  async updateStaffDeduction(id: string, updates: Partial<StaffDeduction>, userId: string, userEmail: string): Promise<StaffDeduction> {
+  async updateStaffDeduction(id: string, updates: Partial<StaffDeductionPayload>, userId: string, userEmail: string): Promise<StaffDeduction> {
     return makeApiRequest(`/deductions/staff/${id}`, {
       method: 'PATCH', // Controller uses Patch
       body: JSON.stringify({ ...updates, userId, userEmail }),

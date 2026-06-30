@@ -13,6 +13,117 @@ export class AllowancesService {
     return `${String(value).substring(0, 7)}-01`;
   }
 
+  private cleanString(value: any): string | null {
+    if (value === undefined || value === null) return null;
+    const normalized = String(value).trim();
+    return normalized ? normalized : null;
+  }
+
+  private hasOwn(dto: any, key: string): boolean {
+    return Object.prototype.hasOwnProperty.call(dto || {}, key);
+  }
+
+  private hasStaffAllowanceDefinitionInput(dto: any): boolean {
+    return [
+      'allowance_id',
+      'allowanceId',
+      'allowance_code',
+      'allowanceCode',
+      'allowance_name',
+      'allowanceName',
+      'type',
+      'entry_mode',
+      'entryMode',
+      'is_taxable',
+      'isTaxable',
+      'is_pensionable',
+      'isPensionable',
+    ].some((key) => this.hasOwn(dto, key));
+  }
+
+  private getEntryMode(dto: any): 'configured' | 'custom' | undefined {
+    const rawMode = this.cleanString(dto.entry_mode ?? dto.entryMode);
+    if (rawMode === 'configured' || rawMode === 'custom') {
+      return rawMode;
+    }
+    return undefined;
+  }
+
+  private deriveCustomCode(name: string, prefix: string): string {
+    const slug = name
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 40);
+
+    return `${prefix}_${slug || 'ITEM'}`;
+  }
+
+  private async resolveStaffAllowanceDefinition(dto: any) {
+    const requestedMode = this.getEntryMode(dto);
+    const allowanceId = this.cleanString(dto.allowance_id ?? dto.allowanceId);
+    const allowanceCode = this.cleanString(dto.allowance_code ?? dto.allowanceCode);
+    const allowanceName = this.cleanString(dto.allowance_name ?? dto.allowanceName);
+    const allowanceType = this.cleanString(dto.type);
+
+    let configuredAllowance = null;
+    if (allowanceId) {
+      configuredAllowance = await this.databaseService.queryOne(
+        'SELECT * FROM allowances WHERE id = $1',
+        [allowanceId],
+      );
+    } else if (allowanceCode && requestedMode !== 'custom') {
+      configuredAllowance = await this.databaseService.queryOne(
+        'SELECT * FROM allowances WHERE code = $1',
+        [allowanceCode],
+      );
+    }
+
+    const shouldUseConfigured =
+      requestedMode === 'configured' ||
+      Boolean(allowanceId) ||
+      (requestedMode !== 'custom' && Boolean(configuredAllowance));
+
+    if (shouldUseConfigured) {
+      if (!configuredAllowance) {
+        throw new BadRequestException('Please select a valid allowance from Payroll Setup');
+      }
+      if (configuredAllowance.applies_to_all) {
+        throw new BadRequestException('Global allowances cannot be assigned as staff-specific');
+      }
+      if (configuredAllowance.status !== 'active') {
+        throw new BadRequestException('Selected allowance is not active');
+      }
+
+      return {
+        entryMode: 'configured' as const,
+        allowanceId: configuredAllowance.id,
+        allowanceCode: configuredAllowance.code,
+        allowanceName: configuredAllowance.name,
+        type: configuredAllowance.type,
+        isTaxable: configuredAllowance.is_taxable,
+        isPensionable: configuredAllowance.is_pensionable,
+      };
+    }
+
+    if (!allowanceName) {
+      throw new BadRequestException('Custom allowance name is required');
+    }
+    if (allowanceType !== 'fixed' && allowanceType !== 'percentage') {
+      throw new BadRequestException('Custom allowance type must be fixed or percentage');
+    }
+
+    return {
+      entryMode: 'custom' as const,
+      allowanceId: null,
+      allowanceCode: allowanceCode || this.deriveCustomCode(allowanceName, 'ALLOW'),
+      allowanceName,
+      type: allowanceType,
+      isTaxable: dto.is_taxable ?? dto.isTaxable ?? true,
+      isPensionable: dto.is_pensionable ?? dto.isPensionable ?? false,
+    };
+  }
+
   // ==================== GLOBAL ALLOWANCES ====================
 
   async createGlobalAllowance(dto: any, userId: string) {
@@ -156,9 +267,6 @@ export class AllowancesService {
   // ==================== STAFF-SPECIFIC ALLOWANCES ====================
 
   async createStaffAllowance(dto: any, userId: string, userRole?: string) {
-    const allowanceCode = dto.allowance_code || dto.allowanceCode;
-    const allowanceName = dto.allowance_name || dto.allowanceName;
-
     // Determine initial status based on role
     // Payroll Loaders require approval (pending status)
     // Admins and Managers are auto-approved (active status)
@@ -167,41 +275,25 @@ export class AllowancesService {
       initialStatus = 'pending';
     }
 
-    const allowanceId = dto.allowance_id || dto.allowanceId;
-    let allowance = null;
-    if (allowanceId) {
-      allowance = await this.databaseService.queryOne(
-        'SELECT * FROM allowances WHERE id = $1',
-        [allowanceId],
-      );
-    } else if (allowanceCode) {
-      allowance = await this.databaseService.queryOne(
-        'SELECT * FROM allowances WHERE code = $1',
-        [allowanceCode],
-      );
-    }
-    if (!allowance) {
-      throw new BadRequestException('Allowance must be selected from Payroll Setup');
-    }
-    if (allowance.applies_to_all) {
-      throw new BadRequestException('Global allowances cannot be assigned as staff-specific');
-    }
-    if (allowance.status !== 'active') {
-      throw new BadRequestException('Selected allowance is not active');
-    }
+    const definition = await this.resolveStaffAllowanceDefinition(dto);
 
-    // 3. Create staff allowance linked to (potentially new) global allowance
     const staffAllowance = await this.databaseService.queryOne(
       `INSERT INTO staff_allowances (
-        staff_id, allowance_id, amount, percentage,
+        staff_id, allowance_id, custom_allowance_code, custom_allowance_name,
+        custom_type, custom_is_taxable, custom_is_pensionable, amount, percentage,
         effective_from, effective_to, frequency, status, created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
       RETURNING *`,
       [
         dto.staff_id || dto.staffId,
-        allowance.id,
-        allowance.type === 'fixed' ? (dto.amount || null) : null,
-        allowance.type === 'percentage' ? (dto.percentage || null) : null,
+        definition.allowanceId,
+        definition.entryMode === 'custom' ? definition.allowanceCode : null,
+        definition.entryMode === 'custom' ? definition.allowanceName : null,
+        definition.entryMode === 'custom' ? definition.type : null,
+        definition.entryMode === 'custom' ? definition.isTaxable : null,
+        definition.entryMode === 'custom' ? definition.isPensionable : null,
+        definition.type === 'fixed' ? (dto.amount ?? null) : null,
+        definition.type === 'percentage' ? (dto.percentage ?? null) : null,
         this.toMonthStart(dto.effective_from || dto.startMonth),
         this.toMonthStart(dto.effective_to || dto.endMonth),
         dto.frequency || 'recurring',
@@ -210,7 +302,9 @@ export class AllowancesService {
       ],
     );
 
-    this.logger.log(`Staff allowance created for staff ${dto.staffId} by user ${userId} with status ${initialStatus}`);
+    this.logger.log(
+      `Staff allowance created for staff ${dto.staff_id || dto.staffId} by user ${userId} with status ${initialStatus}`,
+    );
     return staffAllowance;
   }
 
@@ -234,11 +328,12 @@ export class AllowancesService {
 
     const data = await this.databaseService.query(
       `SELECT sa.*, 
-              a.name as allowance_name, 
-              a.code as allowance_code, 
-              a.type, 
-              a.is_taxable, 
-              a.is_pensionable
+              COALESCE(sa.custom_allowance_name, a.name) as allowance_name, 
+              COALESCE(sa.custom_allowance_code, a.code) as allowance_code, 
+              COALESCE(sa.custom_type, a.type) as type, 
+              COALESCE(sa.custom_is_taxable, a.is_taxable, true) as is_taxable, 
+              COALESCE(sa.custom_is_pensionable, a.is_pensionable, false) as is_pensionable,
+              CASE WHEN sa.allowance_id IS NULL THEN 'custom' ELSE 'configured' END as entry_mode
        FROM staff_allowances sa
        LEFT JOIN allowances a ON sa.allowance_id = a.id
        ${whereClause} 
@@ -269,9 +364,12 @@ export class AllowancesService {
               s.staff_number,
               s.first_name,
               s.last_name,
-              a.name as allowance_name, 
-              a.code as allowance_code,
-              a.type
+              COALESCE(sa.custom_allowance_name, a.name) as allowance_name, 
+              COALESCE(sa.custom_allowance_code, a.code) as allowance_code,
+              COALESCE(sa.custom_type, a.type) as type,
+              COALESCE(sa.custom_is_taxable, a.is_taxable, true) as is_taxable,
+              COALESCE(sa.custom_is_pensionable, a.is_pensionable, false) as is_pensionable,
+              CASE WHEN sa.allowance_id IS NULL THEN 'custom' ELSE 'configured' END as entry_mode
       FROM staff_allowances sa
       JOIN staff s ON sa.staff_id = s.id
       LEFT JOIN allowances a ON sa.allowance_id = a.id
@@ -298,31 +396,18 @@ export class AllowancesService {
       throw new NotFoundException(`Staff allowance with ID ${id} not found`);
     }
 
-    // Handle potential allowance code/name change (Upsert logic)
-    let allowanceId = existing.allowance_id;
-    const newCode = dto.allowance_code || dto.allowanceCode;
-    const newName = dto.allowance_name || dto.allowanceName;
-
-    if (newCode) {
-       let allowance = await this.databaseService.queryOne(
-        'SELECT * FROM allowances WHERE code = $1',
-        [newCode],
-      );
-
-      if (!allowance && newName) {
-        allowance = await this.createGlobalAllowance({
-          code: newCode,
-          name: newName,
-          type: dto.type || 'fixed',
-          isTaxable: dto.is_taxable ?? true,
-          appliesToAll: false,
-        }, userId);
-      }
-
-      if (allowance) {
-        allowanceId = allowance.id;
-      }
-    }
+    const hasDefinitionInput = this.hasStaffAllowanceDefinitionInput(dto);
+    const definition = hasDefinitionInput
+      ? await this.resolveStaffAllowanceDefinition(dto)
+      : {
+          entryMode: existing.allowance_id ? ('configured' as const) : ('custom' as const),
+          allowanceId: existing.allowance_id || null,
+          allowanceCode: existing.custom_allowance_code || null,
+          allowanceName: existing.custom_allowance_name || null,
+          type: existing.custom_type || null,
+          isTaxable: existing.custom_is_taxable,
+          isPensionable: existing.custom_is_pensionable,
+        };
 
     const effectiveFrom = this.toMonthStart(dto.effective_from ?? dto.startMonth);
     const effectiveTo = this.toMonthStart(dto.effective_to ?? dto.endMonth);
@@ -330,25 +415,40 @@ export class AllowancesService {
     const updated = await this.databaseService.queryOne(
       `UPDATE staff_allowances
        SET allowance_id = $1,
-           amount = COALESCE($2, amount),
-           percentage = COALESCE($3, percentage),
-           effective_from = COALESCE($4, effective_from),
-           effective_to = CASE WHEN $5::date IS NULL AND $8::boolean THEN NULL ELSE COALESCE($5, effective_to) END,
-           frequency = COALESCE($6, frequency),
-           status = COALESCE($7, status),
+           custom_allowance_code = $2,
+           custom_allowance_name = $3,
+           custom_type = $4,
+           custom_is_taxable = $5,
+           custom_is_pensionable = $6,
+           amount = CASE WHEN $13::boolean THEN $7 ELSE COALESCE($7, amount) END,
+           percentage = CASE WHEN $13::boolean THEN $8 ELSE COALESCE($8, percentage) END,
+           effective_from = COALESCE($9, effective_from),
+           effective_to = CASE WHEN $12::date IS NULL AND $15::boolean THEN NULL ELSE COALESCE($12, effective_to) END,
+           frequency = COALESCE($10, frequency),
+           status = COALESCE($11, status),
            updated_at = NOW()
-       WHERE id = $9
+       WHERE id = $14
        RETURNING *`,
       [
-        allowanceId,
-        dto.amount,
-        dto.percentage,
+        definition.allowanceId,
+        definition.entryMode === 'custom' ? definition.allowanceCode : null,
+        definition.entryMode === 'custom' ? definition.allowanceName : null,
+        definition.entryMode === 'custom' ? definition.type : null,
+        definition.entryMode === 'custom' ? definition.isTaxable : null,
+        definition.entryMode === 'custom' ? definition.isPensionable : null,
+        hasDefinitionInput
+          ? (definition.type === 'fixed' ? (dto.amount ?? null) : null)
+          : dto.amount,
+        hasDefinitionInput
+          ? (definition.type === 'percentage' ? (dto.percentage ?? null) : null)
+          : dto.percentage,
         effectiveFrom,
-        effectiveTo,
         dto.frequency,
         dto.status,
+        effectiveTo,
+        hasDefinitionInput,
+        id,
         dto.effective_to === null || dto.effective_to === '',
-        id
       ],
     );
 

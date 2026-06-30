@@ -437,9 +437,11 @@ export class PromotionsService {
     // 2. Get Staff Specific Allowances
     // We join with allowances table to get the type
     const staffAllowances = await this.databaseService.query(
-      `SELECT sa.*, a.type as allowance_type, a.percentage as global_percentage
+      `SELECT sa.*,
+              COALESCE(sa.custom_type, a.type) as allowance_type,
+              a.percentage as global_percentage
        FROM staff_allowances sa
-       JOIN allowances a ON sa.allowance_id = a.id
+       LEFT JOIN allowances a ON sa.allowance_id = a.id
        WHERE sa.status = 'active' AND sa.staff_id = $1`,
       [staffId]
     );
@@ -487,10 +489,14 @@ export class PromotionsService {
 
     // 2. Get Staff Specific Deductions
     const staffDeductions = await this.databaseService.query(
-      `SELECT sd.*, d.type as deduction_type, d.percentage as global_percentage
+      `SELECT sd.*,
+              COALESCE(sd.custom_type, d.type) as deduction_type,
+              d.percentage as global_percentage
        FROM staff_deductions sd
-       JOIN deductions d ON sd.deduction_id = d.id
-       WHERE sd.status = 'active' AND sd.staff_id = $1 AND d.code != 'TAX'`,
+       LEFT JOIN deductions d ON sd.deduction_id = d.id
+       WHERE sd.status = 'active'
+         AND sd.staff_id = $1
+         AND UPPER(COALESCE(sd.custom_deduction_code, d.code, '')) != 'TAX'`,
       [staffId]
     );
 
@@ -536,9 +542,13 @@ export class PromotionsService {
     );
 
     const staffAllowances = await this.databaseService.query(
-      `SELECT sa.*, a.type as allowance_type, a.percentage as global_percentage, a.name as allowance_name, a.code as allowance_code
+      `SELECT sa.*,
+              COALESCE(sa.custom_type, a.type) as allowance_type,
+              a.percentage as global_percentage,
+              COALESCE(sa.custom_allowance_name, a.name) as allowance_name,
+              COALESCE(sa.custom_allowance_code, a.code) as allowance_code
        FROM staff_allowances sa
-       JOIN allowances a ON sa.allowance_id = a.id
+       LEFT JOIN allowances a ON sa.allowance_id = a.id
        WHERE sa.status = 'active' AND sa.staff_id = $1`,
       [staffId],
     );
@@ -604,10 +614,16 @@ export class PromotionsService {
     );
 
     const staffDeductions = await this.databaseService.query(
-      `SELECT sd.*, d.type as deduction_type, d.percentage as global_percentage, d.name as deduction_name, d.code as deduction_code
+      `SELECT sd.*,
+              COALESCE(sd.custom_type, d.type) as deduction_type,
+              d.percentage as global_percentage,
+              COALESCE(sd.custom_deduction_name, d.name) as deduction_name,
+              COALESCE(sd.custom_deduction_code, d.code) as deduction_code
        FROM staff_deductions sd
-       JOIN deductions d ON sd.deduction_id = d.id
-       WHERE sd.status = 'active' AND sd.staff_id = $1 AND d.code != 'TAX'`,
+       LEFT JOIN deductions d ON sd.deduction_id = d.id
+       WHERE sd.status = 'active'
+         AND sd.staff_id = $1
+         AND UPPER(COALESCE(sd.custom_deduction_code, d.code, '')) != 'TAX'`,
       [staffId],
     );
 

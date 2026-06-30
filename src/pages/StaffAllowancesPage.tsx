@@ -12,6 +12,7 @@ import { PageSkeleton } from '../components/PageLoader';
 import { StaffSearch } from '../components/ui/StaffSearch';
 
 type TabType = 'allowances' | 'deductions';
+type EntryMode = 'configured' | 'custom';
 
 export function StaffAllowancesPage() {
   const { user } = useAuth();
@@ -30,7 +31,6 @@ export function StaffAllowancesPage() {
   const [editingAllowance, setEditingAllowance] = useState<StaffAllowance | null>(null);
   const [editingDeduction, setEditingDeduction] = useState<StaffDeduction | null>(null);
   
-  const [formData, setFormData] = useState<any>({});
   const [loading, setLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -93,21 +93,22 @@ export function StaffAllowancesPage() {
   };
 // ... existing code ...
 
-  const StaffAllowanceForm = ({ 
-    initialData, 
-    onSubmit, 
-    onCancel, 
+  const StaffAllowanceForm = ({
+    initialData,
+    onSubmit,
+    onCancel,
     isSubmitting,
     allowanceOptions,
-  }: { 
-    initialData?: StaffAllowance | null, 
-    onSubmit: (data: any) => void, 
-    onCancel: () => void, 
+  }: {
+    initialData?: StaffAllowance | null,
+    onSubmit: (data: any) => void,
+    onCancel: () => void,
     isSubmitting: boolean,
     allowanceOptions: Allowance[],
   }) => {
-    const [localFormData, setLocalFormData] = useState({
-      allowance_id: '',
+    const buildInitialState = () => ({
+      entry_mode: (initialData?.entry_mode ?? (initialData?.allowance_id ? 'configured' : 'custom')) as EntryMode,
+      allowance_id: initialData?.allowance_id ?? '',
       allowance_code: initialData?.allowance_code ?? '',
       allowance_name: initialData?.allowance_name ?? '',
       type: initialData?.type ?? 'fixed',
@@ -116,79 +117,162 @@ export function StaffAllowancesPage() {
       frequency: initialData?.frequency ?? 'recurring',
       is_taxable: initialData?.is_taxable ?? true,
       is_pensionable: initialData?.is_pensionable ?? false,
-      effective_from: initialData?.effective_from ? initialData.effective_from.substring(0, 7) : new Date().toISOString().substring(0, 7),
+      effective_from: initialData?.effective_from
+        ? initialData.effective_from.substring(0, 7)
+        : new Date().toISOString().substring(0, 7),
       effective_to: initialData?.effective_to ? initialData.effective_to.substring(0, 7) : '',
       notes: initialData?.notes ?? '',
     });
 
-    // Update state when initialData changes
+    const [localFormData, setLocalFormData] = useState(buildInitialState);
+
     useEffect(() => {
-      if (initialData) {
-        const match = allowanceOptions.find((a) => a.code === initialData.allowance_code);
+      if (!initialData) {
         setLocalFormData({
-          allowance_id: match?.id || '',
-          allowance_code: initialData.allowance_code ?? '',
-          allowance_name: initialData.allowance_name ?? '',
-          type: initialData.type ?? 'fixed',
-          amount: initialData.amount ?? 0,
-          percentage: initialData.percentage ?? 0,
-          frequency: initialData.frequency ?? 'recurring',
-          is_taxable: initialData.is_taxable ?? true,
-          is_pensionable: initialData.is_pensionable ?? false,
-          effective_from: initialData.effective_from ? initialData.effective_from.substring(0, 7) : new Date().toISOString().substring(0, 7),
-          effective_to: initialData.effective_to ? initialData.effective_to.substring(0, 7) : '',
-          notes: initialData.notes ?? '',
+          entry_mode: 'configured',
+          allowance_id: '',
+          allowance_code: '',
+          allowance_name: '',
+          type: 'fixed',
+          amount: 0,
+          percentage: 0,
+          frequency: 'recurring',
+          is_taxable: true,
+          is_pensionable: false,
+          effective_from: new Date().toISOString().substring(0, 7),
+          effective_to: '',
+          notes: '',
         });
+        return;
       }
+
+      const match = allowanceOptions.find((a) => a.code === initialData.allowance_code);
+      setLocalFormData({
+        entry_mode: (initialData.entry_mode ?? (initialData.allowance_id ? 'configured' : 'custom')) as EntryMode,
+        allowance_id: initialData.allowance_id ?? match?.id ?? '',
+        allowance_code: initialData.allowance_code ?? '',
+        allowance_name: initialData.allowance_name ?? '',
+        type: initialData.type ?? 'fixed',
+        amount: initialData.amount ?? 0,
+        percentage: initialData.percentage ?? 0,
+        frequency: initialData.frequency ?? 'recurring',
+        is_taxable: initialData.is_taxable ?? true,
+        is_pensionable: initialData.is_pensionable ?? false,
+        effective_from: initialData.effective_from
+          ? initialData.effective_from.substring(0, 7)
+          : new Date().toISOString().substring(0, 7),
+        effective_to: initialData.effective_to ? initialData.effective_to.substring(0, 7) : '',
+        notes: initialData.notes ?? '',
+      });
     }, [initialData, allowanceOptions]);
 
     return (
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-foreground mb-1">
-            Allowance *
-          </label>
-          <select
-            value={localFormData.allowance_id}
-            onChange={(e) => {
-              const selected = allowanceOptions.find((a) => a.id === e.target.value);
-              if (!selected) {
+          <label className="block text-sm font-medium text-foreground mb-2">Entry Method</label>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setLocalFormData((prev) => ({ ...prev, entry_mode: 'configured' }))}
+              className={`rounded-md border px-3 py-2 text-sm ${
+                localFormData.entry_mode === 'configured'
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-border bg-background text-muted-foreground'
+              }`}
+            >
+              Configured Item
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                setLocalFormData((prev) => ({
+                  ...prev,
+                  entry_mode: 'custom',
+                  allowance_id: '',
+                }))
+              }
+              className={`rounded-md border px-3 py-2 text-sm ${
+                localFormData.entry_mode === 'custom'
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-border bg-background text-muted-foreground'
+              }`}
+            >
+              Custom Item
+            </button>
+          </div>
+        </div>
+
+        {localFormData.entry_mode === 'configured' ? (
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">Allowance *</label>
+            <select
+              value={localFormData.allowance_id}
+              onChange={(e) => {
+                const selected = allowanceOptions.find((a) => a.id === e.target.value);
+                if (!selected) {
+                  setLocalFormData({
+                    ...localFormData,
+                    allowance_id: e.target.value,
+                  });
+                  return;
+                }
                 setLocalFormData({
                   ...localFormData,
-                  allowance_id: e.target.value,
+                  allowance_id: selected.id,
+                  allowance_code: selected.code,
+                  allowance_name: selected.name,
+                  type: selected.type,
+                  is_taxable: selected.is_taxable,
+                  is_pensionable: selected.is_pensionable,
+                  amount: selected.type === 'fixed' ? (selected.amount ?? 0) : localFormData.amount,
+                  percentage: selected.type === 'percentage' ? (selected.percentage ?? 0) : localFormData.percentage,
                 });
-                return;
-              }
-              setLocalFormData({
-                ...localFormData,
-                allowance_id: selected.id,
-                allowance_code: selected.code,
-                allowance_name: selected.name,
-                type: selected.type,
-                is_taxable: selected.is_taxable,
-                is_pensionable: selected.is_pensionable,
-                amount: selected.type === 'fixed' ? (selected.amount ?? 0) : localFormData.amount,
-                percentage: selected.type === 'percentage' ? (selected.percentage ?? 0) : localFormData.percentage,
-              });
-            }}
-            className="w-full p-2 border border-border rounded-md bg-background text-foreground"
-          >
-            <option value="">-- Select Allowance --</option>
-            {allowanceOptions.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.code} - {option.name}
-              </option>
-            ))}
-          </select>
-        </div>
+              }}
+              className="w-full p-2 border border-border rounded-md bg-background text-foreground"
+            >
+              <option value="">-- Select Allowance --</option>
+              {allowanceOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.code} - {option.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1">Allowance Name *</label>
+              <input
+                type="text"
+                value={localFormData.allowance_name}
+                onChange={(e) => setLocalFormData({ ...localFormData, allowance_name: e.target.value })}
+                placeholder="e.g. Special Duty Allowance"
+                className="w-full p-2 border border-border rounded-md bg-background text-foreground"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1">Code (Optional)</label>
+              <input
+                type="text"
+                value={localFormData.allowance_code}
+                onChange={(e) => setLocalFormData({ ...localFormData, allowance_code: e.target.value.toUpperCase() })}
+                placeholder="e.g. SPEC_DUTY"
+                className="w-full p-2 border border-border rounded-md bg-background text-foreground"
+              />
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-foreground mb-1">Type</label>
             <select
               value={localFormData.type}
-              disabled
-              className="w-full p-2 border border-border rounded-md bg-muted text-foreground"
+              disabled={localFormData.entry_mode === 'configured'}
+              onChange={(e) => setLocalFormData({ ...localFormData, type: e.target.value as 'fixed' | 'percentage' })}
+              className={`w-full p-2 border border-border rounded-md text-foreground ${
+                localFormData.entry_mode === 'configured' ? 'bg-muted' : 'bg-background'
+              }`}
             >
               <option value="fixed">Fixed Amount</option>
               <option value="percentage">Percentage of Basic</option>
@@ -202,10 +286,12 @@ export function StaffAllowancesPage() {
             <input
               type="number"
               value={localFormData.type === 'fixed' ? localFormData.amount : localFormData.percentage}
-              onChange={(e) => setLocalFormData({
-                ...localFormData,
-                [localFormData.type === 'fixed' ? 'amount' : 'percentage']: e.target.value
-              })}
+              onChange={(e) =>
+                setLocalFormData({
+                  ...localFormData,
+                  [localFormData.type === 'fixed' ? 'amount' : 'percentage']: e.target.value,
+                })
+              }
               className="w-full p-2 border border-border rounded-md bg-background text-foreground"
             />
           </div>
@@ -229,7 +315,8 @@ export function StaffAllowancesPage() {
               <input
                 type="checkbox"
                 checked={localFormData.is_taxable}
-                disabled
+                disabled={localFormData.entry_mode === 'configured'}
+                onChange={(e) => setLocalFormData({ ...localFormData, is_taxable: e.target.checked })}
                 className="size-4"
               />
               <span className="text-sm text-foreground">Taxable</span>
@@ -238,7 +325,8 @@ export function StaffAllowancesPage() {
               <input
                 type="checkbox"
                 checked={localFormData.is_pensionable}
-                disabled
+                disabled={localFormData.entry_mode === 'configured'}
+                onChange={(e) => setLocalFormData({ ...localFormData, is_pensionable: e.target.checked })}
                 className="size-4"
               />
               <span className="text-sm text-foreground">Pensionable</span>
@@ -258,9 +346,7 @@ export function StaffAllowancesPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-foreground mb-1">
-              Effective To (Optional)
-            </label>
+            <label className="block text-sm font-medium text-foreground mb-1">Effective To (Optional)</label>
             <input
               type="month"
               value={localFormData.effective_to}
@@ -282,11 +368,7 @@ export function StaffAllowancesPage() {
         </div>
 
         <div className="flex gap-3 justify-end pt-4">
-          <button
-            onClick={onCancel}
-            className="btn-secondary"
-            disabled={isSubmitting}
-          >
+          <button onClick={onCancel} className="btn-secondary" disabled={isSubmitting}>
             Cancel
           </button>
           <button
@@ -302,99 +384,179 @@ export function StaffAllowancesPage() {
     );
   };
 
-  const StaffDeductionForm = ({ 
-    initialData, 
-    onSubmit, 
-    onCancel, 
+  const StaffDeductionForm = ({
+    initialData,
+    onSubmit,
+    onCancel,
     isSubmitting,
     deductionOptions,
-  }: { 
-    initialData?: StaffDeduction | null, 
-    onSubmit: (data: any) => void, 
-    onCancel: () => void, 
+  }: {
+    initialData?: StaffDeduction | null,
+    onSubmit: (data: any) => void,
+    onCancel: () => void,
     isSubmitting: boolean,
     deductionOptions: Deduction[],
   }) => {
     const [localFormData, setLocalFormData] = useState({
-      deduction_id: '',
+      entry_mode: (initialData?.entry_mode ?? (initialData?.deduction_id ? 'configured' : 'custom')) as EntryMode,
+      deduction_id: initialData?.deduction_id ?? '',
       deduction_code: initialData?.deduction_code ?? '',
       deduction_name: initialData?.deduction_name ?? '',
       type: initialData?.type ?? 'fixed',
       amount: initialData?.amount ?? 0,
       percentage: initialData?.percentage ?? 0,
       frequency: initialData?.frequency ?? 'recurring',
-      effective_from: initialData?.effective_from ? initialData.effective_from.substring(0, 7) : new Date().toISOString().substring(0, 7),
+      effective_from: initialData?.effective_from
+        ? initialData.effective_from.substring(0, 7)
+        : new Date().toISOString().substring(0, 7),
       effective_to: initialData?.effective_to ? initialData.effective_to.substring(0, 7) : '',
       notes: initialData?.notes ?? '',
     });
 
-    // Update state when initialData changes
     useEffect(() => {
-      if (initialData) {
-        const match = deductionOptions.find((d) => d.code === initialData.deduction_code);
+      if (!initialData) {
         setLocalFormData({
-          deduction_id: match?.id || '',
-          deduction_code: initialData.deduction_code ?? '',
-          deduction_name: initialData.deduction_name ?? '',
-          type: initialData.type ?? 'fixed',
-          amount: initialData.amount ?? 0,
-          percentage: initialData.percentage ?? 0,
-          frequency: initialData.frequency ?? 'recurring',
-          effective_from: initialData.effective_from ? initialData.effective_from.substring(0, 7) : new Date().toISOString().substring(0, 7),
-          effective_to: initialData.effective_to ? initialData.effective_to.substring(0, 7) : '',
-          notes: initialData.notes ?? '',
+          entry_mode: 'configured',
+          deduction_id: '',
+          deduction_code: '',
+          deduction_name: '',
+          type: 'fixed',
+          amount: 0,
+          percentage: 0,
+          frequency: 'recurring',
+          effective_from: new Date().toISOString().substring(0, 7),
+          effective_to: '',
+          notes: '',
         });
+        return;
       }
+
+      const match = deductionOptions.find((d) => d.code === initialData.deduction_code);
+      setLocalFormData({
+        entry_mode: (initialData.entry_mode ?? (initialData.deduction_id ? 'configured' : 'custom')) as EntryMode,
+        deduction_id: initialData.deduction_id ?? match?.id ?? '',
+        deduction_code: initialData.deduction_code ?? '',
+        deduction_name: initialData.deduction_name ?? '',
+        type: initialData.type ?? 'fixed',
+        amount: initialData.amount ?? 0,
+        percentage: initialData.percentage ?? 0,
+        frequency: initialData.frequency ?? 'recurring',
+        effective_from: initialData.effective_from
+          ? initialData.effective_from.substring(0, 7)
+          : new Date().toISOString().substring(0, 7),
+        effective_to: initialData.effective_to ? initialData.effective_to.substring(0, 7) : '',
+        notes: initialData.notes ?? '',
+      });
     }, [initialData, deductionOptions]);
 
     return (
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-foreground mb-1">
-            Deduction *
-          </label>
-          <select
-            value={localFormData.deduction_id}
-            onChange={(e) => {
-              const selected = deductionOptions.find((d) => d.id === e.target.value);
-              if (!selected) {
+          <label className="block text-sm font-medium text-foreground mb-2">Entry Method</label>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setLocalFormData((prev) => ({ ...prev, entry_mode: 'configured' }))}
+              className={`rounded-md border px-3 py-2 text-sm ${
+                localFormData.entry_mode === 'configured'
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-border bg-background text-muted-foreground'
+              }`}
+            >
+              Configured Item
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                setLocalFormData((prev) => ({
+                  ...prev,
+                  entry_mode: 'custom',
+                  deduction_id: '',
+                }))
+              }
+              className={`rounded-md border px-3 py-2 text-sm ${
+                localFormData.entry_mode === 'custom'
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-border bg-background text-muted-foreground'
+              }`}
+            >
+              Custom Item
+            </button>
+          </div>
+        </div>
+
+        {localFormData.entry_mode === 'configured' ? (
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">Deduction *</label>
+            <select
+              value={localFormData.deduction_id}
+              onChange={(e) => {
+                const selected = deductionOptions.find((d) => d.id === e.target.value);
+                if (!selected) {
+                  setLocalFormData({
+                    ...localFormData,
+                    deduction_id: e.target.value,
+                  });
+                  return;
+                }
                 setLocalFormData({
                   ...localFormData,
-                  deduction_id: e.target.value,
+                  deduction_id: selected.id,
+                  deduction_code: selected.code,
+                  deduction_name: selected.name,
+                  type: selected.type,
+                  amount: selected.type === 'fixed' ? (selected.amount ?? 0) : localFormData.amount,
+                  percentage: selected.type === 'percentage' ? (selected.percentage ?? 0) : localFormData.percentage,
                 });
-                return;
-              }
-              setLocalFormData({
-                ...localFormData,
-                deduction_id: selected.id,
-                deduction_code: selected.code,
-                deduction_name: selected.name,
-                type: selected.type,
-                amount: selected.type === 'fixed' ? (selected.amount ?? 0) : localFormData.amount,
-                percentage: selected.type === 'percentage' ? (selected.percentage ?? 0) : localFormData.percentage,
-              });
-            }}
-            className="w-full p-2 border border-border rounded-md bg-background text-foreground"
-          >
-            <option value="">-- Select Deduction --</option>
-            {deductionOptions.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.code} - {option.name}
-              </option>
-            ))}
-          </select>
-        </div>
+              }}
+              className="w-full p-2 border border-border rounded-md bg-background text-foreground"
+            >
+              <option value="">-- Select Deduction --</option>
+              {deductionOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.code} - {option.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1">Deduction Name *</label>
+              <input
+                type="text"
+                value={localFormData.deduction_name}
+                onChange={(e) => setLocalFormData({ ...localFormData, deduction_name: e.target.value })}
+                placeholder="e.g. Staff Recovery"
+                className="w-full p-2 border border-border rounded-md bg-background text-foreground"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1">Code (Optional)</label>
+              <input
+                type="text"
+                value={localFormData.deduction_code}
+                onChange={(e) => setLocalFormData({ ...localFormData, deduction_code: e.target.value.toUpperCase() })}
+                placeholder="e.g. RECOVERY"
+                className="w-full p-2 border border-border rounded-md bg-background text-foreground"
+              />
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-foreground mb-1">Type</label>
             <select
               value={localFormData.type}
-              disabled
-              className="w-full p-2 border border-border rounded-md bg-muted text-foreground"
+              disabled={localFormData.entry_mode === 'configured'}
+              onChange={(e) => setLocalFormData({ ...localFormData, type: e.target.value as 'fixed' | 'percentage' })}
+              className={`w-full p-2 border border-border rounded-md text-foreground ${
+                localFormData.entry_mode === 'configured' ? 'bg-muted' : 'bg-background'
+              }`}
             >
               <option value="fixed">Fixed Amount</option>
-              <option value="percentage">Percentage of Gross</option>
+              <option value="percentage">Percentage of Basic</option>
             </select>
           </div>
 
@@ -405,10 +567,12 @@ export function StaffAllowancesPage() {
             <input
               type="number"
               value={localFormData.type === 'fixed' ? localFormData.amount : localFormData.percentage}
-              onChange={(e) => setLocalFormData({
-                ...localFormData,
-                [localFormData.type === 'fixed' ? 'amount' : 'percentage']: e.target.value
-              })}
+              onChange={(e) =>
+                setLocalFormData({
+                  ...localFormData,
+                  [localFormData.type === 'fixed' ? 'amount' : 'percentage']: e.target.value,
+                })
+              }
               className="w-full p-2 border border-border rounded-md bg-background text-foreground"
             />
           </div>
@@ -438,9 +602,7 @@ export function StaffAllowancesPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-foreground mb-1">
-              Effective To (Optional)
-            </label>
+            <label className="block text-sm font-medium text-foreground mb-1">Effective To (Optional)</label>
             <input
               type="month"
               value={localFormData.effective_to}
@@ -462,11 +624,7 @@ export function StaffAllowancesPage() {
         </div>
 
         <div className="flex gap-3 justify-end pt-4">
-          <button
-            onClick={onCancel}
-            className="btn-secondary"
-            disabled={isSubmitting}
-          >
+          <button onClick={onCancel} className="btn-secondary" disabled={isSubmitting}>
             Cancel
           </button>
           <button
@@ -493,8 +651,16 @@ export function StaffAllowancesPage() {
   };
 
   const handleSaveAllowance = async (formData: any) => {
-    if (!selectedStaff || !formData.allowance_id) {
+    if (!selectedStaff) {
+      showToast('error', 'Please select a staff member');
+      return;
+    }
+    if (formData.entry_mode === 'configured' && !formData.allowance_id) {
       showToast('error', 'Please select an allowance');
+      return;
+    }
+    if (formData.entry_mode === 'custom' && !String(formData.allowance_name || '').trim()) {
+      showToast('error', 'Please enter an allowance name');
       return;
     }
 
@@ -504,12 +670,13 @@ export function StaffAllowancesPage() {
         staff_id: selectedStaff.id,
         staff_number: selectedStaff.staff_number,
         staff_name: `${selectedStaff.bio_data.first_name} ${selectedStaff.bio_data.last_name}`,
-        allowance_id: formData.allowance_id,
+        entry_mode: formData.entry_mode,
+        allowance_id: formData.entry_mode === 'configured' ? formData.allowance_id : null,
         allowance_code: formData.allowance_code,
         allowance_name: formData.allowance_name,
         type: formData.type,
-        amount: formData.type === 'fixed' ? parseFloat(formData.amount) : undefined,
-        percentage: formData.type === 'percentage' ? parseFloat(formData.percentage) : undefined,
+        amount: formData.type === 'fixed' ? Number(formData.amount || 0) : undefined,
+        percentage: formData.type === 'percentage' ? Number(formData.percentage || 0) : undefined,
         frequency: formData.frequency,
         is_taxable: formData.is_taxable,
         is_pensionable: formData.is_pensionable,
@@ -547,8 +714,16 @@ export function StaffAllowancesPage() {
   };
 
   const handleSaveDeduction = async (formData: any) => {
-    if (!selectedStaff || !formData.deduction_id) {
+    if (!selectedStaff) {
+      showToast('error', 'Please select a staff member');
+      return;
+    }
+    if (formData.entry_mode === 'configured' && !formData.deduction_id) {
       showToast('error', 'Please select a deduction');
+      return;
+    }
+    if (formData.entry_mode === 'custom' && !String(formData.deduction_name || '').trim()) {
+      showToast('error', 'Please enter a deduction name');
       return;
     }
 
@@ -558,12 +733,13 @@ export function StaffAllowancesPage() {
         staff_id: selectedStaff.id,
         staff_number: selectedStaff.staff_number,
         staff_name: `${selectedStaff.bio_data.first_name} ${selectedStaff.bio_data.last_name}`,
-        deduction_id: formData.deduction_id,
+        entry_mode: formData.entry_mode,
+        deduction_id: formData.entry_mode === 'configured' ? formData.deduction_id : null,
         deduction_code: formData.deduction_code,
         deduction_name: formData.deduction_name,
         type: formData.type,
-        amount: formData.type === 'fixed' ? parseFloat(formData.amount) : undefined,
-        percentage: formData.type === 'percentage' ? parseFloat(formData.percentage) : undefined,
+        amount: formData.type === 'fixed' ? Number(formData.amount || 0) : undefined,
+        percentage: formData.type === 'percentage' ? Number(formData.percentage || 0) : undefined,
         frequency: formData.frequency,
         effective_from: formData.effective_from,
         effective_to: formData.effective_to || (formData.frequency === 'one-time' ? formData.effective_from : null),
@@ -716,6 +892,11 @@ export function StaffAllowancesPage() {
                             <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
                               {allowance.frequency === 'one-time' ? 'One-Time' : 'Recurring'}
                             </span>
+                            {allowance.entry_mode === 'custom' && (
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+                                Custom
+                              </span>
+                            )}
                             {allowance.is_taxable && (
                               <span className="text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
                                 Taxable
@@ -812,6 +993,11 @@ export function StaffAllowancesPage() {
                             <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
                               {deduction.frequency === 'one-time' ? 'One-Time' : 'Recurring'}
                             </span>
+                            {deduction.entry_mode === 'custom' && (
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+                                Custom
+                              </span>
+                            )}
                           </div>
                           <p className="text-sm text-muted-foreground">Code: {deduction.deduction_code}</p>
                         </div>

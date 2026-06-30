@@ -259,9 +259,9 @@ export class ExternalApiService {
     // Create staff deduction record first
     const deduction = await this.databaseService.queryOne(
       `INSERT INTO staff_deductions (
-        staff_id, deduction_code, deduction_name, type, amount, 
-        start_month, status, created_by
-      ) VALUES ($1, $2, $3, 'fixed', $4, TO_CHAR(NOW(), 'YYYY-MM'), 'active', $5)
+        staff_id, deduction_id, custom_deduction_code, custom_deduction_name,
+        custom_type, amount, effective_from, frequency, status, created_by
+      ) VALUES ($1, NULL, $2, $3, 'fixed', $4, DATE_TRUNC('month', NOW())::date, 'recurring', 'active', $5)
       RETURNING id`,
       [dto.staffId, 'COOP', dto.description, dto.amount, apiKeyId],
     );

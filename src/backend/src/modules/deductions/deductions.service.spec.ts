@@ -53,4 +53,44 @@ describe('DeductionsService', () => {
       expect(result).toEqual({ message: 'Deduction deleted successfully' });
     });
   });
+
+  describe('createStaffDeduction', () => {
+    it('creates a custom staff deduction without requiring a payroll setup deduction', async () => {
+      (databaseService.queryOne as jest.Mock).mockResolvedValue({ id: 'sd-1' });
+
+      const result = await service.createStaffDeduction(
+        {
+          staff_id: 'staff-1',
+          entry_mode: 'custom',
+          deduction_name: 'Staff Recovery',
+          deduction_code: 'RECOVERY',
+          type: 'fixed',
+          amount: 10000,
+          effective_from: '2026-07',
+          frequency: 'one-time',
+        },
+        'user-1',
+        'admin',
+      );
+
+      expect(databaseService.queryOne).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO staff_deductions'),
+        [
+          'staff-1',
+          null,
+          'RECOVERY',
+          'Staff Recovery',
+          'fixed',
+          10000,
+          null,
+          '2026-07-01',
+          undefined,
+          'one-time',
+          'active',
+          'user-1',
+        ],
+      );
+      expect(result).toEqual({ id: 'sd-1' });
+    });
+  });
 });

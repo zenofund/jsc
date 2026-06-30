@@ -376,10 +376,10 @@ export class PayrollService {
     // Get all staff-specific allowances for this month
     const staffAllowances = await this.databaseService.query(
       `SELECT sa.*,
-              a.name as allowance_name,
-              a.code as allowance_code,
-              a.type,
-              a.is_taxable,
+              COALESCE(sa.custom_allowance_name, a.name) as allowance_name,
+              COALESCE(sa.custom_allowance_code, a.code) as allowance_code,
+              COALESCE(sa.custom_type, a.type) as type,
+              COALESCE(sa.custom_is_taxable, a.is_taxable, true) as is_taxable,
               a.excluded_grades,
               a.excluded_employment_types
        FROM staff_allowances sa
@@ -393,9 +393,9 @@ export class PayrollService {
     // Get all staff-specific deductions for this month
     const staffDeductions = await this.databaseService.query(
       `SELECT sd.*,
-              d.name as deduction_name,
-              d.code as deduction_code,
-              d.type,
+              COALESCE(sd.custom_deduction_name, d.name) as deduction_name,
+              COALESCE(sd.custom_deduction_code, d.code) as deduction_code,
+              COALESCE(sd.custom_type, d.type) as type,
               d.is_statutory,
               d.excluded_grades,
               d.excluded_employment_types

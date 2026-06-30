@@ -168,6 +168,7 @@ export interface Allowance {
   percentage?: number;
   is_taxable: boolean;
   is_pensionable: boolean;
+  applies_to_all?: boolean;
   status: 'active' | 'inactive';
   created_at: string;
 }
@@ -180,6 +181,7 @@ export interface Deduction {
   amount?: number;
   percentage?: number;
   is_statutory: boolean;
+  applies_to_all?: boolean;
   status: 'active' | 'inactive';
   created_at: string;
 }
@@ -187,11 +189,13 @@ export interface Deduction {
 export interface StaffAllowance {
   id: string;
   staff_id: string;
+  allowance_id?: string | null;
   staff_number: string;
   staff_name: string;
   allowance_code: string;
   allowance_name: string;
   type: 'fixed' | 'percentage';
+  entry_mode?: 'configured' | 'custom';
   amount?: number;
   percentage?: number;
   frequency: 'recurring' | 'one-time';
@@ -210,11 +214,13 @@ export interface StaffAllowance {
 export interface StaffDeduction {
   id: string;
   staff_id: string;
+  deduction_id?: string | null;
   staff_number: string;
   staff_name: string;
   deduction_code: string;
   deduction_name: string;
   type: 'fixed' | 'percentage';
+  entry_mode?: 'configured' | 'custom';
   amount?: number;
   percentage?: number;
   frequency: 'recurring' | 'one-time';
