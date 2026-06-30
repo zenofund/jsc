@@ -87,16 +87,11 @@ export class ReportsService {
    */
   async getStaffReport(filters: { department?: string; status?: string }) {
     const params: any[] = [];
-    let whereClause = '';
+    let whereClause = ` AND s.status = 'active'`;
 
     if (filters.department) {
       params.push(filters.department);
       whereClause += ` AND d.name = $${params.length}`;
-    }
-
-    if (filters.status) {
-      params.push(filters.status);
-      whereClause += ` AND s.status = $${params.length}`;
     }
 
     const query = `

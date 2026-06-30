@@ -80,11 +80,11 @@ export function DashboardPage() {
 
   const statCards = [
     {
-      title: 'Total Staff',
-      value: stats?.total_staff || 0,
+      title: 'Active Staff',
+      value: stats?.active_staff || 0,
       icon: Users,
       color: 'blue',
-      subtitle: `${stats?.active_staff || 0} active`,
+      subtitle: 'Currently active staff',
     },
     {
       title: 'Pending Approvals',

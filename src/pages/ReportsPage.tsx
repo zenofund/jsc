@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { DataTable } from '../components/DataTable';
 import { Modal } from '../components/Modal';
@@ -29,27 +29,10 @@ export function ReportsPage() {
   const [remittanceType, setRemittanceType] = useState<'pension' | 'tax' | 'cooperative'>('pension');
   const [payeScheduleState, setPayeScheduleState] = useState('FCT');
   const [staffDepartment, setStaffDepartment] = useState('');
-  const [staffStatus, setStaffStatus] = useState('');
   const [organizationName, setOrganizationName] = useState('Nigerian Judicial Service Committee');
   const [organizationLogo, setOrganizationLogo] = useState('');
 
   const isCashier = user?.role === 'cashier';
-
-  const staffStatusOptions = useMemo(() => {
-    return ['active', 'suspended', 'on_leave', 'retired', 'terminated', 'resigned', 'secondment', 'interdiction'];
-  }, []);
-
-  const formatStatusLabel = (status: string) => {
-    return String(status || '')
-      .replace(/_/g, ' ')
-      .replace(/\b\w/g, (m) => m.toUpperCase());
-  };
-
-  useEffect(() => {
-    if (staffStatus && !staffStatusOptions.includes(staffStatus)) {
-      setStaffStatus('');
-    }
-  }, [staffStatus, staffStatusOptions]);
 
   const toNumber = (value: any) => {
     const num = typeof value === 'number' ? value : parseInt(String(value ?? ''), 10);
@@ -85,7 +68,7 @@ export function ReportsPage() {
     }
     loadReport();
     fetchSettings();
-  }, [activeTab, selectedMonth, month1, month2, remittanceType, staffDepartment, staffStatus, isCashier]);
+  }, [activeTab, selectedMonth, month1, month2, remittanceType, staffDepartment, isCashier]);
 
   const fetchSettings = async () => {
     try {
@@ -109,7 +92,6 @@ export function ReportsPage() {
       if (activeTab === 'staff') {
         const data = await reportAPI.getStaffReport({
           department: staffDepartment || undefined,
-          status: staffStatus || undefined,
         });
 
         // Map flat staff data to nested structure if needed
@@ -990,7 +972,7 @@ export function ReportsPage() {
         <div className="space-y-6">
           {/* Filters */}
           <div className="bg-card rounded-lg border border-border p-4">
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm mb-1 text-card-foreground">
                   Department
@@ -1006,28 +988,10 @@ export function ReportsPage() {
                   ))}
                 </select>
               </div>
-              <div>
-                <label className="block text-sm mb-1 text-card-foreground">
-                  Status
-                </label>
-                <select
-                  value={staffStatus}
-                  onChange={(e) => setStaffStatus(e.target.value)}
-                  className="w-full px-3 py-2 border border-border rounded-lg bg-input-background dark:bg-gray-800 text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                >
-                  <option value="">All Status</option>
-                  {staffStatusOptions.map((status) => (
-                    <option key={status} value={status}>
-                      {formatStatusLabel(status)}
-                    </option>
-                  ))}
-                </select>
-              </div>
               <div className="flex items-end">
                 <button
                   onClick={() => {
                     setStaffDepartment('');
-                    setStaffStatus('');
                   }}
                   className="px-4 py-2 text-card-foreground hover:bg-accent rounded-lg transition-colors"
                 >
@@ -1044,7 +1008,7 @@ export function ReportsPage() {
                 <Users className="w-8 h-8 text-accent" />
               </div>
               <div className="text-2xl font-semibold text-foreground">{reportData.total}</div>
-              <div className="text-sm text-muted-foreground">Total Staff</div>
+              <div className="text-sm text-muted-foreground">Active Staff</div>
             </div>
 
             <div className="bg-card border border-border rounded-lg p-6">
