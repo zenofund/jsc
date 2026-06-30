@@ -90,8 +90,12 @@ export class ReportsService {
     let whereClause = ` AND s.status = 'active'`;
 
     if (filters.department) {
-      params.push(filters.department);
-      whereClause += ` AND d.name = $${params.length}`;
+      if (filters.department === 'Unassigned') {
+        whereClause += ` AND s.department_id IS NULL`;
+      } else {
+        params.push(filters.department);
+        whereClause += ` AND d.name = $${params.length}`;
+      }
     }
 
     const query = `
@@ -133,7 +137,7 @@ export class ReportsService {
         staff_number: s.staff_number,
         status: s.status,
         bio_data: { first_name: s.first_name, last_name: s.last_name },
-        appointment: { department: s.department },
+        appointment: { department: s.department || 'Unassigned' },
         salary_info: {
           grade_level: s.grade_level,
           step: s.step,
