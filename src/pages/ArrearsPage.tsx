@@ -12,6 +12,8 @@ import { StatusBadge } from '../components/StatusBadge';
 import { Modal } from '../components/Modal';
 import { MergeArrearsModal } from '../components/MergeArrearsModal';
 import { CreateArrearsModal } from '../components/CreateArrearsModal';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../components/ui/dropdown-menu';
+import { MoreVertical } from 'lucide-react';
 
 export function ArrearsPage() {
   const { user } = useAuth();
@@ -173,66 +175,61 @@ export function ArrearsPage() {
         if (['payroll_loader'].includes(user?.role || '')) {
           return <span className="text-muted-foreground text-xs italic">View Only</span>;
         }
-        
+
+        const isProcessing = approvingId === row.id || recalculatingId === row.id;
+
         return (
-          <div className="flex items-center gap-2">
-            {row.status === 'pending' && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
               <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleApproveArrears(row.id);
-                }}
-                disabled={approvingId === row.id}
-                className="p-1 hover:bg-green-100 dark:hover:bg-green-900/20 rounded text-green-600 dark:text-green-400 disabled:opacity-50"
-                title="Approve Arrears"
+                type="button"
+                onClick={(e) => e.stopPropagation()}
+                disabled={isProcessing}
+                className="p-2 hover:bg-accent rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                aria-label={`Open actions for arrears ${row.id}`}
               >
-                {approvingId === row.id ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                {isProcessing ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
                 ) : (
-                  <Check className="w-4 h-4" />
+                  <MoreVertical className="w-4 h-4 text-muted-foreground" />
                 )}
               </button>
-            )}
-            
-            {row.status === 'approved' && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setSelectedArrears(row);
-                  setShowMergeModal(true);
-                }}
-                className="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
-              >
-                Merge to Payroll
-              </button>
-            )}
-
-            {(row.status === 'pending' || row.status === 'approved') && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleRecalculateArrears(row.id);
-                }}
-                disabled={recalculatingId === row.id}
-                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded disabled:opacity-50"
-                title="Recalculate"
-              >
-                <RefreshCw className={`w-4 h-4 text-primary ${recalculatingId === row.id ? 'animate-spin' : ''}`} />
-              </button>
-            )}
-            {row.status === 'pending' && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDeleteArrears(row.id);
-                }}
-                className="p-1 hover:bg-red-100 dark:hover:bg-red-900/20 rounded text-red-600 dark:text-red-400"
-                title="Delete"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            )}
-          </div>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {row.status === 'pending' && (
+                <DropdownMenuItem onClick={() => handleApproveArrears(row.id)}>
+                  <Check className="w-4 h-4 mr-2 text-green-600" />
+                  Approve Arrears
+                </DropdownMenuItem>
+              )}
+              {row.status === 'approved' && (
+                <DropdownMenuItem
+                  onClick={() => {
+                    setSelectedArrears(row);
+                    setShowMergeModal(true);
+                  }}
+                >
+                  <TrendingUp className="w-4 h-4 mr-2 text-blue-600" />
+                  Merge to Payroll
+                </DropdownMenuItem>
+              )}
+              {(row.status === 'pending' || row.status === 'approved') && (
+                <DropdownMenuItem onClick={() => handleRecalculateArrears(row.id)}>
+                  <RefreshCw className="w-4 h-4 mr-2 text-primary" />
+                  Recalculate
+                </DropdownMenuItem>
+              )}
+              {row.status === 'pending' && (
+                <DropdownMenuItem
+                  onClick={() => handleDeleteArrears(row.id)}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="w-4 h-4 mr-2 text-red-600" />
+                  Delete
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         );
       },
     },

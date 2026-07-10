@@ -5,7 +5,8 @@ import { PageSkeleton } from '../components/PageLoader';
 import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { staffRequestsAPI } from '../lib/api-client';
-import { CheckCircle, XCircle, AlertCircle, Loader2, Eye } from 'lucide-react';
+import { CheckCircle, XCircle, AlertCircle, Loader2, Eye, MoreVertical } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../components/ui/dropdown-menu';
 
 type Status = 'pending' | 'approved' | 'rejected';
 
@@ -94,46 +95,50 @@ export default function StaffRequestsAdminPage() {
     { header: 'Created', accessor: (row: any) => new Date(row.created_at).toLocaleString() },
     {
       header: 'Actions',
-      accessor: (row: any) => (
-        <div className="flex items-center gap-2">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setSelected(row);
-            }}
-            className="p-1 hover:bg-accent rounded"
-            title="View"
-          >
-            <Eye className="w-4 h-4 text-blue-600" />
-          </button>
-          {row.status === 'pending' && (
-            <>
+      accessor: (row: any) => {
+        const isProcessing = processingRowId === row.id;
+
+        return (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
               <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleApprove(row.id);
-                }}
-                className="p-1 hover:bg-accent rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Approve"
-                disabled={processingRowId === row.id}
+                type="button"
+                onClick={(e) => e.stopPropagation()}
+                className="p-2 hover:bg-accent rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isProcessing}
+                aria-label={`Open actions for request ${row.id}`}
               >
-                {processingRowId === row.id ? <Loader2 className="w-4 h-4 animate-spin text-green-600" /> : <CheckCircle className="w-4 h-4 text-green-600" />}
+                {isProcessing ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                ) : (
+                  <MoreVertical className="w-4 h-4 text-muted-foreground" />
+                )}
               </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleReject(row.id);
-                }}
-                className="p-1 hover:bg-accent rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Reject"
-                disabled={processingRowId === row.id}
-              >
-                {processingRowId === row.id ? <Loader2 className="w-4 h-4 animate-spin text-red-600" /> : <XCircle className="w-4 h-4 text-red-600" />}
-              </button>
-            </>
-          )}
-        </div>
-      ),
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setSelected(row)}>
+                <Eye className="w-4 h-4 mr-2 text-blue-600" />
+                View
+              </DropdownMenuItem>
+              {row.status === 'pending' && (
+                <DropdownMenuItem onClick={() => handleApprove(row.id)}>
+                  <CheckCircle className="w-4 h-4 mr-2 text-green-600" />
+                  Approve
+                </DropdownMenuItem>
+              )}
+              {row.status === 'pending' && (
+                <DropdownMenuItem
+                  onClick={() => handleReject(row.id)}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <XCircle className="w-4 h-4 mr-2 text-red-600" />
+                  Reject
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        );
+      },
     },
   ];
 

@@ -3,7 +3,8 @@ import {
   Check, 
   X, 
   Search, 
-  Filter
+  Filter,
+  MoreVertical
 } from 'lucide-react';
 import { staffAllowanceAPI, staffDeductionAPI } from '../lib/api-client';
 import { useToast } from '../components/Toast';
@@ -12,6 +13,7 @@ import { Breadcrumb } from '../components/Breadcrumb';
 import { StatusBadge } from '../components/StatusBadge';
 import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Button } from '../components/ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../components/ui/dropdown-menu';
 
 interface AdjustmentItem {
   id: string;
@@ -359,25 +361,30 @@ const StaffAdjustmentApprovalPage: React.FC = () => {
                     </td>
                     <td className="px-4 py-3 text-right">
                       {item.status === 'pending' && (
-                        <div className="flex justify-end gap-2">
-                          <Button 
-                            size="sm" 
-                            className="bg-green-600 hover:bg-green-700 text-white h-8 px-2"
-                            onClick={() => handleApprove(item.id)}
-                            title="Approve"
-                          >
-                            <Check className="w-4 h-4 mr-1" /> Approve
-                          </Button>
-                          <Button 
-                            size="sm" 
-                            variant="destructive"
-                            className="h-8 px-2"
-                            onClick={() => handleReject(item.id)}
-                            title="Reject"
-                          >
-                            <X className="w-4 h-4 mr-1" /> Reject
-                          </Button>
-                        </div>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              type="button"
+                              className="p-2 hover:bg-accent rounded"
+                              aria-label={`Open actions for adjustment ${item.id}`}
+                            >
+                              <MoreVertical className="w-4 h-4 text-muted-foreground" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => handleApprove(item.id)}>
+                              <Check className="w-4 h-4 mr-2 text-green-600" />
+                              Approve
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleReject(item.id)}
+                              className="text-destructive focus:text-destructive"
+                            >
+                              <X className="w-4 h-4 mr-2 text-red-600" />
+                              Reject
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       )}
                     </td>
                   </tr>
