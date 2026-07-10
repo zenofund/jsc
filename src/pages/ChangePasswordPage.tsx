@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Lock, Eye, EyeOff, CheckCircle, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { authAPI } from '../lib/api-client';
@@ -7,8 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/ui/button';
 
 export function ChangePasswordPage() {
-  const { user } = useAuth();
-  const navigate = useNavigate();
+  const { user, updateUser } = useAuth();
   const [loading, setLoading] = useState(false);
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
@@ -102,9 +100,8 @@ export function ChangePasswordPage() {
         formData.confirmPassword
       );
 
+      updateUser({ must_change_password: false });
       toast.success('Password changed successfully!');
-      await authAPI.logout();
-      navigate('/login');
       
       // Clear form
       setFormData({

@@ -42,6 +42,25 @@ import StaffAdjustmentApprovalPage from './pages/StaffAdjustmentApprovalPage';
 import StaffRequestsAdminPage from './pages/StaffRequestsAdminPage';
 import { settingsAPI } from './lib/api-client';
 
+const getDefaultViewForUser = (user: { role?: string | null }) => {
+  const role = String(user?.role || '').trim().toLowerCase();
+  const normalizedRole = role === 'reviewer' ? 'checking' : role === 'approver' ? 'cpo' : role;
+
+  if (role === 'staff') {
+    return 'staff-portal' as const;
+  }
+  if (role === 'hr_manager') {
+    return 'hr-dashboard' as const;
+  }
+  if (role === 'cashier') {
+    return 'cashier-dashboard' as const;
+  }
+  if (['checking', 'cpo', 'auditor', 'audit'].includes(normalizedRole)) {
+    return 'approvals' as const;
+  }
+  return 'dashboard' as const;
+};
+
 function AppContent() {
   const { user, isLoading } = useAuth();
   const [currentView, setCurrentView] = useState<'dashboard' | 'hr-dashboard' | 'cashier-dashboard' | 'staff' | 'staff-portal' | 'staff-request-status' | 'staff-requests' | 'payroll' | 'promotions' | 'arrears' | 'approvals' | 'payslips' | 'reports' | 'setup' | 'admin' | 'loan-management' | 'department-management' | 'staff-allowances' | 'staff-adjustment-approvals' | 'leave-management' | 'bank-payments' | 'notifications' | 'cooperative-reports' | 'cooperative-management' | 'custom-report-builder' | 'reports-list' | 'smtp-settings' | 'change-password' | 'audit-log' | 'tax-configuration'>('dashboard');
@@ -50,17 +69,7 @@ function AppContent() {
   // Set initial view based on user role
   useEffect(() => {
     if (user) {
-      const role = String(user.role || '').trim().toLowerCase();
-      const normalizedRole = role === 'reviewer' ? 'checking' : role === 'approver' ? 'cpo' : role;
-      if (user.role === 'staff') {
-        setCurrentView('staff-portal');
-      } else if (user.role === 'hr_manager') {
-        setCurrentView('hr-dashboard');
-      } else if (user.role === 'cashier') {
-        setCurrentView('cashier-dashboard');
-      } else if (['checking', 'cpo', 'auditor', 'audit'].includes(normalizedRole)) {
-        setCurrentView('approvals');
-      }
+      setCurrentView(getDefaultViewForUser(user));
     }
   }, [user]);
 
@@ -78,6 +87,10 @@ function AppContent() {
     if (!user) return;
     if (user.must_change_password && currentView !== 'change-password') {
       setCurrentView('change-password');
+      return;
+    }
+    if (!user.must_change_password && currentView === 'change-password') {
+      setCurrentView(getDefaultViewForUser(user));
     }
   }, [user, currentView]);
 

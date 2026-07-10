@@ -10,6 +10,7 @@ interface AuthContextType {
     totpCode?: string,
   ) => Promise<{ status: 'success' | 'totp_required' | 'totp_setup_required' | 'error'; message?: string }>;
   logout: () => void;
+  updateUser: (updates: Partial<User>) => void;
   isLoading: boolean;
 }
 
@@ -156,8 +157,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     authAPI.logout().catch(console.error);
   };
 
+  const updateUser = (updates: Partial<User>) => {
+    setUser((currentUser) => {
+      if (!currentUser) return currentUser;
+      const nextUser = { ...currentUser, ...updates };
+      localStorage.setItem('jsc_user', JSON.stringify(nextUser));
+      return nextUser;
+    });
+  };
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, isLoading }}>
+    <AuthContext.Provider value={{ user, login, logout, updateUser, isLoading }}>
       {children}
     </AuthContext.Provider>
   );
@@ -170,6 +180,7 @@ export function useAuth() {
       user: null,
       login: async () => ({ status: 'error' as const }),
       logout: () => {},
+      updateUser: () => {},
       isLoading: true,
     } as any;
   }
