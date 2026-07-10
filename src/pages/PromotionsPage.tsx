@@ -8,7 +8,7 @@ import { useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../components/ui/dropdown-menu';
-import { promotionAPI, staffAPI, settingsAPI } from '../lib/api-client';
+import { arrearsAPI, promotionAPI, staffAPI, settingsAPI } from '../lib/api-client';
 import { formatStaffLabelWithId, formatStaffName } from '../lib/name-utils';
 import { Promotion, Staff } from '../types/entities';
 import { PageSkeleton } from '../components/PageLoader';
@@ -68,6 +68,7 @@ export function PromotionsPage() {
   } | null>(null);
   const [detailsArrearsPreview, setDetailsArrearsPreview] = useState<typeof arrearsPreview | null>(null);
   const [detailsPreviewLoading, setDetailsPreviewLoading] = useState(false);
+  const [detailsStoredArrearsTotal, setDetailsStoredArrearsTotal] = useState<number | null>(null);
 
   useEffect(() => {
     loadData();
@@ -208,18 +209,28 @@ export function PromotionsPage() {
     const loadDetailsPreview = async () => {
       if (!showDetailsModal || !selectedPromotion) {
         setDetailsArrearsPreview(null);
+        setDetailsStoredArrearsTotal(null);
         return;
       }
       try {
         setDetailsPreviewLoading(true);
-        const result = await promotionAPI.previewArrears(
-          selectedPromotion.staff_id,
-          selectedPromotion.new_grade_level,
-          selectedPromotion.new_step,
-          selectedPromotion.effective_date,
-          selectedPromotion.old_grade_level,
-          selectedPromotion.old_step,
-        );
+        const effectiveDateKey = String(selectedPromotion.effective_date || '').slice(0, 10);
+        const requests: Promise<any>[] = [
+          promotionAPI.previewArrears(
+            selectedPromotion.staff_id,
+            selectedPromotion.new_grade_level,
+            selectedPromotion.new_step,
+            selectedPromotion.effective_date,
+            selectedPromotion.old_grade_level,
+            selectedPromotion.old_step,
+          ),
+        ];
+
+        if (selectedPromotion.status === 'approved' && selectedPromotion.arrears_calculated) {
+          requests.push(arrearsAPI.getPendingArrears());
+        }
+
+        const [result, arrearsResponse] = await Promise.all(requests);
         setDetailsArrearsPreview({
           monthlyDifference: result.monthlyDifference,
           monthsOwed: result.monthsDiff,
@@ -235,8 +246,25 @@ export function PromotionsPage() {
           proratedFirstMonth: result.proratedFirstMonth,
           fullMonthsAfter: result.fullMonthsAfter,
         });
+
+        if (Array.isArray(arrearsResponse)) {
+          const matchedArrears = arrearsResponse
+            .filter((arrears: any) =>
+              arrears?.reason === 'promotion' &&
+              String(arrears?.staff_id || '') === String(selectedPromotion.staff_id) &&
+              String(arrears?.effective_date || '').slice(0, 10) === effectiveDateKey
+            )
+            .sort((a: any, b: any) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0];
+
+          setDetailsStoredArrearsTotal(
+            matchedArrears ? Number(matchedArrears.total_arrears ?? matchedArrears.totalArrears ?? 0) : null,
+          );
+        } else {
+          setDetailsStoredArrearsTotal(null);
+        }
       } catch {
         setDetailsArrearsPreview(null);
+        setDetailsStoredArrearsTotal(null);
       } finally {
         setDetailsPreviewLoading(false);
       }
@@ -1368,7 +1396,7 @@ export function PromotionsPage() {
                   <div className="pt-2 border-t border-orange-200 dark:border-orange-900">
                     <span className="text-orange-700 dark:text-orange-300">Total Arrears:</span>
                     <div className="text-lg font-bold text-orange-900 dark:text-orange-100">
-                      {formatCurrency(detailsArrearsPreview.totalArrears)}
+                      {formatCurrency(detailsStoredArrearsTotal ?? detailsArrearsPreview.totalArrears)}
                     </div>
                   </div>
                 </div>
