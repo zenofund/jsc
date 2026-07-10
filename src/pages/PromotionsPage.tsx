@@ -362,6 +362,8 @@ export function PromotionsPage() {
             effectiveDateKey,
             selectedPromotion.old_grade_level,
             selectedPromotion.old_step,
+            selectedPromotion.old_basic_salary,
+            selectedPromotion.new_basic_salary,
           ),
         ];
 

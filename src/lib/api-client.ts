@@ -678,10 +678,12 @@ export const promotionAPI = {
     effectiveDate: string,
     oldGradeLevel?: number | string,
     oldStep?: number,
+    oldBasicSalary?: number | string,
+    newBasicSalary?: number | string,
   ) {
     return makeApiRequest('/promotions/preview-arrears', {
       method: 'POST',
-      body: JSON.stringify({ staffId, newGradeLevel, newStep, effectiveDate, oldGradeLevel, oldStep }),
+      body: JSON.stringify({ staffId, newGradeLevel, newStep, effectiveDate, oldGradeLevel, oldStep, oldBasicSalary, newBasicSalary }),
     });
   },
 
