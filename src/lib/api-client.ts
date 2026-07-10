@@ -703,6 +703,20 @@ export const promotionAPI = {
     });
   },
 
+  async bulkApprovePromotions(promotionIds: string[]) {
+    return makeApiRequest('/promotions/bulk-approve', {
+      method: 'POST',
+      body: JSON.stringify({ promotionIds }),
+    });
+  },
+
+  async bulkRejectPromotions(promotionIds: string[], reason?: string) {
+    return makeApiRequest('/promotions/bulk-reject', {
+      method: 'POST',
+      body: JSON.stringify({ promotionIds, reason }),
+    });
+  },
+
   async calculatePromotionArrears(promotionId: string) {
     // Note: Endpoint `/promotions/:id/calculate-arrears` is MISSING in PromotionsController.
     return makeApiRequest(`/promotions/${promotionId}/calculate-arrears`, {

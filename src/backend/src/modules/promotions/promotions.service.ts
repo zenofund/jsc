@@ -192,6 +192,167 @@ export class PromotionsService {
     return { message: 'Promotion rejected successfully' };
   }
 
+  private async prepareBulkPromotionBatch(promotionIds: string[]) {
+    const normalizedIds = Array.from(
+      new Set(
+        (promotionIds || [])
+          .map((id) => String(id || '').trim())
+          .filter(Boolean),
+      ),
+    );
+
+    if (normalizedIds.length === 0) {
+      throw new BadRequestException('No promotions selected.');
+    }
+
+    const promotions = await this.databaseService.query(
+      `SELECT p.*, s.staff_number,
+              TRIM(CONCAT(COALESCE(s.first_name, ''), ' ', COALESCE(s.last_name, ''))) as staff_name
+       FROM promotions p
+       LEFT JOIN staff s ON p.staff_id = s.id
+       WHERE p.id = ANY($1::uuid[])`,
+      [normalizedIds],
+    );
+
+    const foundIds = new Set(promotions.map((promotion: any) => promotion.id));
+    const failures: Array<{ id: string; staff_id?: string; staff_number?: string; staff_name?: string; reason: string }> = [];
+
+    for (const id of normalizedIds) {
+      if (!foundIds.has(id)) {
+        failures.push({ id, reason: 'Promotion not found.' });
+      }
+    }
+
+    const staffPromotionCounts = new Map<string, number>();
+    for (const promotion of promotions) {
+      if (promotion.status === 'pending' && promotion.staff_id) {
+        staffPromotionCounts.set(promotion.staff_id, (staffPromotionCounts.get(promotion.staff_id) || 0) + 1);
+      }
+    }
+
+    const actionablePromotions: any[] = [];
+    for (const promotion of promotions) {
+      if (promotion.status !== 'pending') {
+        failures.push({
+          id: promotion.id,
+          staff_id: promotion.staff_id,
+          staff_number: promotion.staff_number,
+          staff_name: promotion.staff_name,
+          reason: `Promotion is already ${promotion.status}.`,
+        });
+        continue;
+      }
+
+      if ((staffPromotionCounts.get(promotion.staff_id) || 0) > 1) {
+        failures.push({
+          id: promotion.id,
+          staff_id: promotion.staff_id,
+          staff_number: promotion.staff_number,
+          staff_name: promotion.staff_name,
+          reason: 'Multiple pending promotions were selected for this staff member. Approve or reject them individually.',
+        });
+        continue;
+      }
+
+      actionablePromotions.push(promotion);
+    }
+
+    return {
+      actionablePromotions,
+      failures,
+      totalRequested: normalizedIds.length,
+    };
+  }
+
+  private async processBulkPromotionBatch(
+    promotions: any[],
+    handler: (promotion: any) => Promise<any>,
+    concurrency = 4,
+  ) {
+    const successes: Array<{ id: string; staff_id?: string; staff_number?: string; staff_name?: string }> = [];
+    const failures: Array<{ id: string; staff_id?: string; staff_number?: string; staff_name?: string; reason: string }> = [];
+
+    for (let index = 0; index < promotions.length; index += concurrency) {
+      const chunk = promotions.slice(index, index + concurrency);
+      const results = await Promise.allSettled(
+        chunk.map(async (promotion) => {
+          await handler(promotion);
+          return promotion;
+        }),
+      );
+
+      results.forEach((result, chunkIndex) => {
+        const promotion = chunk[chunkIndex];
+        if (result.status === 'fulfilled') {
+          successes.push({
+            id: promotion.id,
+            staff_id: promotion.staff_id,
+            staff_number: promotion.staff_number,
+            staff_name: promotion.staff_name,
+          });
+          return;
+        }
+
+        const reason =
+          result.reason instanceof Error
+            ? result.reason.message
+            : String(result.reason || 'Bulk promotion processing failed.');
+        failures.push({
+          id: promotion.id,
+          staff_id: promotion.staff_id,
+          staff_number: promotion.staff_number,
+          staff_name: promotion.staff_name,
+          reason,
+        });
+      });
+    }
+
+    return { successes, failures };
+  }
+
+  async bulkApprovePromotions(promotionIds: string[], userId: string) {
+    const { actionablePromotions, failures: initialFailures, totalRequested } = await this.prepareBulkPromotionBatch(promotionIds);
+    const { successes, failures: processingFailures } = await this.processBulkPromotionBatch(
+      actionablePromotions,
+      (promotion) => this.approvePromotion(promotion.id, userId),
+    );
+    const failures = [...initialFailures, ...processingFailures];
+
+    return {
+      message:
+        failures.length > 0
+          ? 'Bulk promotion approval completed with some failures.'
+          : 'Bulk promotion approval completed successfully.',
+      totalRequested,
+      successCount: successes.length,
+      failureCount: failures.length,
+      successes,
+      failures,
+    };
+  }
+
+  async bulkRejectPromotions(promotionIds: string[], userId: string, reason?: string) {
+    const { actionablePromotions, failures: initialFailures, totalRequested } = await this.prepareBulkPromotionBatch(promotionIds);
+    const rejectionReason = String(reason || '').trim() || 'Bulk rejected';
+    const { successes, failures: processingFailures } = await this.processBulkPromotionBatch(
+      actionablePromotions,
+      (promotion) => this.rejectPromotion(promotion.id, userId, rejectionReason),
+    );
+    const failures = [...initialFailures, ...processingFailures];
+
+    return {
+      message:
+        failures.length > 0
+          ? 'Bulk promotion rejection completed with some failures.'
+          : 'Bulk promotion rejection completed successfully.',
+      totalRequested,
+      successCount: successes.length,
+      failureCount: failures.length,
+      successes,
+      failures,
+    };
+  }
+
   /**
    * Process promotion approval (Update staff & Calculate arrears)
    */

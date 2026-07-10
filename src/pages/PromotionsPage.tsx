@@ -19,6 +19,8 @@ export function PromotionsPage() {
   const { user } = useAuth();
   const { showToast } = useToast();
   const confirm = useConfirm();
+  const normalizedUserRole = String(user?.role || '').trim().toLowerCase();
+  const canReviewPromotions = normalizedUserRole === 'admin' || ['cpo', 'approver'].includes(normalizedUserRole) || user?.role === 'hr_manager';
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [staff, setStaff] = useState<Staff[]>([]);
   const [loading, setLoading] = useState(true);
@@ -28,7 +30,9 @@ export function PromotionsPage() {
   const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [processingPromotionId, setProcessingPromotionId] = useState<string | null>(null);
+  const [bulkActionLoading, setBulkActionLoading] = useState(false);
   const [approvalComment, setApprovalComment] = useState('');
+  const [selectedPromotionIds, setSelectedPromotionIds] = useState<string[]>([]);
   const [allowedGrades, setAllowedGrades] = useState<number[]>([3,4,5,6,7,8,9,10,12,13,14,15,16,17]);
   const [staffSearch, setStaffSearch] = useState('');
   const [showStaffDropdown, setShowStaffDropdown] = useState(false);
@@ -398,7 +402,77 @@ export function PromotionsPage() {
     filter === 'all' ? true : p.status === filter
   );
 
+  const selectablePromotionIds = useMemo(
+    () => filteredPromotions.filter((promotion) => promotion.status === 'pending').map((promotion) => promotion.id),
+    [filteredPromotions],
+  );
+
+  const selectedPendingPromotions = useMemo(
+    () => promotions.filter((promotion) => selectedPromotionIds.includes(promotion.id) && promotion.status === 'pending'),
+    [promotions, selectedPromotionIds],
+  );
+
+  const selectedBackdatedCount = useMemo(() => {
+    const today = new Date();
+    return selectedPendingPromotions.filter((promotion) => new Date(promotion.effective_date) < today).length;
+  }, [selectedPendingPromotions]);
+
+  useEffect(() => {
+    setSelectedPromotionIds((currentSelection) => {
+      const allowedIds = new Set(promotions.filter((promotion) => promotion.status === 'pending').map((promotion) => promotion.id));
+      return currentSelection.filter((id) => allowedIds.has(id));
+    });
+  }, [promotions]);
+
+  const togglePromotionSelection = (promotionId: string) => {
+    setSelectedPromotionIds((currentSelection) =>
+      currentSelection.includes(promotionId)
+        ? currentSelection.filter((id) => id !== promotionId)
+        : [...currentSelection, promotionId],
+    );
+  };
+
+  const toggleSelectAllPending = () => {
+    if (selectablePromotionIds.length === 0) {
+      setSelectedPromotionIds([]);
+      return;
+    }
+
+    const allSelected = selectablePromotionIds.every((id) => selectedPromotionIds.includes(id));
+    setSelectedPromotionIds((currentSelection) => {
+      const nonSelectable = currentSelection.filter((id) => !selectablePromotionIds.includes(id));
+      return allSelected ? nonSelectable : [...nonSelectable, ...selectablePromotionIds];
+    });
+  };
+
   const columns = [
+    ...(canReviewPromotions
+      ? [
+          {
+            header: (
+              <input
+                type="checkbox"
+                checked={selectablePromotionIds.length > 0 && selectablePromotionIds.every((id) => selectedPromotionIds.includes(id))}
+                onChange={toggleSelectAllPending}
+                disabled={selectablePromotionIds.length === 0 || bulkActionLoading}
+                aria-label="Select all pending promotions"
+                className="h-4 w-4 rounded border-border"
+              />
+            ),
+            accessor: (row: Promotion) =>
+              row.status === 'pending' ? (
+                <input
+                  type="checkbox"
+                  checked={selectedPromotionIds.includes(row.id)}
+                  onChange={() => togglePromotionSelection(row.id)}
+                  disabled={bulkActionLoading}
+                  aria-label={`Select promotion for ${getStaffName(row.staff_id)}`}
+                  className="h-4 w-4 rounded border-border"
+                />
+              ) : null,
+          },
+        ]
+      : []),
     {
       header: 'Staff',
       accessor: (row: Promotion) => (
@@ -447,12 +521,8 @@ export function PromotionsPage() {
     {
       header: 'Actions',
       accessor: (row: Promotion) => {
-        const canApproveOrReject =
-          row.status === 'pending' &&
-          (String(user?.role || '').trim().toLowerCase() === 'admin' ||
-            ['cpo', 'approver'].includes(String(user?.role || '').trim().toLowerCase()) ||
-            user?.role === 'hr_manager');
-        const isProcessing = processingPromotionId === row.id;
+        const canApproveOrReject = row.status === 'pending' && canReviewPromotions;
+        const isProcessing = processingPromotionId === row.id || bulkActionLoading;
 
         return (
           <DropdownMenu>
@@ -514,6 +584,73 @@ export function PromotionsPage() {
   if (loading) {
     return <PageSkeleton mode="table" />;
   }
+
+  const handleBulkPromotionAction = async (action: 'approve' | 'reject') => {
+    if (!canReviewPromotions || selectedPendingPromotions.length === 0) {
+      return;
+    }
+
+    const actionLabel = action === 'approve' ? 'approve' : 'reject';
+    const title = action === 'approve' ? 'Bulk Approve Promotions?' : 'Bulk Reject Promotions?';
+    const confirmed = await confirm({
+      title,
+      message:
+        `${selectedPendingPromotions.length} pending promotion${selectedPendingPromotions.length === 1 ? '' : 's'} will be ${actionLabel}d.` +
+        (selectedBackdatedCount > 0
+          ? ` ${selectedBackdatedCount} selected case${selectedBackdatedCount === 1 ? '' : 's'} ${selectedBackdatedCount === 1 ? 'is' : 'are'} backdated and may generate arrears.`
+          : '') +
+        ' Continue?',
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
+    setBulkActionLoading(true);
+    try {
+      const result =
+        action === 'approve'
+          ? await promotionAPI.bulkApprovePromotions(selectedPendingPromotions.map((promotion) => promotion.id))
+          : await promotionAPI.bulkRejectPromotions(
+              selectedPendingPromotions.map((promotion) => promotion.id),
+              approvalComment.trim(),
+            );
+
+      const successfulIds = Array.isArray(result?.successes)
+        ? result.successes.map((item: any) => item.id).filter(Boolean)
+        : [];
+      const failedPromotions = Array.isArray(result?.failures) ? result.failures : [];
+
+      setApprovalComment('');
+      setSelectedPromotionIds((currentSelection) => currentSelection.filter((id) => !successfulIds.includes(id)));
+      await loadData();
+
+      if (successfulIds.length > 0) {
+        showToast(
+          'success',
+          `${action === 'approve' ? 'Approved' : 'Rejected'} ${successfulIds.length} promotion${successfulIds.length === 1 ? '' : 's'} successfully.`,
+        );
+      }
+
+      if (failedPromotions.length > 0) {
+        const failedSummary = failedPromotions
+          .slice(0, 3)
+          .map((promotion: any) => {
+            const staffLabel = [promotion.staff_number, promotion.staff_name].filter(Boolean).join(' ');
+            return staffLabel || promotion.id;
+          })
+          .join(', ');
+        showToast(
+          successfulIds.length > 0 ? 'warning' : 'error',
+          `${failedPromotions.length} promotion${failedPromotions.length === 1 ? '' : 's'} failed${failedSummary ? `: ${failedSummary}` : ''}${failedPromotions.length > 3 ? '...' : ''}`,
+        );
+      }
+    } catch (error: any) {
+      showToast('error', error?.message || `Failed to ${actionLabel} promotions.`);
+    } finally {
+      setBulkActionLoading(false);
+    }
+  };
 
   return (
     <div>
@@ -607,6 +744,54 @@ export function PromotionsPage() {
           </button>
         ))}
       </div>
+
+      {canReviewPromotions && (
+        <div className="mb-4 rounded-lg border border-border bg-card p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="space-y-1">
+              <div className="text-sm font-medium text-foreground">
+                {selectedPendingPromotions.length} pending promotion{selectedPendingPromotions.length === 1 ? '' : 's'} selected
+              </div>
+              <div className="text-xs text-muted-foreground">
+                Bulk actions apply only to pending rows. Review details individually when needed before approval.
+              </div>
+              {selectedBackdatedCount > 0 && (
+                <div className="text-xs text-orange-600 dark:text-orange-400">
+                  Warning: {selectedBackdatedCount} selected promotion{selectedBackdatedCount === 1 ? '' : 's'} may generate arrears because the effective date is backdated.
+                </div>
+              )}
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <button
+                type="button"
+                onClick={() => setSelectedPromotionIds([])}
+                disabled={selectedPendingPromotions.length === 0 || bulkActionLoading}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-border px-4 py-2 text-foreground hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Clear Selection
+              </button>
+              <button
+                type="button"
+                onClick={() => handleBulkPromotionAction('approve')}
+                disabled={selectedPendingPromotions.length === 0 || bulkActionLoading}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {bulkActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                Bulk Approve
+              </button>
+              <button
+                type="button"
+                onClick={() => handleBulkPromotionAction('reject')}
+                disabled={selectedPendingPromotions.length === 0 || bulkActionLoading}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-destructive px-4 py-2 text-destructive-foreground hover:bg-destructive/90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {bulkActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
+                Bulk Reject
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Promotions Table */}
       <DataTable

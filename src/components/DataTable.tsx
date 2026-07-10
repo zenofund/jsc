@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 
 interface Column<T> {
-  header: string;
+  header: React.ReactNode;
   accessor: keyof T | ((row: T) => React.ReactNode);
   sortable?: boolean;
 }

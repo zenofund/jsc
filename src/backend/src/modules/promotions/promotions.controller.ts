@@ -45,11 +45,25 @@ export class PromotionsController {
     return this.promotionsService.approvePromotion(id, req.user.userId);
   }
 
+  @Post('bulk-approve')
+  @Roles('admin', 'hr_manager')
+  @ApiOperation({ summary: 'Bulk approve promotions' })
+  bulkApprovePromotions(@Body() body: any, @Request() req) {
+    return this.promotionsService.bulkApprovePromotions(body.promotionIds || [], req.user.userId);
+  }
+
   @Post(':id/reject')
   @Roles('admin', 'hr_manager')
   @ApiOperation({ summary: 'Reject promotion' })
   rejectPromotion(@Param('id') id: string, @Body() body: any, @Request() req) {
     return this.promotionsService.rejectPromotion(id, req.user.userId, body.reason);
+  }
+
+  @Post('bulk-reject')
+  @Roles('admin', 'hr_manager')
+  @ApiOperation({ summary: 'Bulk reject promotions' })
+  bulkRejectPromotions(@Body() body: any, @Request() req) {
+    return this.promotionsService.bulkRejectPromotions(body.promotionIds || [], req.user.userId, body.reason);
   }
 
   @Get('eligible')
