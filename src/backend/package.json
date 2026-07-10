@@ -30,6 +30,7 @@
     "db:migrate-grade-levels": "node scripts/run-migration-053-alphanumeric-grade-levels.js",
     "db:migrate-app-permissions": "node scripts/run-migration-055-app-permissions.js",
     "db:migrate-custom-staff-adjustments": "node scripts/run-migration-058-custom-staff-adjustments.js",
+    "db:migrate-report-shares-created-at": "node scripts/run-migration-059-add-report-shares-created-at.js",
     "test:salary-api": "node scripts/test-salary-api.js"
   },
   "dependencies": {

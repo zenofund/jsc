@@ -63,8 +63,8 @@ CREATE TABLE IF NOT EXISTS report_shares (
     shared_by UUID REFERENCES users(id),
     expires_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     UNIQUE(template_id, shared_with_user_id)
-);
 
 -- 5. Report Favorites
 CREATE TABLE IF NOT EXISTS report_favorites (
