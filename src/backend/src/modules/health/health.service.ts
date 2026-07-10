@@ -81,8 +81,9 @@ export class HealthService {
 
     // Check each table
     const tableStats = {};
+    let reportTemplateStatusSummary: Array<{ status: string; count: number }> = [];
     try {
-      const tables = ['users', 'staff', 'departments', 'allowances', 'deductions'];
+      const tables = ['users', 'staff', 'departments', 'allowances', 'deductions', 'report_templates'];
       
       for (const table of tables) {
         try {
@@ -94,6 +95,21 @@ export class HealthService {
           tableStats[table] = 'error';
         }
       }
+
+      try {
+        const summary = await this.databaseService.query<{ status: string; count: string }>(
+          `SELECT COALESCE(status, '(null)') as status, COUNT(*)::int as count
+           FROM report_templates
+           GROUP BY COALESCE(status, '(null)')
+           ORDER BY count DESC`,
+        );
+        reportTemplateStatusSummary = summary.map((row) => ({
+          status: row.status,
+          count: Number(row.count),
+        }));
+      } catch {
+        reportTemplateStatusSummary = [];
+      }
     } catch (error) {
       this.logger.error('Error getting table stats:', error);
     }
@@ -102,6 +118,9 @@ export class HealthService {
       ...basicHealth,
       database: databaseHealth,
       tables: tableStats,
+      reportTemplates: {
+        statusSummary: reportTemplateStatusSummary,
+      },
       configuration: {
         port: this.configService.get<number>('PORT'),
         apiPrefix: this.configService.get<string>('API_PREFIX'),

@@ -638,7 +638,7 @@ export class ReportsService {
         WHERE rs.template_id = rt.id
           AND (rs.shared_with_user_id = $1 OR rs.shared_with_role = $2)
           AND (rs.expires_at IS NULL OR rs.expires_at > NOW())
-        ORDER BY CASE WHEN rs.shared_with_user_id = $1 THEN 0 ELSE 1 END, rs.created_at DESC
+        ORDER BY CASE WHEN rs.shared_with_user_id = $1 THEN 0 ELSE 1 END, rs.id DESC
         LIMIT 1
       ) rs ON true
       LEFT JOIN LATERAL (
@@ -1617,7 +1617,7 @@ export class ReportsService {
            WHERE rs.template_id = rt.id
              AND (rs.shared_with_user_id = $1 OR rs.shared_with_role = $2)
              AND (rs.expires_at IS NULL OR rs.expires_at > NOW())
-           ORDER BY CASE WHEN rs.shared_with_user_id = $1 THEN 0 ELSE 1 END, rs.created_at DESC
+           ORDER BY CASE WHEN rs.shared_with_user_id = $1 THEN 0 ELSE 1 END, rs.id DESC
            LIMIT 1
          ) rs ON true
          WHERE rf.user_id = $1
@@ -2038,7 +2038,7 @@ export class ReportsService {
         WHERE rs.template_id = rt.id
           AND (rs.shared_with_user_id = $2 OR rs.shared_with_role = $3)
           AND (rs.expires_at IS NULL OR rs.expires_at > NOW())
-        ORDER BY CASE WHEN rs.shared_with_user_id = $2 THEN 0 ELSE 1 END, rs.created_at DESC
+        ORDER BY CASE WHEN rs.shared_with_user_id = $2 THEN 0 ELSE 1 END, rs.id DESC
         LIMIT 1
       ) rs ON true
       WHERE rt.id = $1
