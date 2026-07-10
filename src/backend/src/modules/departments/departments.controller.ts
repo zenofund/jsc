@@ -33,7 +33,7 @@ export class DepartmentsController {
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Delete department (soft delete)' })
+  @ApiOperation({ summary: 'Delete department' })
   remove(@Param('id') id: string, @Request() req) {
     return this.departmentsService.remove(id, req.user?.userId);
   }

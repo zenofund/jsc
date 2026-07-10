@@ -102,13 +102,30 @@ export class DepartmentsService {
       throw new NotFoundException(`Department with ID ${id} not found`);
     }
 
-    return this.databaseService.queryOne(
-      `UPDATE departments
-       SET status = 'inactive',
-           updated_at = NOW()
-       WHERE id = $1
-       RETURNING *`,
-      [id],
-    );
+    return this.databaseService.transaction(async (client) => {
+      await client.query(
+        `UPDATE staff
+         SET department_id = NULL,
+             updated_at = NOW()
+         WHERE department_id = $1`,
+        [id],
+      );
+
+      await client.query(
+        `UPDATE users
+         SET department_id = NULL
+         WHERE department_id = $1`,
+        [id],
+      );
+
+      const deleted = await client.query(
+        `DELETE FROM departments
+         WHERE id = $1
+         RETURNING *`,
+        [id],
+      );
+
+      return deleted.rows?.[0] || null;
+    });
   }
 }
