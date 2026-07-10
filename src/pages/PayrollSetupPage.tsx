@@ -3,11 +3,12 @@ import { Breadcrumb } from '../components/Breadcrumb';
 import { useAuth } from '../contexts/AuthContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { salaryStructureAPI, allowanceAPI, deductionAPI } from '../lib/api-client';
-import { Plus, Edit, Trash2, Table, X, Save, Download, Check, AlertCircle, Upload, Loader2 } from 'lucide-react';
+import { Plus, Edit, Trash2, Table, X, Save, Download, Check, AlertCircle, Upload, Loader2, MoreVertical } from 'lucide-react';
 import { StatusBadge } from '../components/StatusBadge';
 import { showToast } from '../utils/toast';
 import { SalaryStructureUpload } from '../components/SalaryStructureUpload';
 import { PageSkeleton } from '../components/PageLoader';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../components/ui/dropdown-menu';
 
 type TabType = 'structures' | 'allowances' | 'deductions';
 
@@ -786,44 +787,54 @@ export function PayrollSetupPage() {
                           <StatusBadge status={allowance.status} />
                         </td>
                         <td className="px-6 py-4">
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => {
-                                setEditingItem(allowance);
-                                setAllowanceForm({
-                                  name: allowance.name,
-                                  code: allowance.code,
-                                  type: allowance.type,
-                                  calculation_basis: allowance.calculation_basis || 'basic',
-                                  amount: allowance.amount || 0,
-                                  percentage: allowance.percentage || 0,
-                                  is_taxable: allowance.is_taxable,
-                                  is_pensionable: allowance.is_pensionable,
-                                  appliesToAll: allowance.applies_to_all,
-                                  status: allowance.status,
-                                  excluded_grades: allowance.excluded_grades ? (typeof allowance.excluded_grades === 'string' ? JSON.parse(allowance.excluded_grades) : allowance.excluded_grades) : [],
-                                  excluded_employment_types: allowance.excluded_employment_types ? (typeof allowance.excluded_employment_types === 'string' ? JSON.parse(allowance.excluded_employment_types) : allowance.excluded_employment_types) : [],
-                                });
-                                setShowAllowanceModal(true);
-                              }}
-                              className="p-2 hover:bg-accent rounded transition-colors"
-                              title="Edit"
-                            >
-                              <Edit className="w-4 h-4 text-primary" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteAllowance(allowance.id, allowance.name)}
-                              className="p-2 hover:bg-destructive/10 rounded transition-colors"
-                              title="Delete"
-                              disabled={deletingId === allowance.id}
-                            >
-                              {deletingId === allowance.id ? (
-                                <Loader2 className="w-4 h-4 animate-spin text-destructive" />
-                              ) : (
-                                <Trash2 className="w-4 h-4 text-destructive" />
-                              )}
-                            </button>
-                          </div>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button
+                                type="button"
+                                className="p-2 hover:bg-accent rounded transition-colors"
+                                aria-label={`Open actions for ${allowance.name}`}
+                                disabled={deletingId === allowance.id}
+                              >
+                                {deletingId === allowance.id ? (
+                                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                                ) : (
+                                  <MoreVertical className="w-4 h-4 text-muted-foreground" />
+                                )}
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setEditingItem(allowance);
+                                  setAllowanceForm({
+                                    name: allowance.name,
+                                    code: allowance.code,
+                                    type: allowance.type,
+                                    calculation_basis: allowance.calculation_basis || 'basic',
+                                    amount: allowance.amount || 0,
+                                    percentage: allowance.percentage || 0,
+                                    is_taxable: allowance.is_taxable,
+                                    is_pensionable: allowance.is_pensionable,
+                                    appliesToAll: allowance.applies_to_all,
+                                    status: allowance.status,
+                                    excluded_grades: allowance.excluded_grades ? (typeof allowance.excluded_grades === 'string' ? JSON.parse(allowance.excluded_grades) : allowance.excluded_grades) : [],
+                                    excluded_employment_types: allowance.excluded_employment_types ? (typeof allowance.excluded_employment_types === 'string' ? JSON.parse(allowance.excluded_employment_types) : allowance.excluded_employment_types) : [],
+                                  });
+                                  setShowAllowanceModal(true);
+                                }}
+                              >
+                                <Edit className="w-4 h-4 mr-2" />
+                                Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => handleDeleteAllowance(allowance.id, allowance.name)}
+                                className="text-destructive focus:text-destructive"
+                              >
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </td>
                       </tr>
                     ))
@@ -921,43 +932,53 @@ export function PayrollSetupPage() {
                           <StatusBadge status={deduction.status} />
                         </td>
                         <td className="px-6 py-4">
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => {
-                                setEditingItem(deduction);
-                                setDeductionForm({
-                                  name: deduction.name,
-                                  code: deduction.code,
-                                  type: deduction.type,
-                                  calculation_basis: deduction.calculation_basis || 'basic',
-                                  amount: deduction.amount || 0,
-                                  percentage: deduction.percentage || 0,
-                                  is_statutory: deduction.is_statutory,
-                                  appliesToAll: deduction.applies_to_all ?? true,
-                                  status: deduction.status,
-                                  excluded_grades: deduction.excluded_grades ? (typeof deduction.excluded_grades === 'string' ? JSON.parse(deduction.excluded_grades) : deduction.excluded_grades) : [],
-                                  excluded_employment_types: deduction.excluded_employment_types ? (typeof deduction.excluded_employment_types === 'string' ? JSON.parse(deduction.excluded_employment_types) : deduction.excluded_employment_types) : [],
-                                });
-                                setShowDeductionModal(true);
-                              }}
-                              className="p-2 hover:bg-accent rounded transition-colors"
-                              title="Edit"
-                            >
-                              <Edit className="w-4 h-4 text-primary" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteDeduction(deduction.id, deduction.name)}
-                              className="p-2 hover:bg-destructive/10 rounded transition-colors"
-                              title="Delete"
-                              disabled={deletingId === deduction.id}
-                            >
-                              {deletingId === deduction.id ? (
-                                <Loader2 className="w-4 h-4 animate-spin text-destructive" />
-                              ) : (
-                                <Trash2 className="w-4 h-4 text-destructive" />
-                              )}
-                            </button>
-                          </div>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button
+                                type="button"
+                                className="p-2 hover:bg-accent rounded transition-colors"
+                                aria-label={`Open actions for ${deduction.name}`}
+                                disabled={deletingId === deduction.id}
+                              >
+                                {deletingId === deduction.id ? (
+                                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                                ) : (
+                                  <MoreVertical className="w-4 h-4 text-muted-foreground" />
+                                )}
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setEditingItem(deduction);
+                                  setDeductionForm({
+                                    name: deduction.name,
+                                    code: deduction.code,
+                                    type: deduction.type,
+                                    calculation_basis: deduction.calculation_basis || 'basic',
+                                    amount: deduction.amount || 0,
+                                    percentage: deduction.percentage || 0,
+                                    is_statutory: deduction.is_statutory,
+                                    appliesToAll: deduction.applies_to_all ?? true,
+                                    status: deduction.status,
+                                    excluded_grades: deduction.excluded_grades ? (typeof deduction.excluded_grades === 'string' ? JSON.parse(deduction.excluded_grades) : deduction.excluded_grades) : [],
+                                    excluded_employment_types: deduction.excluded_employment_types ? (typeof deduction.excluded_employment_types === 'string' ? JSON.parse(deduction.excluded_employment_types) : deduction.excluded_employment_types) : [],
+                                  });
+                                  setShowDeductionModal(true);
+                                }}
+                              >
+                                <Edit className="w-4 h-4 mr-2" />
+                                Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => handleDeleteDeduction(deduction.id, deduction.name)}
+                                className="text-destructive focus:text-destructive"
+                              >
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </td>
                       </tr>
                     ))
@@ -1170,20 +1191,22 @@ export function PayrollSetupPage() {
 
               {allowanceForm.type === 'percentage' && (
                 <div>
-                  <label className="block text-sm mb-1 text-card-foreground">Calculate Percentage On</label>
-                  <select
-                    value={allowanceForm.calculation_basis}
-                    onChange={(e) =>
-                      setAllowanceForm({
-                        ...allowanceForm,
-                        calculation_basis: e.target.value as 'basic' | 'gross',
-                      })
-                    }
-                    className="w-full px-3 py-2 rounded border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                  >
-                    <option value="basic">Basic Salary</option>
-                    <option value="gross">Gross Salary</option>
-                  </select>
+                  <label className="block text-sm mb-1 text-card-foreground">Calculation Basis</label>
+                  <label className="flex items-center gap-2 rounded border border-border bg-input-background px-3 py-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={allowanceForm.calculation_basis === 'gross'}
+                      onChange={(e) =>
+                        setAllowanceForm({
+                          ...allowanceForm,
+                          calculation_basis: e.target.checked ? 'gross' : 'basic',
+                        })
+                      }
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm text-card-foreground">Calculate on Gross Salary</span>
+                  </label>
+                  <p className="mt-1 text-xs text-muted-foreground">Unchecked uses Basic Salary.</p>
                 </div>
               )}
 
@@ -1424,20 +1447,22 @@ export function PayrollSetupPage() {
 
               {deductionForm.type === 'percentage' && (
                 <div>
-                  <label className="block text-sm mb-1 text-card-foreground">Calculate Percentage On</label>
-                  <select
-                    value={deductionForm.calculation_basis}
-                    onChange={(e) =>
-                      setDeductionForm({
-                        ...deductionForm,
-                        calculation_basis: e.target.value as 'basic' | 'gross',
-                      })
-                    }
-                    className="w-full px-3 py-2 rounded border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                  >
-                    <option value="basic">Basic Salary</option>
-                    <option value="gross">Gross Salary</option>
-                  </select>
+                  <label className="block text-sm mb-1 text-card-foreground">Calculation Basis</label>
+                  <label className="flex items-center gap-2 rounded border border-border bg-input-background px-3 py-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={deductionForm.calculation_basis === 'gross'}
+                      onChange={(e) =>
+                        setDeductionForm({
+                          ...deductionForm,
+                          calculation_basis: e.target.checked ? 'gross' : 'basic',
+                        })
+                      }
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm text-card-foreground">Calculate on Gross Salary</span>
+                  </label>
+                  <p className="mt-1 text-xs text-muted-foreground">Unchecked uses Basic Salary.</p>
                 </div>
               )}
 

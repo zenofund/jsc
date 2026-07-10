@@ -4,12 +4,13 @@ import { useToast } from '../components/Toast';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { staffAPI, staffAllowanceAPI, staffDeductionAPI, allowanceAPI, deductionAPI } from '../lib/api-client';
 import { Staff, StaffAllowance, StaffDeduction, Allowance, Deduction } from '../types/entities';
-import { Plus, Edit, Trash2, DollarSign, User, Calendar, X, Loader2 } from 'lucide-react';
+import { Plus, Edit, Trash2, DollarSign, User, Calendar, X, Loader2, MoreVertical } from 'lucide-react';
 import { StatusBadge } from '../components/StatusBadge';
 import { Modal } from '../components/Modal';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { PageSkeleton } from '../components/PageLoader';
 import { StaffSearch } from '../components/ui/StaffSearch';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../components/ui/dropdown-menu';
 
 type TabType = 'allowances' | 'deductions';
 type EntryMode = 'configured' | 'custom';
@@ -303,23 +304,33 @@ export function StaffAllowancesPage() {
 
         {localFormData.type === 'percentage' && (
           <div>
-            <label className="block text-sm font-medium text-foreground mb-1">Calculate Percentage On</label>
-            <select
-              value={localFormData.calculation_basis}
-              disabled={localFormData.entry_mode === 'configured'}
-              onChange={(e) =>
-                setLocalFormData({
-                  ...localFormData,
-                  calculation_basis: e.target.value as 'basic' | 'gross',
-                })
-              }
-              className={`w-full p-2 border border-border rounded-md text-foreground ${
-                localFormData.entry_mode === 'configured' ? 'bg-muted' : 'bg-background'
+            <label className="block text-sm font-medium text-foreground mb-1">Calculation Basis</label>
+            <label
+              className={`flex items-center gap-2 rounded-md border border-border px-3 py-2 ${
+                localFormData.entry_mode === 'configured'
+                  ? 'cursor-not-allowed bg-muted text-muted-foreground'
+                  : 'cursor-pointer bg-background text-foreground'
               }`}
             >
-              <option value="basic">Basic Salary</option>
-              <option value="gross">Gross Salary</option>
-            </select>
+              <input
+                type="checkbox"
+                checked={localFormData.calculation_basis === 'gross'}
+                disabled={localFormData.entry_mode === 'configured'}
+                onChange={(e) =>
+                  setLocalFormData({
+                    ...localFormData,
+                    calculation_basis: e.target.checked ? 'gross' : 'basic',
+                  })
+                }
+                className="size-4"
+              />
+              <span className="text-sm">Calculate on Gross Salary</span>
+            </label>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {localFormData.entry_mode === 'configured'
+                ? 'Inherited from the configured allowance.'
+                : 'Unchecked uses Basic Salary.'}
+            </p>
           </div>
         )}
 
@@ -610,23 +621,33 @@ export function StaffAllowancesPage() {
 
         {localFormData.type === 'percentage' && (
           <div>
-            <label className="block text-sm font-medium text-foreground mb-1">Calculate Percentage On</label>
-            <select
-              value={localFormData.calculation_basis}
-              disabled={localFormData.entry_mode === 'configured'}
-              onChange={(e) =>
-                setLocalFormData({
-                  ...localFormData,
-                  calculation_basis: e.target.value as 'basic' | 'gross',
-                })
-              }
-              className={`w-full p-2 border border-border rounded-md text-foreground ${
-                localFormData.entry_mode === 'configured' ? 'bg-muted' : 'bg-background'
+            <label className="block text-sm font-medium text-foreground mb-1">Calculation Basis</label>
+            <label
+              className={`flex items-center gap-2 rounded-md border border-border px-3 py-2 ${
+                localFormData.entry_mode === 'configured'
+                  ? 'cursor-not-allowed bg-muted text-muted-foreground'
+                  : 'cursor-pointer bg-background text-foreground'
               }`}
             >
-              <option value="basic">Basic Salary</option>
-              <option value="gross">Gross Salary</option>
-            </select>
+              <input
+                type="checkbox"
+                checked={localFormData.calculation_basis === 'gross'}
+                disabled={localFormData.entry_mode === 'configured'}
+                onChange={(e) =>
+                  setLocalFormData({
+                    ...localFormData,
+                    calculation_basis: e.target.checked ? 'gross' : 'basic',
+                  })
+                }
+                className="size-4"
+              />
+              <span className="text-sm">Calculate on Gross Salary</span>
+            </label>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {localFormData.entry_mode === 'configured'
+                ? 'Inherited from the configured deduction.'
+                : 'Unchecked uses Basic Salary.'}
+            </p>
           </div>
         )}
 
@@ -959,26 +980,35 @@ export function StaffAllowancesPage() {
                           </div>
                           <p className="text-sm text-muted-foreground">Code: {allowance.allowance_code}</p>
                         </div>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleEditAllowance(allowance)}
-                            className="p-2 hover:bg-accent rounded"
-                            disabled={deletingId === allowance.id}
-                          >
-                            <Edit className="size-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete('allowance', allowance.id, allowance.allowance_name)}
-                            className="p-2 hover:bg-destructive/10 rounded text-destructive"
-                            disabled={deletingId === allowance.id}
-                          >
-                            {deletingId === allowance.id ? (
-                              <Loader2 className="size-4 animate-spin" />
-                            ) : (
-                              <Trash2 className="size-4" />
-                            )}
-                          </button>
-                        </div>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              type="button"
+                              className="p-2 hover:bg-accent rounded"
+                              disabled={deletingId === allowance.id}
+                              aria-label={`Open actions for ${allowance.allowance_name}`}
+                            >
+                              {deletingId === allowance.id ? (
+                                <Loader2 className="size-4 animate-spin" />
+                              ) : (
+                                <MoreVertical className="size-4" />
+                              )}
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => handleEditAllowance(allowance)}>
+                              <Edit className="size-4 mr-2" />
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleDelete('allowance', allowance.id, allowance.allowance_name)}
+                              className="text-destructive focus:text-destructive"
+                            >
+                              <Trash2 className="size-4 mr-2" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                       
                       <div className="grid grid-cols-4 gap-4 text-sm">
@@ -1055,26 +1085,35 @@ export function StaffAllowancesPage() {
                           </div>
                           <p className="text-sm text-muted-foreground">Code: {deduction.deduction_code}</p>
                         </div>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleEditDeduction(deduction)}
-                            className="p-2 hover:bg-accent rounded"
-                            disabled={deletingId === deduction.id}
-                          >
-                            <Edit className="size-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete('deduction', deduction.id, deduction.deduction_name)}
-                            className="p-2 hover:bg-destructive/10 rounded text-destructive"
-                            disabled={deletingId === deduction.id}
-                          >
-                            {deletingId === deduction.id ? (
-                              <Loader2 className="size-4 animate-spin" />
-                            ) : (
-                              <Trash2 className="size-4" />
-                            )}
-                          </button>
-                        </div>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              type="button"
+                              className="p-2 hover:bg-accent rounded"
+                              disabled={deletingId === deduction.id}
+                              aria-label={`Open actions for ${deduction.deduction_name}`}
+                            >
+                              {deletingId === deduction.id ? (
+                                <Loader2 className="size-4 animate-spin" />
+                              ) : (
+                                <MoreVertical className="size-4" />
+                              )}
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => handleEditDeduction(deduction)}>
+                              <Edit className="size-4 mr-2" />
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleDelete('deduction', deduction.id, deduction.deduction_name)}
+                              className="text-destructive focus:text-destructive"
+                            >
+                              <Trash2 className="size-4 mr-2" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                       
                       <div className="grid grid-cols-4 gap-4 text-sm">
