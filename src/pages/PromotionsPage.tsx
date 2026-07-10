@@ -7,11 +7,12 @@ import { Portal } from '../components/Portal';
 import { useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
 import { useConfirm } from '../contexts/ConfirmContext';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../components/ui/dropdown-menu';
 import { promotionAPI, staffAPI, settingsAPI } from '../lib/api-client';
 import { formatStaffLabelWithId, formatStaffName } from '../lib/name-utils';
 import { Promotion, Staff } from '../types/entities';
 import { PageSkeleton } from '../components/PageLoader';
-import { TrendingUp, Plus, CheckCircle, XCircle, Eye, AlertCircle, Calendar, Loader2 } from 'lucide-react';
+import { TrendingUp, Plus, CheckCircle, XCircle, Eye, AlertCircle, Calendar, Loader2, MoreVertical } from 'lucide-react';
 import { formatCurrency } from '../utils/format';
 
 export function PromotionsPage() {
@@ -445,56 +446,61 @@ export function PromotionsPage() {
     },
     {
       header: 'Actions',
-      accessor: (row: Promotion) => (
-        <div className="flex items-center gap-2">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setSelectedPromotion(row);
-              setApprovalComment('');
-              setShowDetailsModal(true);
-            }}
-            className="p-1 hover:bg-accent rounded"
-            title="View Details"
-          >
-            <Eye className="w-4 h-4 text-blue-600" />
-          </button>
-          {row.status === 'pending' && (String(user?.role || '').trim().toLowerCase() === 'admin' || ['cpo', 'approver'].includes(String(user?.role || '').trim().toLowerCase()) || user?.role === 'hr_manager') && (
-            <>
+      accessor: (row: Promotion) => {
+        const canApproveOrReject =
+          row.status === 'pending' &&
+          (String(user?.role || '').trim().toLowerCase() === 'admin' ||
+            ['cpo', 'approver'].includes(String(user?.role || '').trim().toLowerCase()) ||
+            user?.role === 'hr_manager');
+        const isProcessing = processingPromotionId === row.id;
+
+        return (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
               <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleApprovePromotion(row.id);
-                }}
-                disabled={processingPromotionId === row.id}
-                className="p-1 hover:bg-accent rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Approve"
+                type="button"
+                onClick={(e) => e.stopPropagation()}
+                disabled={isProcessing}
+                className="p-2 hover:bg-accent rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                aria-label={`Open actions for promotion ${row.id}`}
               >
-                {processingPromotionId === row.id ? (
-                  <Loader2 className="w-4 h-4 animate-spin text-green-600" />
+                {isProcessing ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
                 ) : (
-                  <CheckCircle className="w-4 h-4 text-green-600" />
+                  <MoreVertical className="w-4 h-4 text-muted-foreground" />
                 )}
               </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleRejectPromotion(row.id);
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={() => {
+                  setSelectedPromotion(row);
+                  setApprovalComment('');
+                  setShowDetailsModal(true);
                 }}
-                disabled={processingPromotionId === row.id}
-                className="p-1 hover:bg-accent rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Reject"
               >
-                {processingPromotionId === row.id ? (
-                  <Loader2 className="w-4 h-4 animate-spin text-red-600" />
-                ) : (
-                  <XCircle className="w-4 h-4 text-red-600" />
-                )}
-              </button>
-            </>
-          )}
-        </div>
-      ),
+                <Eye className="w-4 h-4 mr-2 text-blue-600" />
+                View Details
+              </DropdownMenuItem>
+              {canApproveOrReject && (
+                <DropdownMenuItem onClick={() => handleApprovePromotion(row.id)}>
+                  <CheckCircle className="w-4 h-4 mr-2 text-green-600" />
+                  Approve
+                </DropdownMenuItem>
+              )}
+              {canApproveOrReject && (
+                <DropdownMenuItem
+                  onClick={() => handleRejectPromotion(row.id)}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <XCircle className="w-4 h-4 mr-2 text-red-600" />
+                  Reject
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        );
+      },
     },
   ];
 
