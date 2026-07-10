@@ -34,7 +34,14 @@ export class DeductionsService {
       'type',
       'entry_mode',
       'entryMode',
+      'calculation_basis',
+      'calculationBasis',
     ].some((key) => this.hasOwn(dto, key));
+  }
+
+  private normalizeCalculationBasis(value: any): 'basic' | 'gross' {
+    const normalized = this.cleanString(value)?.toLowerCase();
+    return normalized === 'gross' ? 'gross' : 'basic';
   }
 
   private getEntryMode(dto: any): 'configured' | 'custom' | undefined {
@@ -97,6 +104,7 @@ export class DeductionsService {
         deductionCode: configuredDeduction.code,
         deductionName: configuredDeduction.name,
         type: configuredDeduction.type,
+        calculationBasis: this.normalizeCalculationBasis(configuredDeduction.calculation_basis),
       };
     }
 
@@ -113,6 +121,7 @@ export class DeductionsService {
       deductionCode: deductionCode || this.deriveCustomCode(deductionName, 'DEDUCT'),
       deductionName,
       type: deductionType,
+      calculationBasis: this.normalizeCalculationBasis(dto.calculation_basis ?? dto.calculationBasis),
     };
   }
 
@@ -130,13 +139,14 @@ export class DeductionsService {
 
     const deduction = await this.databaseService.queryOne(
       `INSERT INTO deductions (
-        code, name, type, amount, percentage, applies_to_all, is_statutory, status, created_by, excluded_grades, excluded_employment_types
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', $8, $9, $10)
+        code, name, type, calculation_basis, amount, percentage, applies_to_all, is_statutory, status, created_by, excluded_grades, excluded_employment_types
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9, $10, $11)
       RETURNING *`,
       [
         dto.code,
         dto.name,
         dto.type,
+        this.normalizeCalculationBasis(dto.calculation_basis ?? dto.calculationBasis),
         dto.amount || null,
         dto.percentage || null,
         dto.appliesToAll ?? dto.applies_to_all ?? true,
@@ -208,20 +218,24 @@ export class DeductionsService {
        SET code = COALESCE($1, code),
            name = COALESCE($2, name),
            type = COALESCE($3, type),
-           amount = COALESCE($4, amount),
-           percentage = COALESCE($5, percentage),
-           status = COALESCE($6, status),
-           is_statutory = COALESCE($7, is_statutory),
-           applies_to_all = COALESCE($9, applies_to_all),
-           excluded_grades = COALESCE($10, excluded_grades),
-           excluded_employment_types = COALESCE($11, excluded_employment_types),
+           calculation_basis = COALESCE($4, calculation_basis),
+           amount = COALESCE($5, amount),
+           percentage = COALESCE($6, percentage),
+           status = COALESCE($7, status),
+           is_statutory = COALESCE($8, is_statutory),
+           applies_to_all = COALESCE($10, applies_to_all),
+           excluded_grades = COALESCE($11, excluded_grades),
+           excluded_employment_types = COALESCE($12, excluded_employment_types),
            updated_at = NOW()
-       WHERE id = $8
+       WHERE id = $9
        RETURNING *`,
       [
         dto.code, 
         dto.name, 
         dto.type, 
+        this.hasOwn(dto, 'calculation_basis') || this.hasOwn(dto, 'calculationBasis')
+          ? this.normalizeCalculationBasis(dto.calculation_basis ?? dto.calculationBasis)
+          : null,
         dto.amount, 
         dto.percentage, 
         dto.status, 
@@ -267,9 +281,9 @@ export class DeductionsService {
     const staffDeduction = await this.databaseService.queryOne(
       `INSERT INTO staff_deductions (
         staff_id, deduction_id, custom_deduction_code, custom_deduction_name,
-        custom_type, amount, percentage,
+        custom_type, custom_calculation_basis, amount, percentage,
         effective_from, effective_to, frequency, status, created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       RETURNING *`,
       [
         dto.staff_id || dto.staffId,
@@ -277,6 +291,7 @@ export class DeductionsService {
         definition.entryMode === 'custom' ? definition.deductionCode : null,
         definition.entryMode === 'custom' ? definition.deductionName : null,
         definition.entryMode === 'custom' ? definition.type : null,
+        definition.entryMode === 'custom' ? definition.calculationBasis : null,
         definition.type === 'fixed' ? (dto.amount ?? null) : null,
         definition.type === 'percentage' ? (dto.percentage ?? null) : null,
         this.toMonthStart(dto.effective_from || dto.startMonth),
@@ -316,6 +331,7 @@ export class DeductionsService {
               COALESCE(sd.custom_deduction_name, d.name) as deduction_name, 
               COALESCE(sd.custom_deduction_code, d.code) as deduction_code, 
               COALESCE(sd.custom_type, d.type) as type,
+              COALESCE(sd.custom_calculation_basis, d.calculation_basis, 'basic') as calculation_basis,
               CASE WHEN sd.deduction_id IS NULL THEN 'custom' ELSE 'configured' END as entry_mode
        FROM staff_deductions sd
        LEFT JOIN deductions d ON sd.deduction_id = d.id
@@ -350,6 +366,7 @@ export class DeductionsService {
               COALESCE(sd.custom_deduction_name, d.name) as deduction_name, 
               COALESCE(sd.custom_deduction_code, d.code) as deduction_code,
               COALESCE(sd.custom_type, d.type) as type,
+              COALESCE(sd.custom_calculation_basis, d.calculation_basis, 'basic') as calculation_basis,
               CASE WHEN sd.deduction_id IS NULL THEN 'custom' ELSE 'configured' END as entry_mode
       FROM staff_deductions sd
       JOIN staff s ON sd.staff_id = s.id
@@ -386,6 +403,7 @@ export class DeductionsService {
           deductionCode: existing.custom_deduction_code || null,
           deductionName: existing.custom_deduction_name || null,
           type: existing.custom_type || null,
+          calculationBasis: existing.custom_calculation_basis || 'basic',
         };
 
     const effectiveFrom = this.toMonthStart(dto.effective_from ?? dto.startMonth);
@@ -397,20 +415,22 @@ export class DeductionsService {
            custom_deduction_code = $2,
            custom_deduction_name = $3,
            custom_type = $4,
-           amount = CASE WHEN $11::boolean THEN $5 ELSE COALESCE($5, amount) END,
-           percentage = CASE WHEN $11::boolean THEN $6 ELSE COALESCE($6, percentage) END,
-           effective_from = COALESCE($7, effective_from),
-           effective_to = CASE WHEN $10::date IS NULL AND $13::boolean THEN NULL ELSE COALESCE($10, effective_to) END,
-           frequency = COALESCE($8, frequency),
-           status = COALESCE($9, status),
+           custom_calculation_basis = $5,
+           amount = CASE WHEN $12::boolean THEN $6 ELSE COALESCE($6, amount) END,
+           percentage = CASE WHEN $12::boolean THEN $7 ELSE COALESCE($7, percentage) END,
+           effective_from = COALESCE($8, effective_from),
+           effective_to = CASE WHEN $11::date IS NULL AND $14::boolean THEN NULL ELSE COALESCE($11, effective_to) END,
+           frequency = COALESCE($9, frequency),
+           status = COALESCE($10, status),
            updated_at = NOW()
-       WHERE id = $12
+       WHERE id = $13
        RETURNING *`,
       [
         definition.deductionId,
         definition.entryMode === 'custom' ? definition.deductionCode : null,
         definition.entryMode === 'custom' ? definition.deductionName : null,
         definition.entryMode === 'custom' ? definition.type : null,
+        definition.entryMode === 'custom' ? definition.calculationBasis : null,
         hasDefinitionInput
           ? (definition.type === 'fixed' ? (dto.amount ?? null) : null)
           : dto.amount,

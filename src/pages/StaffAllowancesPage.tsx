@@ -112,6 +112,7 @@ export function StaffAllowancesPage() {
       allowance_code: initialData?.allowance_code ?? '',
       allowance_name: initialData?.allowance_name ?? '',
       type: initialData?.type ?? 'fixed',
+      calculation_basis: initialData?.calculation_basis ?? 'basic',
       amount: initialData?.amount ?? 0,
       percentage: initialData?.percentage ?? 0,
       frequency: initialData?.frequency ?? 'recurring',
@@ -134,6 +135,7 @@ export function StaffAllowancesPage() {
           allowance_code: '',
           allowance_name: '',
           type: 'fixed',
+          calculation_basis: 'basic',
           amount: 0,
           percentage: 0,
           frequency: 'recurring',
@@ -153,6 +155,7 @@ export function StaffAllowancesPage() {
         allowance_code: initialData.allowance_code ?? '',
         allowance_name: initialData.allowance_name ?? '',
         type: initialData.type ?? 'fixed',
+        calculation_basis: initialData.calculation_basis ?? 'basic',
         amount: initialData.amount ?? 0,
         percentage: initialData.percentage ?? 0,
         frequency: initialData.frequency ?? 'recurring',
@@ -222,6 +225,7 @@ export function StaffAllowancesPage() {
                   allowance_code: selected.code,
                   allowance_name: selected.name,
                   type: selected.type,
+                  calculation_basis: selected.calculation_basis ?? 'basic',
                   is_taxable: selected.is_taxable,
                   is_pensionable: selected.is_pensionable,
                   amount: selected.type === 'fixed' ? (selected.amount ?? 0) : localFormData.amount,
@@ -275,7 +279,7 @@ export function StaffAllowancesPage() {
               }`}
             >
               <option value="fixed">Fixed Amount</option>
-              <option value="percentage">Percentage of Basic</option>
+              <option value="percentage">Percentage</option>
             </select>
           </div>
 
@@ -296,6 +300,28 @@ export function StaffAllowancesPage() {
             />
           </div>
         </div>
+
+        {localFormData.type === 'percentage' && (
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">Calculate Percentage On</label>
+            <select
+              value={localFormData.calculation_basis}
+              disabled={localFormData.entry_mode === 'configured'}
+              onChange={(e) =>
+                setLocalFormData({
+                  ...localFormData,
+                  calculation_basis: e.target.value as 'basic' | 'gross',
+                })
+              }
+              className={`w-full p-2 border border-border rounded-md text-foreground ${
+                localFormData.entry_mode === 'configured' ? 'bg-muted' : 'bg-background'
+              }`}
+            >
+              <option value="basic">Basic Salary</option>
+              <option value="gross">Gross Salary</option>
+            </select>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -403,6 +429,7 @@ export function StaffAllowancesPage() {
       deduction_code: initialData?.deduction_code ?? '',
       deduction_name: initialData?.deduction_name ?? '',
       type: initialData?.type ?? 'fixed',
+      calculation_basis: initialData?.calculation_basis ?? 'basic',
       amount: initialData?.amount ?? 0,
       percentage: initialData?.percentage ?? 0,
       frequency: initialData?.frequency ?? 'recurring',
@@ -421,6 +448,7 @@ export function StaffAllowancesPage() {
           deduction_code: '',
           deduction_name: '',
           type: 'fixed',
+          calculation_basis: 'basic',
           amount: 0,
           percentage: 0,
           frequency: 'recurring',
@@ -438,6 +466,7 @@ export function StaffAllowancesPage() {
         deduction_code: initialData.deduction_code ?? '',
         deduction_name: initialData.deduction_name ?? '',
         type: initialData.type ?? 'fixed',
+        calculation_basis: initialData.calculation_basis ?? 'basic',
         amount: initialData.amount ?? 0,
         percentage: initialData.percentage ?? 0,
         frequency: initialData.frequency ?? 'recurring',
@@ -505,6 +534,7 @@ export function StaffAllowancesPage() {
                   deduction_code: selected.code,
                   deduction_name: selected.name,
                   type: selected.type,
+                  calculation_basis: selected.calculation_basis ?? 'basic',
                   amount: selected.type === 'fixed' ? (selected.amount ?? 0) : localFormData.amount,
                   percentage: selected.type === 'percentage' ? (selected.percentage ?? 0) : localFormData.percentage,
                 });
@@ -556,7 +586,7 @@ export function StaffAllowancesPage() {
               }`}
             >
               <option value="fixed">Fixed Amount</option>
-              <option value="percentage">Percentage of Basic</option>
+              <option value="percentage">Percentage</option>
             </select>
           </div>
 
@@ -577,6 +607,28 @@ export function StaffAllowancesPage() {
             />
           </div>
         </div>
+
+        {localFormData.type === 'percentage' && (
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">Calculate Percentage On</label>
+            <select
+              value={localFormData.calculation_basis}
+              disabled={localFormData.entry_mode === 'configured'}
+              onChange={(e) =>
+                setLocalFormData({
+                  ...localFormData,
+                  calculation_basis: e.target.value as 'basic' | 'gross',
+                })
+              }
+              className={`w-full p-2 border border-border rounded-md text-foreground ${
+                localFormData.entry_mode === 'configured' ? 'bg-muted' : 'bg-background'
+              }`}
+            >
+              <option value="basic">Basic Salary</option>
+              <option value="gross">Gross Salary</option>
+            </select>
+          </div>
+        )}
 
         <div>
           <label className="block text-sm font-medium text-foreground mb-1">Frequency</label>
@@ -675,6 +727,7 @@ export function StaffAllowancesPage() {
         allowance_code: formData.allowance_code,
         allowance_name: formData.allowance_name,
         type: formData.type,
+        calculation_basis: formData.calculation_basis,
         amount: formData.type === 'fixed' ? Number(formData.amount || 0) : undefined,
         percentage: formData.type === 'percentage' ? Number(formData.percentage || 0) : undefined,
         frequency: formData.frequency,
@@ -738,6 +791,7 @@ export function StaffAllowancesPage() {
         deduction_code: formData.deduction_code,
         deduction_name: formData.deduction_name,
         type: formData.type,
+        calculation_basis: formData.calculation_basis,
         amount: formData.type === 'fixed' ? Number(formData.amount || 0) : undefined,
         percentage: formData.type === 'percentage' ? Number(formData.percentage || 0) : undefined,
         frequency: formData.frequency,
@@ -932,7 +986,7 @@ export function StaffAllowancesPage() {
                           <p className="text-muted-foreground mb-1">Amount</p>
                           <p className="font-medium text-foreground">
                             {allowance.type === 'percentage' 
-                              ? `${allowance.percentage ?? 0}% of Basic` 
+                              ? `${allowance.percentage ?? 0}% of ${allowance.calculation_basis === 'gross' ? 'Gross' : 'Basic'}` 
                               : formatCurrency(allowance.amount ?? 0)}
                           </p>
                         </div>
@@ -1028,7 +1082,7 @@ export function StaffAllowancesPage() {
                           <p className="text-muted-foreground mb-1">Amount</p>
                           <p className="font-medium text-foreground">
                             {deduction.type === 'percentage' 
-                              ? `${deduction.percentage ?? 0}% of Gross` 
+                              ? `${deduction.percentage ?? 0}% of ${deduction.calculation_basis === 'gross' ? 'Gross' : 'Basic'}` 
                               : formatCurrency(deduction.amount ?? 0)}
                           </p>
                         </div>

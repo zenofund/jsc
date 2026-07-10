@@ -54,6 +54,7 @@ describe('AllowancesService', () => {
           'SPEC_DUTY',
           'Special Duty Allowance',
           'fixed',
+          'basic',
           false,
           true,
           25000,
@@ -66,6 +67,36 @@ describe('AllowancesService', () => {
         ],
       );
       expect(result).toEqual({ id: 'sa-1' });
+    });
+
+    it('stores gross calculation basis for custom percentage staff allowances', async () => {
+      (databaseService.queryOne as jest.Mock).mockResolvedValue({ id: 'sa-2' });
+
+      await service.createStaffAllowance(
+        {
+          staff_id: 'staff-2',
+          entry_mode: 'custom',
+          allowance_name: 'Executive Allowance',
+          type: 'percentage',
+          calculation_basis: 'gross',
+          percentage: 12.5,
+          effective_from: '2026-07',
+        },
+        'user-2',
+        'admin',
+      );
+
+      expect(databaseService.queryOne).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO staff_allowances'),
+        expect.arrayContaining([
+          'staff-2',
+          null,
+          expect.any(String),
+          'Executive Allowance',
+          'percentage',
+          'gross',
+        ]),
+      );
     });
   });
 });

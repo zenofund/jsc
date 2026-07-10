@@ -78,6 +78,7 @@ export function PayrollSetupPage() {
     name: '',
     code: '',
     type: 'fixed' as 'fixed' | 'percentage',
+    calculation_basis: 'basic' as 'basic' | 'gross',
     amount: 0,
     percentage: 0,
     is_taxable: true,
@@ -92,6 +93,7 @@ export function PayrollSetupPage() {
     name: '',
     code: '',
     type: 'fixed' as 'fixed' | 'percentage',
+    calculation_basis: 'basic' as 'basic' | 'gross',
     amount: 0,
     percentage: 0,
     is_statutory: false,
@@ -329,6 +331,7 @@ export function PayrollSetupPage() {
       name: '',
       code: '',
       type: 'fixed',
+      calculation_basis: 'basic',
       amount: 0,
       percentage: 0,
       is_taxable: true,
@@ -395,6 +398,7 @@ export function PayrollSetupPage() {
       name: '',
       code: '',
       type: 'fixed',
+      calculation_basis: 'basic',
       amount: 0,
       percentage: 0,
       is_statutory: false,
@@ -743,7 +747,7 @@ export function PayrollSetupPage() {
                         <td className="px-6 py-4 text-sm text-card-foreground">
                           {allowance.type === 'fixed'
                             ? `₦${allowance.amount?.toLocaleString() || 0}`
-                            : `${allowance.percentage || 0}%`}
+                            : `${allowance.percentage || 0}% of ${allowance.calculation_basis === 'gross' ? 'Gross' : 'Basic'}`}
                         </td>
                         <td className="px-6 py-4 text-sm text-card-foreground">
                           {allowance.is_taxable ? (
@@ -790,6 +794,7 @@ export function PayrollSetupPage() {
                                   name: allowance.name,
                                   code: allowance.code,
                                   type: allowance.type,
+                                  calculation_basis: allowance.calculation_basis || 'basic',
                                   amount: allowance.amount || 0,
                                   percentage: allowance.percentage || 0,
                                   is_taxable: allowance.is_taxable,
@@ -884,7 +889,7 @@ export function PayrollSetupPage() {
                         <td className="px-6 py-4 text-sm text-card-foreground">
                           {deduction.type === 'fixed'
                             ? `₦${deduction.amount?.toLocaleString() || 0}`
-                            : `${deduction.percentage || 0}%`}
+                            : `${deduction.percentage || 0}% of ${deduction.calculation_basis === 'gross' ? 'Gross' : 'Basic'}`}
                         </td>
                         <td className="px-6 py-4 text-sm text-card-foreground">
                           {deduction.is_statutory ? (
@@ -924,6 +929,7 @@ export function PayrollSetupPage() {
                                   name: deduction.name,
                                   code: deduction.code,
                                   type: deduction.type,
+                                  calculation_basis: deduction.calculation_basis || 'basic',
                                   amount: deduction.amount || 0,
                                   percentage: deduction.percentage || 0,
                                   is_statutory: deduction.is_statutory,
@@ -1162,6 +1168,25 @@ export function PayrollSetupPage() {
                 </div>
               )}
 
+              {allowanceForm.type === 'percentage' && (
+                <div>
+                  <label className="block text-sm mb-1 text-card-foreground">Calculate Percentage On</label>
+                  <select
+                    value={allowanceForm.calculation_basis}
+                    onChange={(e) =>
+                      setAllowanceForm({
+                        ...allowanceForm,
+                        calculation_basis: e.target.value as 'basic' | 'gross',
+                      })
+                    }
+                    className="w-full px-3 py-2 rounded border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  >
+                    <option value="basic">Basic Salary</option>
+                    <option value="gross">Gross Salary</option>
+                  </select>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="flex items-center gap-2">
@@ -1394,6 +1419,25 @@ export function PayrollSetupPage() {
                     }
                     className="w-full px-3 py-2 rounded border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                   />
+                </div>
+              )}
+
+              {deductionForm.type === 'percentage' && (
+                <div>
+                  <label className="block text-sm mb-1 text-card-foreground">Calculate Percentage On</label>
+                  <select
+                    value={deductionForm.calculation_basis}
+                    onChange={(e) =>
+                      setDeductionForm({
+                        ...deductionForm,
+                        calculation_basis: e.target.value as 'basic' | 'gross',
+                      })
+                    }
+                    className="w-full px-3 py-2 rounded border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  >
+                    <option value="basic">Basic Salary</option>
+                    <option value="gross">Gross Salary</option>
+                  </select>
                 </div>
               )}
 

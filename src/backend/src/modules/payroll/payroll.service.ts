@@ -244,6 +244,23 @@ export class PayrollService {
     return false;
   }
 
+  private normalizeCalculationBasis(value: any): 'basic' | 'gross' {
+    return String(value || '').toLowerCase() === 'gross' ? 'gross' : 'basic';
+  }
+
+  private calculatePercentageAmount(
+    percentageValue: any,
+    basicSalary: number,
+    grossSalary: number,
+    calculationBasis: any,
+    round2: (value: number) => number,
+  ): number {
+    const percentage = parseFloat(String(percentageValue ?? '0')) || 0;
+    const basis = this.normalizeCalculationBasis(calculationBasis);
+    const baseAmount = basis === 'gross' ? grossSalary : basicSalary;
+    return round2((baseAmount * percentage) / 100);
+  }
+
   /**
    * Get all payslips for a staff member
    */
@@ -379,6 +396,7 @@ export class PayrollService {
               COALESCE(sa.custom_allowance_name, a.name) as allowance_name,
               COALESCE(sa.custom_allowance_code, a.code) as allowance_code,
               COALESCE(sa.custom_type, a.type) as type,
+              COALESCE(sa.custom_calculation_basis, a.calculation_basis, 'basic') as calculation_basis,
               COALESCE(sa.custom_is_taxable, a.is_taxable, true) as is_taxable,
               a.excluded_grades,
               a.excluded_employment_types
@@ -396,6 +414,7 @@ export class PayrollService {
               COALESCE(sd.custom_deduction_name, d.name) as deduction_name,
               COALESCE(sd.custom_deduction_code, d.code) as deduction_code,
               COALESCE(sd.custom_type, d.type) as type,
+              COALESCE(sd.custom_calculation_basis, d.calculation_basis, 'basic') as calculation_basis,
               d.is_statutory,
               d.excluded_grades,
               d.excluded_employment_types
@@ -492,7 +511,10 @@ export class PayrollService {
         let amount = 0;
         if (allowance.type === 'fixed') {
           amount = parseFloat(allowance.amount);
-        } else if (allowance.type === 'percentage') {
+        } else if (
+          allowance.type === 'percentage' &&
+          this.normalizeCalculationBasis(allowance.calculation_basis) === 'basic'
+        ) {
           amount = round2((adjustedBasicSalary * parseFloat(allowance.percentage)) / 100);
         }
 
@@ -502,6 +524,7 @@ export class PayrollService {
             name: allowance.name,
             amount: amount,
             is_taxable: allowance.is_taxable,
+            calculation_basis: this.normalizeCalculationBasis(allowance.calculation_basis),
           });
           totalAllowances += amount;
         }
@@ -520,7 +543,10 @@ export class PayrollService {
         let amount = 0;
         if (allowance.type === 'fixed') {
           amount = parseFloat(allowance.amount);
-        } else if (allowance.type === 'percentage') {
+        } else if (
+          allowance.type === 'percentage' &&
+          this.normalizeCalculationBasis(allowance.calculation_basis) === 'basic'
+        ) {
           amount = round2((adjustedBasicSalary * parseFloat(allowance.percentage)) / 100);
         }
 
@@ -530,6 +556,7 @@ export class PayrollService {
             name: allowance.allowance_name,
             amount: amount,
             is_taxable: allowance.is_taxable,
+            calculation_basis: this.normalizeCalculationBasis(allowance.calculation_basis),
           });
           totalAllowances += amount;
         }
@@ -544,8 +571,73 @@ export class PayrollService {
           name: `Arrear: ${arrear.reason}`,
           amount: arrearAmount,
           is_taxable: true,
+          calculation_basis: 'basic',
         });
         totalAllowances += arrearAmount;
+      }
+
+      const allowanceGrossBase = round2(adjustedBasicSalary + totalAllowances);
+
+      for (const allowance of globalAllowances) {
+        if (this.isExcludedFromPayrollItem(allowance, staffMember)) {
+          continue;
+        }
+        if (
+          allowance.type !== 'percentage' ||
+          this.normalizeCalculationBasis(allowance.calculation_basis) !== 'gross'
+        ) {
+          continue;
+        }
+
+        const amount = this.calculatePercentageAmount(
+          allowance.percentage,
+          adjustedBasicSalary,
+          allowanceGrossBase,
+          allowance.calculation_basis,
+          round2,
+        );
+
+        if (amount > 0) {
+          allowancesArray.push({
+            code: allowance.code,
+            name: allowance.name,
+            amount,
+            is_taxable: allowance.is_taxable,
+            calculation_basis: 'gross',
+          });
+          totalAllowances += amount;
+        }
+      }
+
+      for (const allowance of staffSpecificAllowances) {
+        if (this.isExcludedFromPayrollItem(allowance, staffMember)) {
+          continue;
+        }
+        if (
+          allowance.type !== 'percentage' ||
+          this.normalizeCalculationBasis(allowance.calculation_basis) !== 'gross'
+        ) {
+          continue;
+        }
+
+        const amount = this.calculatePercentageAmount(
+          allowance.percentage,
+          adjustedBasicSalary,
+          allowanceGrossBase,
+          allowance.calculation_basis,
+          round2,
+        );
+
+        if (amount > 0) {
+          allowancesArray.push({
+            code: allowance.allowance_code,
+            name: allowance.allowance_name,
+            amount,
+            is_taxable: allowance.is_taxable,
+            calculation_basis: 'gross',
+          });
+          totalAllowances += amount;
+        }
       }
 
       // Calculate gross pay
@@ -573,17 +665,13 @@ export class PayrollService {
         if (deduction.type === 'fixed') {
           amount = parseFloat(deduction.amount);
         } else if (deduction.type === 'percentage') {
-          const code = String(deduction.code || '').toUpperCase();
-          const name = String(deduction.name || '').toUpperCase();
-          if (
-            code.includes('PENSION') || name.includes('PENSION') ||
-            code.includes('NHF') || name.includes('NHF') || name.includes('HOUSING FUND') ||
-            code.includes('NHIS') || name.includes('NHIS') || name.includes('NHIA') || name.includes('HEALTH INSURANCE')
-          ) {
-            amount = round2((grossPay * parseFloat(deduction.percentage)) / 100);
-          } else {
-            amount = round2((adjustedBasicSalary * parseFloat(deduction.percentage)) / 100);
-          }
+          amount = this.calculatePercentageAmount(
+            deduction.percentage,
+            adjustedBasicSalary,
+            grossPay,
+            deduction.calculation_basis,
+            round2,
+          );
         }
 
         // Track specific deductions for tax relief
@@ -623,17 +711,13 @@ export class PayrollService {
         if (deduction.type === 'fixed') {
           amount = parseFloat(deduction.amount);
         } else if (deduction.type === 'percentage') {
-          const code = String(deduction.deduction_code || deduction.code || '').toUpperCase();
-          const name = String(deduction.deduction_name || deduction.name || '').toUpperCase();
-          if (
-            code.includes('PENSION') || name.includes('PENSION') ||
-            code.includes('NHF') || name.includes('NHF') || name.includes('HOUSING FUND') ||
-            code.includes('NHIS') || name.includes('NHIS') || name.includes('NHIA') || name.includes('HEALTH INSURANCE')
-          ) {
-            amount = round2((grossPay * parseFloat(deduction.percentage)) / 100);
-          } else {
-            amount = round2((adjustedBasicSalary * parseFloat(deduction.percentage)) / 100);
-          }
+          amount = this.calculatePercentageAmount(
+            deduction.percentage,
+            adjustedBasicSalary,
+            grossPay,
+            deduction.calculation_basis,
+            round2,
+          );
         }
 
         // Track specific deductions for tax relief (if manually assigned)

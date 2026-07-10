@@ -54,6 +54,22 @@ export class PromotionsService {
     return staff && gradeLevel !== undefined ? { ...staff, grade_level: gradeLevel } : staff;
   }
 
+  private normalizeCalculationBasis(value: any): 'basic' | 'gross' {
+    return String(value || '').toLowerCase() === 'gross' ? 'gross' : 'basic';
+  }
+
+  private calculatePercentageAmount(
+    percentageValue: any,
+    basicSalary: number,
+    grossSalary: number,
+    calculationBasis: any,
+  ): number {
+    const percentage = parseFloat(String(percentageValue ?? '0')) || 0;
+    const basis = this.normalizeCalculationBasis(calculationBasis);
+    const baseAmount = basis === 'gross' ? grossSalary : basicSalary;
+    return (baseAmount * percentage) / 100;
+  }
+
   /**
    * Get staff promotion history
    */
@@ -439,6 +455,7 @@ export class PromotionsService {
     const staffAllowances = await this.databaseService.query(
       `SELECT sa.*,
               COALESCE(sa.custom_type, a.type) as allowance_type,
+              COALESCE(sa.custom_calculation_basis, a.calculation_basis, 'basic') as calculation_basis,
               a.percentage as global_percentage
        FROM staff_allowances sa
        LEFT JOIN allowances a ON sa.allowance_id = a.id
@@ -448,29 +465,51 @@ export class PromotionsService {
 
     let totalAllowances = 0;
 
-    // Calculate Global Allowances
+    // Calculate fixed and basic-based allowances first.
     for (const allowance of globalAllowances) {
       if (staffMember && this.isExcludedFromGlobalItem(allowance, staffMember)) {
         continue;
       }
 
-      if (allowance.type === 'percentage') {
-        totalAllowances += (basicSalary * parseFloat(allowance.percentage)) / 100;
-      } else if (allowance.type === 'fixed') {
+      if (allowance.type === 'fixed') {
         totalAllowances += parseFloat(allowance.amount);
+      } else if (this.normalizeCalculationBasis(allowance.calculation_basis) === 'basic') {
+        totalAllowances += (basicSalary * parseFloat(allowance.percentage)) / 100;
       }
     }
 
-    // Calculate Staff Specific Allowances
     for (const allowance of staffAllowances) {
       const type = allowance.allowance_type;
-      
-      if (type === 'percentage') {
-        const pct = allowance.percentage ? parseFloat(allowance.percentage) : 0;
-        totalAllowances += (basicSalary * pct) / 100;
-      } else if (type === 'fixed') {
+      if (type === 'fixed') {
         const amt = allowance.amount ? parseFloat(allowance.amount) : 0;
         totalAllowances += amt;
+      } else if (this.normalizeCalculationBasis(allowance.calculation_basis) === 'basic') {
+        const pct = allowance.percentage ? parseFloat(allowance.percentage) : 0;
+        totalAllowances += (basicSalary * pct) / 100;
+      }
+    }
+
+    const allowanceGrossBase = basicSalary + totalAllowances;
+
+    for (const allowance of globalAllowances) {
+      if (staffMember && this.isExcludedFromGlobalItem(allowance, staffMember)) {
+        continue;
+      }
+      if (allowance.type === 'percentage' && this.normalizeCalculationBasis(allowance.calculation_basis) === 'gross') {
+        totalAllowances += this.calculatePercentageAmount(
+          allowance.percentage,
+          basicSalary,
+          allowanceGrossBase,
+          allowance.calculation_basis,
+        );
+      }
+    }
+
+    for (const allowance of staffAllowances) {
+      const type = allowance.allowance_type;
+      if (type === 'percentage' && this.normalizeCalculationBasis(allowance.calculation_basis) === 'gross') {
+        const pct = allowance.percentage ? parseFloat(allowance.percentage) : 0;
+        totalAllowances += (allowanceGrossBase * pct) / 100;
       }
     }
 
@@ -491,6 +530,7 @@ export class PromotionsService {
     const staffDeductions = await this.databaseService.query(
       `SELECT sd.*,
               COALESCE(sd.custom_type, d.type) as deduction_type,
+              COALESCE(sd.custom_calculation_basis, d.calculation_basis, 'basic') as calculation_basis,
               d.percentage as global_percentage
        FROM staff_deductions sd
        LEFT JOIN deductions d ON sd.deduction_id = d.id
@@ -502,14 +542,20 @@ export class PromotionsService {
 
     let totalDeductions = 0;
 
-    // Calculate Global Deductions
+    const grossSalary = await this.calculateGrossSalary(staffId, basicSalary, gradeLevel);
+
     for (const deduction of globalDeductions) {
       if (staffMember && this.isExcludedFromGlobalItem(deduction, staffMember)) {
         continue;
       }
 
       if (deduction.type === 'percentage') {
-        totalDeductions += (basicSalary * parseFloat(deduction.percentage)) / 100;
+        totalDeductions += this.calculatePercentageAmount(
+          deduction.percentage,
+          basicSalary,
+          grossSalary,
+          deduction.calculation_basis,
+        );
       } else if (deduction.type === 'fixed') {
         totalDeductions += parseFloat(deduction.amount);
       }
@@ -520,8 +566,12 @@ export class PromotionsService {
       const type = deduction.deduction_type;
       
       if (type === 'percentage') {
-        const pct = deduction.percentage ? parseFloat(deduction.percentage) : 0;
-        totalDeductions += (basicSalary * pct) / 100;
+        totalDeductions += this.calculatePercentageAmount(
+          deduction.percentage,
+          basicSalary,
+          grossSalary,
+          deduction.calculation_basis,
+        );
       } else if (type === 'fixed') {
         const amt = deduction.amount ? parseFloat(deduction.amount) : 0;
         totalDeductions += amt;
@@ -535,7 +585,7 @@ export class PromotionsService {
     staffId: string,
     basicSalary: number,
     gradeLevel?: string | number,
-  ): Promise<{ total: number; items: Array<{ code: string; name: string; amount: number; type: string; source: string }> }> {
+  ): Promise<{ total: number; items: Array<{ code: string; name: string; amount: number; type: string; source: string; calculation_basis?: string }> }> {
     const staffMember = await this.getPayrollContextStaff(staffId, gradeLevel);
     const globalAllowances = await this.databaseService.query(
       `SELECT * FROM allowances WHERE status = 'active' AND applies_to_all = true`,
@@ -544,6 +594,7 @@ export class PromotionsService {
     const staffAllowances = await this.databaseService.query(
       `SELECT sa.*,
               COALESCE(sa.custom_type, a.type) as allowance_type,
+              COALESCE(sa.custom_calculation_basis, a.calculation_basis, 'basic') as calculation_basis,
               a.percentage as global_percentage,
               COALESCE(sa.custom_allowance_name, a.name) as allowance_name,
               COALESCE(sa.custom_allowance_code, a.code) as allowance_code
@@ -553,7 +604,7 @@ export class PromotionsService {
       [staffId],
     );
 
-    const items: Array<{ code: string; name: string; amount: number; type: string; source: string }> = [];
+    const items: Array<{ code: string; name: string; amount: number; type: string; source: string; calculation_basis?: string }> = [];
     let total = 0;
 
     for (const allowance of globalAllowances) {
@@ -562,10 +613,10 @@ export class PromotionsService {
       }
 
       let amount = 0;
-      if (allowance.type === 'percentage') {
-        amount = (basicSalary * parseFloat(allowance.percentage)) / 100;
-      } else if (allowance.type === 'fixed') {
+      if (allowance.type === 'fixed') {
         amount = parseFloat(allowance.amount);
+      } else if (this.normalizeCalculationBasis(allowance.calculation_basis) === 'basic') {
+        amount = (basicSalary * parseFloat(allowance.percentage)) / 100;
       }
       if (amount) {
         items.push({
@@ -573,6 +624,7 @@ export class PromotionsService {
           name: allowance.name,
           amount,
           type: allowance.type,
+          calculation_basis: this.normalizeCalculationBasis(allowance.calculation_basis),
           source: 'global',
         });
         total += amount;
@@ -582,11 +634,11 @@ export class PromotionsService {
     for (const allowance of staffAllowances) {
       const type = allowance.allowance_type;
       let amount = 0;
-      if (type === 'percentage') {
+      if (type === 'fixed') {
+        amount = allowance.amount ? parseFloat(allowance.amount) : 0;
+      } else if (this.normalizeCalculationBasis(allowance.calculation_basis) === 'basic') {
         const pct = allowance.percentage ? parseFloat(allowance.percentage) : 0;
         amount = (basicSalary * pct) / 100;
-      } else if (type === 'fixed') {
-        amount = allowance.amount ? parseFloat(allowance.amount) : 0;
       }
       if (amount) {
         items.push({
@@ -594,6 +646,63 @@ export class PromotionsService {
           name: allowance.allowance_name,
           amount,
           type,
+          calculation_basis: this.normalizeCalculationBasis(allowance.calculation_basis),
+          source: 'staff',
+        });
+        total += amount;
+      }
+    }
+
+    const allowanceGrossBase = basicSalary + total;
+
+    for (const allowance of globalAllowances) {
+      if (staffMember && this.isExcludedFromGlobalItem(allowance, staffMember)) {
+        continue;
+      }
+      if (allowance.type !== 'percentage' || this.normalizeCalculationBasis(allowance.calculation_basis) !== 'gross') {
+        continue;
+      }
+
+      const amount = this.calculatePercentageAmount(
+        allowance.percentage,
+        basicSalary,
+        allowanceGrossBase,
+        allowance.calculation_basis,
+      );
+
+      if (amount) {
+        items.push({
+          code: allowance.code,
+          name: allowance.name,
+          amount,
+          type: allowance.type,
+          calculation_basis: 'gross',
+          source: 'global',
+        });
+        total += amount;
+      }
+    }
+
+    for (const allowance of staffAllowances) {
+      const type = allowance.allowance_type;
+      if (type !== 'percentage' || this.normalizeCalculationBasis(allowance.calculation_basis) !== 'gross') {
+        continue;
+      }
+
+      const amount = this.calculatePercentageAmount(
+        allowance.percentage,
+        basicSalary,
+        allowanceGrossBase,
+        allowance.calculation_basis,
+      );
+
+      if (amount) {
+        items.push({
+          code: allowance.allowance_code,
+          name: allowance.allowance_name,
+          amount,
+          type,
+          calculation_basis: 'gross',
           source: 'staff',
         });
         total += amount;
@@ -607,7 +716,7 @@ export class PromotionsService {
     staffId: string,
     basicSalary: number,
     gradeLevel?: string | number,
-  ): Promise<{ total: number; items: Array<{ code: string; name: string; amount: number; type: string; source: string }> }> {
+  ): Promise<{ total: number; items: Array<{ code: string; name: string; amount: number; type: string; source: string; calculation_basis?: string }> }> {
     const staffMember = await this.getPayrollContextStaff(staffId, gradeLevel);
     const globalDeductions = await this.databaseService.query(
       `SELECT * FROM deductions WHERE status = 'active' AND applies_to_all = true AND code != 'TAX'`,
@@ -616,6 +725,7 @@ export class PromotionsService {
     const staffDeductions = await this.databaseService.query(
       `SELECT sd.*,
               COALESCE(sd.custom_type, d.type) as deduction_type,
+              COALESCE(sd.custom_calculation_basis, d.calculation_basis, 'basic') as calculation_basis,
               d.percentage as global_percentage,
               COALESCE(sd.custom_deduction_name, d.name) as deduction_name,
               COALESCE(sd.custom_deduction_code, d.code) as deduction_code
@@ -627,8 +737,9 @@ export class PromotionsService {
       [staffId],
     );
 
-    const items: Array<{ code: string; name: string; amount: number; type: string; source: string }> = [];
+    const items: Array<{ code: string; name: string; amount: number; type: string; source: string; calculation_basis?: string }> = [];
     let total = 0;
+    const grossSalary = await this.calculateGrossSalary(staffId, basicSalary, gradeLevel);
 
     for (const deduction of globalDeductions) {
       if (staffMember && this.isExcludedFromGlobalItem(deduction, staffMember)) {
@@ -637,7 +748,12 @@ export class PromotionsService {
 
       let amount = 0;
       if (deduction.type === 'percentage') {
-        amount = (basicSalary * parseFloat(deduction.percentage)) / 100;
+        amount = this.calculatePercentageAmount(
+          deduction.percentage,
+          basicSalary,
+          grossSalary,
+          deduction.calculation_basis,
+        );
       } else if (deduction.type === 'fixed') {
         amount = parseFloat(deduction.amount);
       }
@@ -647,6 +763,7 @@ export class PromotionsService {
           name: deduction.name,
           amount,
           type: deduction.type,
+          calculation_basis: this.normalizeCalculationBasis(deduction.calculation_basis),
           source: 'global',
         });
         total += amount;
@@ -657,8 +774,12 @@ export class PromotionsService {
       const type = deduction.deduction_type;
       let amount = 0;
       if (type === 'percentage') {
-        const pct = deduction.percentage ? parseFloat(deduction.percentage) : 0;
-        amount = (basicSalary * pct) / 100;
+        amount = this.calculatePercentageAmount(
+          deduction.percentage,
+          basicSalary,
+          grossSalary,
+          deduction.calculation_basis,
+        );
       } else if (type === 'fixed') {
         amount = deduction.amount ? parseFloat(deduction.amount) : 0;
       }
@@ -668,6 +789,7 @@ export class PromotionsService {
           name: deduction.deduction_name,
           amount,
           type,
+          calculation_basis: this.normalizeCalculationBasis(deduction.calculation_basis),
           source: 'staff',
         });
         total += amount;

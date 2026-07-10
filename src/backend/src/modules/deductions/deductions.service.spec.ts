@@ -81,6 +81,7 @@ describe('DeductionsService', () => {
           'RECOVERY',
           'Staff Recovery',
           'fixed',
+          'basic',
           10000,
           null,
           '2026-07-01',
@@ -91,6 +92,36 @@ describe('DeductionsService', () => {
         ],
       );
       expect(result).toEqual({ id: 'sd-1' });
+    });
+
+    it('stores configured calculation basis for custom percentage staff deductions', async () => {
+      (databaseService.queryOne as jest.Mock).mockResolvedValue({ id: 'sd-2' });
+
+      await service.createStaffDeduction(
+        {
+          staff_id: 'staff-2',
+          entry_mode: 'custom',
+          deduction_name: 'Health Plan',
+          type: 'percentage',
+          calculation_basis: 'gross',
+          percentage: 5,
+          effective_from: '2026-07',
+        },
+        'user-2',
+        'admin',
+      );
+
+      expect(databaseService.queryOne).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO staff_deductions'),
+        expect.arrayContaining([
+          'staff-2',
+          null,
+          expect.any(String),
+          'Health Plan',
+          'percentage',
+          'gross',
+        ]),
+      );
     });
   });
 });

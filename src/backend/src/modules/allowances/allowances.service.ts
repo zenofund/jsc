@@ -34,11 +34,18 @@ export class AllowancesService {
       'type',
       'entry_mode',
       'entryMode',
+      'calculation_basis',
+      'calculationBasis',
       'is_taxable',
       'isTaxable',
       'is_pensionable',
       'isPensionable',
     ].some((key) => this.hasOwn(dto, key));
+  }
+
+  private normalizeCalculationBasis(value: any): 'basic' | 'gross' {
+    const normalized = this.cleanString(value)?.toLowerCase();
+    return normalized === 'gross' ? 'gross' : 'basic';
   }
 
   private getEntryMode(dto: any): 'configured' | 'custom' | undefined {
@@ -101,6 +108,7 @@ export class AllowancesService {
         allowanceCode: configuredAllowance.code,
         allowanceName: configuredAllowance.name,
         type: configuredAllowance.type,
+        calculationBasis: this.normalizeCalculationBasis(configuredAllowance.calculation_basis),
         isTaxable: configuredAllowance.is_taxable,
         isPensionable: configuredAllowance.is_pensionable,
       };
@@ -119,6 +127,7 @@ export class AllowancesService {
       allowanceCode: allowanceCode || this.deriveCustomCode(allowanceName, 'ALLOW'),
       allowanceName,
       type: allowanceType,
+      calculationBasis: this.normalizeCalculationBasis(dto.calculation_basis ?? dto.calculationBasis),
       isTaxable: dto.is_taxable ?? dto.isTaxable ?? true,
       isPensionable: dto.is_pensionable ?? dto.isPensionable ?? false,
     };
@@ -138,13 +147,14 @@ export class AllowancesService {
 
     const allowance = await this.databaseService.queryOne(
       `INSERT INTO allowances (
-        code, name, type, amount, percentage, is_taxable, is_pensionable, applies_to_all, status, created_by, excluded_grades, excluded_employment_types
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9, $10, $11)
+        code, name, type, calculation_basis, amount, percentage, is_taxable, is_pensionable, applies_to_all, status, created_by, excluded_grades, excluded_employment_types
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', $10, $11, $12)
       RETURNING *`,
       [
         dto.code,
         dto.name,
         dto.type,
+        this.normalizeCalculationBasis(dto.calculation_basis ?? dto.calculationBasis),
         dto.amount || null,
         dto.percentage || null,
         dto.is_taxable ?? dto.isTaxable ?? true,
@@ -217,21 +227,25 @@ export class AllowancesService {
        SET code = COALESCE($1, code),
            name = COALESCE($2, name),
            type = COALESCE($3, type),
-           amount = COALESCE($4, amount),
-           percentage = COALESCE($5, percentage),
-           is_taxable = COALESCE($6, is_taxable),
-           is_pensionable = COALESCE($7, is_pensionable),
-           status = COALESCE($8, status),
-           applies_to_all = COALESCE($10, applies_to_all),
-           excluded_grades = COALESCE($11, excluded_grades),
-           excluded_employment_types = COALESCE($12, excluded_employment_types),
+           calculation_basis = COALESCE($4, calculation_basis),
+           amount = COALESCE($5, amount),
+           percentage = COALESCE($6, percentage),
+           is_taxable = COALESCE($7, is_taxable),
+           is_pensionable = COALESCE($8, is_pensionable),
+           status = COALESCE($9, status),
+           applies_to_all = COALESCE($11, applies_to_all),
+           excluded_grades = COALESCE($12, excluded_grades),
+           excluded_employment_types = COALESCE($13, excluded_employment_types),
            updated_at = NOW()
-       WHERE id = $9
+       WHERE id = $10
        RETURNING *`,
       [
         dto.code,
         dto.name,
         dto.type,
+        this.hasOwn(dto, 'calculation_basis') || this.hasOwn(dto, 'calculationBasis')
+          ? this.normalizeCalculationBasis(dto.calculation_basis ?? dto.calculationBasis)
+          : null,
         dto.amount,
         dto.percentage,
         dto.is_taxable ?? dto.isTaxable,
@@ -280,9 +294,9 @@ export class AllowancesService {
     const staffAllowance = await this.databaseService.queryOne(
       `INSERT INTO staff_allowances (
         staff_id, allowance_id, custom_allowance_code, custom_allowance_name,
-        custom_type, custom_is_taxable, custom_is_pensionable, amount, percentage,
+        custom_type, custom_calculation_basis, custom_is_taxable, custom_is_pensionable, amount, percentage,
         effective_from, effective_to, frequency, status, created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
       RETURNING *`,
       [
         dto.staff_id || dto.staffId,
@@ -290,6 +304,7 @@ export class AllowancesService {
         definition.entryMode === 'custom' ? definition.allowanceCode : null,
         definition.entryMode === 'custom' ? definition.allowanceName : null,
         definition.entryMode === 'custom' ? definition.type : null,
+        definition.entryMode === 'custom' ? definition.calculationBasis : null,
         definition.entryMode === 'custom' ? definition.isTaxable : null,
         definition.entryMode === 'custom' ? definition.isPensionable : null,
         definition.type === 'fixed' ? (dto.amount ?? null) : null,
@@ -331,6 +346,7 @@ export class AllowancesService {
               COALESCE(sa.custom_allowance_name, a.name) as allowance_name, 
               COALESCE(sa.custom_allowance_code, a.code) as allowance_code, 
               COALESCE(sa.custom_type, a.type) as type, 
+              COALESCE(sa.custom_calculation_basis, a.calculation_basis, 'basic') as calculation_basis,
               COALESCE(sa.custom_is_taxable, a.is_taxable, true) as is_taxable, 
               COALESCE(sa.custom_is_pensionable, a.is_pensionable, false) as is_pensionable,
               CASE WHEN sa.allowance_id IS NULL THEN 'custom' ELSE 'configured' END as entry_mode
@@ -367,6 +383,7 @@ export class AllowancesService {
               COALESCE(sa.custom_allowance_name, a.name) as allowance_name, 
               COALESCE(sa.custom_allowance_code, a.code) as allowance_code,
               COALESCE(sa.custom_type, a.type) as type,
+              COALESCE(sa.custom_calculation_basis, a.calculation_basis, 'basic') as calculation_basis,
               COALESCE(sa.custom_is_taxable, a.is_taxable, true) as is_taxable,
               COALESCE(sa.custom_is_pensionable, a.is_pensionable, false) as is_pensionable,
               CASE WHEN sa.allowance_id IS NULL THEN 'custom' ELSE 'configured' END as entry_mode
@@ -405,6 +422,7 @@ export class AllowancesService {
           allowanceCode: existing.custom_allowance_code || null,
           allowanceName: existing.custom_allowance_name || null,
           type: existing.custom_type || null,
+          calculationBasis: existing.custom_calculation_basis || 'basic',
           isTaxable: existing.custom_is_taxable,
           isPensionable: existing.custom_is_pensionable,
         };
@@ -418,22 +436,24 @@ export class AllowancesService {
            custom_allowance_code = $2,
            custom_allowance_name = $3,
            custom_type = $4,
-           custom_is_taxable = $5,
-           custom_is_pensionable = $6,
-           amount = CASE WHEN $13::boolean THEN $7 ELSE COALESCE($7, amount) END,
-           percentage = CASE WHEN $13::boolean THEN $8 ELSE COALESCE($8, percentage) END,
-           effective_from = COALESCE($9, effective_from),
-           effective_to = CASE WHEN $12::date IS NULL AND $15::boolean THEN NULL ELSE COALESCE($12, effective_to) END,
-           frequency = COALESCE($10, frequency),
-           status = COALESCE($11, status),
+           custom_calculation_basis = $5,
+           custom_is_taxable = $6,
+           custom_is_pensionable = $7,
+           amount = CASE WHEN $14::boolean THEN $8 ELSE COALESCE($8, amount) END,
+           percentage = CASE WHEN $14::boolean THEN $9 ELSE COALESCE($9, percentage) END,
+           effective_from = COALESCE($10, effective_from),
+           effective_to = CASE WHEN $13::date IS NULL AND $16::boolean THEN NULL ELSE COALESCE($13, effective_to) END,
+           frequency = COALESCE($11, frequency),
+           status = COALESCE($12, status),
            updated_at = NOW()
-       WHERE id = $14
+       WHERE id = $15
        RETURNING *`,
       [
         definition.allowanceId,
         definition.entryMode === 'custom' ? definition.allowanceCode : null,
         definition.entryMode === 'custom' ? definition.allowanceName : null,
         definition.entryMode === 'custom' ? definition.type : null,
+        definition.entryMode === 'custom' ? definition.calculationBasis : null,
         definition.entryMode === 'custom' ? definition.isTaxable : null,
         definition.entryMode === 'custom' ? definition.isPensionable : null,
         hasDefinitionInput

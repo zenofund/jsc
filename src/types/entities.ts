@@ -164,6 +164,7 @@ export interface Allowance {
   name: string;
   code: string;
   type: 'fixed' | 'percentage';
+  calculation_basis?: 'basic' | 'gross';
   amount?: number;
   percentage?: number;
   is_taxable: boolean;
@@ -178,6 +179,7 @@ export interface Deduction {
   name: string;
   code: string;
   type: 'fixed' | 'percentage';
+  calculation_basis?: 'basic' | 'gross';
   amount?: number;
   percentage?: number;
   is_statutory: boolean;
@@ -196,6 +198,7 @@ export interface StaffAllowance {
   allowance_name: string;
   type: 'fixed' | 'percentage';
   entry_mode?: 'configured' | 'custom';
+  calculation_basis?: 'basic' | 'gross';
   amount?: number;
   percentage?: number;
   frequency: 'recurring' | 'one-time';
@@ -221,6 +224,7 @@ export interface StaffDeduction {
   deduction_name: string;
   type: 'fixed' | 'percentage';
   entry_mode?: 'configured' | 'custom';
+  calculation_basis?: 'basic' | 'gross';
   amount?: number;
   percentage?: number;
   frequency: 'recurring' | 'one-time';

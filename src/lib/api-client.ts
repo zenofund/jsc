@@ -95,27 +95,24 @@ function normalizeErrorMessage(payload: unknown, fallback: string): string {
 // Helper function for making API requests
 async function makeApiRequest(endpoint: string, options: RequestInit = {}): Promise<any> {
   const url = `${API_CONFIG.baseURL}${endpoint}`;
-  
-  const defaultHeaders = {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${localStorage.getItem('jsc_auth_token') || ''}`,
-  };
+  const requestHeaders = new Headers(options.headers ?? {});
+  requestHeaders.set('Content-Type', 'application/json');
+  requestHeaders.set('Authorization', `Bearer ${localStorage.getItem('jsc_auth_token') || ''}`);
+  Object.entries(getGeoContextHeaders()).forEach(([key, value]) => {
+    requestHeaders.set(key, value);
+  });
 
   try {
     const response = await fetch(url, {
       ...options,
-      headers: {
-        ...defaultHeaders,
-        ...getGeoContextHeaders(),
-        ...options.headers,
-      },
+      headers: requestHeaders,
     });
 
     if (!response.ok) {
       // Handle 401 Unauthorized - Session expired
       if (response.status === 401) {
         // Allow skipping global handler for specific requests (e.g. background checks)
-        const skipHandler = (options.headers as any)?.['X-Skip-Auth-Handler'];
+        const skipHandler = requestHeaders.get('X-Skip-Auth-Handler');
         
         if (!skipHandler) {
           // Clear all auth data

@@ -101,20 +101,21 @@ async function seedDatabase() {
     console.log('\n📝 Seeding global deductions...');
     
     const deductions = [
-      { code: 'PENSION', name: 'Pension Contribution', type: 'percentage', percentage: 10, is_statutory: true },
-      { code: 'NHF', name: 'National Housing Fund', type: 'percentage', percentage: 2.5, is_statutory: true },
-      { code: 'UNION', name: 'Union Dues', type: 'fixed', amount: 5000, is_statutory: false },
+      { code: 'PENSION', name: 'Pension Contribution', type: 'percentage', percentage: 10, is_statutory: true, calculation_basis: 'gross' },
+      { code: 'NHF', name: 'National Housing Fund', type: 'percentage', percentage: 2.5, is_statutory: true, calculation_basis: 'gross' },
+      { code: 'UNION', name: 'Union Dues', type: 'fixed', amount: 5000, is_statutory: false, calculation_basis: 'basic' },
     ];
 
     for (const deduction of deductions) {
       await client.query(
-        `INSERT INTO deductions (code, name, type, amount, percentage, is_statutory, status, created_by) 
-         VALUES ($1, $2, $3, $4, $5, $6, 'active', $7) 
+        `INSERT INTO deductions (code, name, type, calculation_basis, amount, percentage, is_statutory, status, created_by) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', $8) 
          ON CONFLICT (code) DO NOTHING`,
         [
           deduction.code,
           deduction.name,
           deduction.type,
+          deduction.calculation_basis,
           deduction.amount || null,
           deduction.percentage || null,
           deduction.is_statutory,
