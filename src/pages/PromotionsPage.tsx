@@ -353,13 +353,13 @@ export function PromotionsPage() {
       }
       try {
         setDetailsPreviewLoading(true);
-        const effectiveDateKey = String(selectedPromotion.effective_date || '').slice(0, 10);
+        const promotionDateKey = String(selectedPromotion.promotion_date || selectedPromotion.effective_date || '').slice(0, 10);
         const requests: Promise<any>[] = [
           promotionAPI.previewArrears(
             selectedPromotion.staff_id,
             selectedPromotion.new_grade_level,
             selectedPromotion.new_step,
-            effectiveDateKey,
+            promotionDateKey,
             selectedPromotion.old_grade_level,
             selectedPromotion.old_step,
             selectedPromotion.old_basic_salary,
@@ -379,7 +379,7 @@ export function PromotionsPage() {
             .filter((arrears: any) =>
               arrears?.reason === 'promotion' &&
               String(arrears?.staff_id || '') === String(selectedPromotion.staff_id) &&
-              String(arrears?.effective_date || '').slice(0, 10) === effectiveDateKey
+              String(arrears?.effective_date || '').slice(0, 10) === promotionDateKey
             )
             .sort((a: any, b: any) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0];
 
