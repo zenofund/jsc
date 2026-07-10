@@ -376,9 +376,10 @@ export function PromotionsPage() {
 
   const filteredStaff = useMemo(() => {
     const query = staffSearch.trim();
+    const eligibleStatuses = new Set(['active', 'secondment', 'suspended']);
 
     return staff
-      .filter((s) => s.status === 'active')
+      .filter((s) => eligibleStatuses.has(String(s.status || '').toLowerCase()))
       .map((s, index) => ({
         staffMember: s,
         index,
