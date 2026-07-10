@@ -50,7 +50,7 @@ CREATE TABLE users (
     full_name VARCHAR(255) NOT NULL,
     role VARCHAR(50) NOT NULL CHECK (role IN ('admin', 'payroll_officer', 'hr_manager', 'reviewer', 'approver', 'auditor', 'cashier', 'staff')),
     permissions TEXT[],
-    department_id UUID REFERENCES departments(id),
+    department_id UUID REFERENCES departments(id) ON DELETE SET NULL,
     staff_id UUID,
     status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
     must_change_password BOOLEAN DEFAULT FALSE,
@@ -106,7 +106,7 @@ CREATE TABLE staff (
     -- Appointment
     date_of_first_appointment DATE,
     current_posting VARCHAR(255),
-    department_id UUID REFERENCES departments(id),
+    department_id UUID REFERENCES departments(id) ON DELETE SET NULL,
     designation VARCHAR(255),
     employment_type VARCHAR(50),
     employment_date DATE NOT NULL,
