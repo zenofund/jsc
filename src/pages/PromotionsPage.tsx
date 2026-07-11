@@ -654,9 +654,9 @@ export function PromotionsPage() {
         <div>
           <div className="text-foreground">{new Date(row.effective_date).toLocaleDateString()}</div>
           {new Date(row.effective_date) < new Date() && row.status === 'approved' && (
-            <div className="text-xs text-orange-600 dark:text-orange-400 flex items-center gap-1 mt-1">
+            <div className="text-xs text-green-700 dark:text-green-400 flex items-center gap-1 mt-1">
               <AlertCircle className="w-3 h-3" />
-              Arrears Due
+              <span className="tabular-nums">{formatCurrency(Number(row.arrears_total ?? 0))}</span>
             </div>
           )}
         </div>

@@ -378,6 +378,7 @@ export interface Promotion {
   new_basic_salary?: number | string;
   promotion_date?: string;
   effective_date: string;
+  arrears_total?: number;
   status: 'pending' | 'approved' | 'rejected';
   approved_by?: string;
   approval_date?: string;

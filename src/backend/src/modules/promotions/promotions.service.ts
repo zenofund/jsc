@@ -602,9 +602,19 @@ export class PromotionsService {
   async getAll() {
     try {
       return await this.databaseService.query(
-        `SELECT p.*, s.first_name, s.last_name, s.staff_number
+        `SELECT p.*, s.first_name, s.last_name, s.staff_number,
+                ar.total_arrears AS arrears_total
          FROM promotions p
          JOIN staff s ON p.staff_id = s.id
+         LEFT JOIN LATERAL (
+           SELECT a.total_arrears
+           FROM arrears a
+           WHERE a.reason = 'promotion'
+             AND a.staff_id = p.staff_id
+             AND a.effective_date::date = p.promotion_date::date
+           ORDER BY a.created_at DESC
+           LIMIT 1
+         ) ar ON true
          ORDER BY p.created_at DESC
          LIMIT 100`
       );
