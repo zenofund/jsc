@@ -488,8 +488,6 @@ export class PromotionsService {
     effectiveDate: string,
     oldGradeLevel?: number,
     oldStep?: number,
-    oldBasicSalaryOverride?: number | string,
-    newBasicSalaryOverride?: number | string,
   ) {
     const staff = await this.databaseService.queryOne('SELECT * FROM staff WHERE id = $1', [staffId]);
     if (!staff) {
@@ -498,32 +496,22 @@ export class PromotionsService {
 
     // Calculate Old Basic Salary based on current Grade/Step (don't rely on stored current_basic_salary which might be stale)
     let oldBasicSalary: number;
-    const oldOverride = parseFloat(String(oldBasicSalaryOverride ?? '')) || 0;
-    if (oldOverride > 0) {
-      oldBasicSalary = oldOverride;
-    } else {
-      try {
-        const gradeLevel = typeof oldGradeLevel === 'number' ? oldGradeLevel : staff.grade_level;
-        const stepLevel = typeof oldStep === 'number' ? oldStep : staff.step;
-        oldBasicSalary = await this.salaryLookupService.getBasicSalary(gradeLevel, stepLevel);
-      } catch (error) {
-        // Fallback to stored salary if lookup fails (e.g. old grade not in current structure)
-        this.logger.warn(`Could not lookup old salary for staff ${staffId} (GL${staff.grade_level}/${staff.step}). Using stored value.`);
-        oldBasicSalary = parseFloat(staff.current_basic_salary || '0');
-      }
+    try {
+      const gradeLevel = typeof oldGradeLevel === 'number' ? oldGradeLevel : staff.grade_level;
+      const stepLevel = typeof oldStep === 'number' ? oldStep : staff.step;
+      oldBasicSalary = await this.salaryLookupService.getBasicSalary(gradeLevel, stepLevel);
+    } catch (error) {
+      // Fallback to stored salary if lookup fails (e.g. old grade not in current structure)
+      this.logger.warn(`Could not lookup old salary for staff ${staffId} (GL${staff.grade_level}/${staff.step}). Using stored value.`);
+      oldBasicSalary = parseFloat(staff.current_basic_salary || '0');
     }
     
     // Get new basic salary
     let newBasicSalary: number;
-    const newOverride = parseFloat(String(newBasicSalaryOverride ?? '')) || 0;
-    if (newOverride > 0) {
-      newBasicSalary = newOverride;
-    } else {
-      try {
-        newBasicSalary = await this.salaryLookupService.getBasicSalary(newGradeLevel, newStep);
-      } catch (error) {
-        throw new NotFoundException(`Could not determine salary for Grade ${newGradeLevel} Step ${newStep}.`);
-      }
+    try {
+      newBasicSalary = await this.salaryLookupService.getBasicSalary(newGradeLevel, newStep);
+    } catch (error) {
+      throw new NotFoundException(`Could not determine salary for Grade ${newGradeLevel} Step ${newStep}.`);
     }
 
     const oldContextGrade = typeof oldGradeLevel === 'number' ? oldGradeLevel : staff.grade_level;
@@ -602,19 +590,9 @@ export class PromotionsService {
   async getAll() {
     try {
       return await this.databaseService.query(
-        `SELECT p.*, s.first_name, s.last_name, s.staff_number,
-                ar.total_arrears AS arrears_total
+        `SELECT p.*, s.first_name, s.last_name, s.staff_number
          FROM promotions p
          JOIN staff s ON p.staff_id = s.id
-         LEFT JOIN LATERAL (
-           SELECT a.total_arrears
-           FROM arrears a
-           WHERE a.reason = 'promotion'
-             AND a.staff_id = p.staff_id
-             AND a.effective_date::date = p.promotion_date::date
-           ORDER BY a.created_at DESC
-           LIMIT 1
-         ) ar ON true
          ORDER BY p.created_at DESC
          LIMIT 100`
       );

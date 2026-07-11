@@ -68,159 +68,7 @@ export function PromotionsPage() {
   } | null>(null);
   const [detailsArrearsPreview, setDetailsArrearsPreview] = useState<typeof arrearsPreview | null>(null);
   const [detailsPreviewLoading, setDetailsPreviewLoading] = useState(false);
-
-  const buildPreviewFromApiResult = (result: any) => ({
-    monthlyDifference: Number(result?.monthlyDifference ?? 0),
-    monthsOwed: Number(result?.monthsDiff ?? 0),
-    totalArrears: Number(result?.totalArrears ?? 0),
-    oldSalary: Number(result?.oldNetSalary ?? 0),
-    newSalary: Number(result?.newNetSalary ?? 0),
-    oldGrossSalary: Number(result?.oldGrossSalary ?? 0),
-    newGrossSalary: Number(result?.newGrossSalary ?? 0),
-    oldAllowances: result?.oldAllowances ?? { total: 0, items: [] },
-    newAllowances: result?.newAllowances ?? { total: 0, items: [] },
-    oldDeductions: result?.oldDeductions ?? { total: 0, items: [] },
-    newDeductions: result?.newDeductions ?? { total: 0, items: [] },
-    proratedFirstMonth: Number(result?.proratedFirstMonth ?? 0),
-    fullMonthsAfter: Number(result?.fullMonthsAfter ?? 0),
-  });
-
-  const applyStoredArrearsToPreview = (preview: ReturnType<typeof buildPreviewFromApiResult>, arrearsRow: any) => {
-    const monthsOwed = Number(arrearsRow?.months_owed ?? arrearsRow?.monthsOwed ?? preview.monthsOwed ?? 0);
-    const details = Array.isArray(arrearsRow?.details) ? arrearsRow.details : Array.isArray(arrearsRow?.arrears_details) ? arrearsRow.arrears_details : [];
-    const proratedFirstMonth = details.length > 0 ? Number(details[0]?.amount ?? 0) : preview.proratedFirstMonth;
-    const fullMonthsAfter = Math.max(0, monthsOwed - 1);
-    const oldSalary = Number(arrearsRow?.old_salary ?? arrearsRow?.oldSalary ?? preview.oldSalary ?? 0);
-    const newSalary = Number(arrearsRow?.new_salary ?? arrearsRow?.newSalary ?? preview.newSalary ?? 0);
-    const monthlyDifference = newSalary - oldSalary;
-    const totalArrears = Number(arrearsRow?.total_arrears ?? arrearsRow?.totalArrears ?? preview.totalArrears ?? 0);
-
-    return {
-      ...preview,
-      monthsOwed,
-      oldSalary,
-      newSalary,
-      monthlyDifference,
-      proratedFirstMonth,
-      fullMonthsAfter,
-      totalArrears,
-    };
-  };
-
-  const PromotionArrearsPreviewCard = ({
-    title,
-    preview,
-    showZeroMonthsNote,
-  }: {
-    title: string;
-    preview: NonNullable<typeof arrearsPreview>;
-    showZeroMonthsNote?: boolean;
-  }) => (
-    <div className="p-4 bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-900 rounded-lg">
-      <h4 className="font-medium text-orange-900 dark:text-orange-400 mb-3 flex items-center gap-2">
-        <Calendar className="w-4 h-4" />
-        {title}
-      </h4>
-      <div className="grid grid-cols-2 gap-3 text-sm">
-        <div>
-          <span className="text-orange-700 dark:text-orange-300">Old Monthly Salary:</span>
-          <div className="font-semibold text-orange-900 dark:text-orange-200">{formatCurrency(preview.oldSalary)}</div>
-        </div>
-        <div>
-          <span className="text-orange-700 dark:text-orange-300">New Monthly Salary:</span>
-          <div className="font-semibold text-orange-900 dark:text-orange-200">{formatCurrency(preview.newSalary)}</div>
-        </div>
-        <div>
-          <span className="text-orange-700 dark:text-orange-300">Monthly Difference:</span>
-          <div className="font-semibold text-orange-900 dark:text-orange-200">{formatCurrency(preview.monthlyDifference)}</div>
-        </div>
-        <div>
-          <span className="text-orange-700 dark:text-orange-300">Months Owed:</span>
-          <div className="font-semibold text-orange-900 dark:text-orange-200">{preview.monthsOwed} months</div>
-        </div>
-      </div>
-      <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
-        <div>
-          <span className="text-orange-700 dark:text-orange-300">Old Gross:</span>
-          <div className="font-semibold text-orange-900 dark:text-orange-200">{formatCurrency(preview.oldGrossSalary)}</div>
-        </div>
-        <div>
-          <span className="text-orange-700 dark:text-orange-300">New Gross:</span>
-          <div className="font-semibold text-orange-900 dark:text-orange-200">{formatCurrency(preview.newGrossSalary)}</div>
-        </div>
-        <div>
-          <span className="text-orange-700 dark:text-orange-300">Old Deductions:</span>
-          <div className="font-semibold text-orange-900 dark:text-orange-200">{formatCurrency(preview.oldDeductions.total)}</div>
-        </div>
-        <div>
-          <span className="text-orange-700 dark:text-orange-300">New Deductions:</span>
-          <div className="font-semibold text-orange-900 dark:text-orange-200">{formatCurrency(preview.newDeductions.total)}</div>
-        </div>
-      </div>
-      <div className="mt-3 text-xs text-orange-700 dark:text-orange-300">
-        Prorated first month: {formatCurrency(preview.proratedFirstMonth)} · Full months after: {preview.fullMonthsAfter}
-      </div>
-      {showZeroMonthsNote && preview.monthsOwed === 0 && (
-        <div className="mt-2 text-xs text-orange-700 dark:text-orange-300">
-          No arrears are currently owed for the selected effective date, but the monthly salary difference is shown for review.
-        </div>
-      )}
-      <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div className="rounded-lg border border-orange-200 dark:border-orange-900 bg-white/60 dark:bg-orange-950/40 p-3">
-          <div className="text-xs text-orange-800 dark:text-orange-300 mb-2">Old Allowances</div>
-          <div className="space-y-1 text-sm">
-            {preview.oldAllowances.items.map((item: any, idx: number) => (
-              <div key={`${item.code}-${idx}`} className="flex items-center justify-between">
-                <span className="text-orange-900 dark:text-orange-100">{item.name}</span>
-                <span className="text-orange-900 dark:text-orange-100">{formatCurrency(item.amount)}</span>
-              </div>
-            ))}
-            {preview.oldAllowances.items.length === 0 && <div className="text-orange-700 dark:text-orange-300">No allowances</div>}
-          </div>
-        </div>
-        <div className="rounded-lg border border-orange-200 dark:border-orange-900 bg-white/60 dark:bg-orange-950/40 p-3">
-          <div className="text-xs text-orange-800 dark:text-orange-300 mb-2">New Allowances</div>
-          <div className="space-y-1 text-sm">
-            {preview.newAllowances.items.map((item: any, idx: number) => (
-              <div key={`${item.code}-${idx}`} className="flex items-center justify-between">
-                <span className="text-orange-900 dark:text-orange-100">{item.name}</span>
-                <span className="text-orange-900 dark:text-orange-100">{formatCurrency(item.amount)}</span>
-              </div>
-            ))}
-            {preview.newAllowances.items.length === 0 && <div className="text-orange-700 dark:text-orange-300">No allowances</div>}
-          </div>
-        </div>
-        <div className="rounded-lg border border-orange-200 dark:border-orange-900 bg-white/60 dark:bg-orange-950/40 p-3">
-          <div className="text-xs text-orange-800 dark:text-orange-300 mb-2">Old Deductions</div>
-          <div className="space-y-1 text-sm">
-            {preview.oldDeductions.items.map((item: any, idx: number) => (
-              <div key={`${item.code}-${idx}`} className="flex items-center justify-between">
-                <span className="text-orange-900 dark:text-orange-100">{item.name}</span>
-                <span className="text-orange-900 dark:text-orange-100">{formatCurrency(item.amount)}</span>
-              </div>
-            ))}
-            {preview.oldDeductions.items.length === 0 && <div className="text-orange-700 dark:text-orange-300">No deductions</div>}
-          </div>
-        </div>
-        <div className="rounded-lg border border-orange-200 dark:border-orange-900 bg-white/60 dark:bg-orange-950/40 p-3">
-          <div className="text-xs text-orange-800 dark:text-orange-300 mb-2">New Deductions</div>
-          <div className="space-y-1 text-sm">
-            {preview.newDeductions.items.map((item: any, idx: number) => (
-              <div key={`${item.code}-${idx}`} className="flex items-center justify-between">
-                <span className="text-orange-900 dark:text-orange-100">{item.name}</span>
-                <span className="text-orange-900 dark:text-orange-100">{formatCurrency(item.amount)}</span>
-              </div>
-            ))}
-            {preview.newDeductions.items.length === 0 && <div className="text-orange-700 dark:text-orange-300">No deductions</div>}
-          </div>
-        </div>
-      </div>
-      <div className="mt-3 pt-3 border-t border-orange-200 dark:border-orange-800">
-        <span className="text-orange-700 dark:text-orange-300 text-sm">Total Arrears:</span>
-        <div className="text-xl font-bold text-orange-900 dark:text-orange-100">{formatCurrency(preview.totalArrears)}</div>
-      </div>
-    </div>
-  );
+  const [detailsStoredArrearsTotal, setDetailsStoredArrearsTotal] = useState<number | null>(null);
 
   useEffect(() => {
     loadData();
@@ -332,7 +180,19 @@ export function PromotionsPage() {
       );
 
       setArrearsPreview({
-        ...buildPreviewFromApiResult(result),
+        monthlyDifference: result.monthlyDifference,
+        monthsOwed: result.monthsDiff,
+        totalArrears: result.totalArrears,
+        oldSalary: result.oldNetSalary,
+        newSalary: result.newNetSalary,
+        oldGrossSalary: result.oldGrossSalary,
+        newGrossSalary: result.newGrossSalary,
+        oldAllowances: result.oldAllowances,
+        newAllowances: result.newAllowances,
+        oldDeductions: result.oldDeductions,
+        newDeductions: result.newDeductions,
+        proratedFirstMonth: result.proratedFirstMonth,
+        fullMonthsAfter: result.fullMonthsAfter,
       });
     } catch (error) {
       console.error('Failed to calculate arrears preview:', error);
@@ -349,21 +209,20 @@ export function PromotionsPage() {
     const loadDetailsPreview = async () => {
       if (!showDetailsModal || !selectedPromotion) {
         setDetailsArrearsPreview(null);
+        setDetailsStoredArrearsTotal(null);
         return;
       }
       try {
         setDetailsPreviewLoading(true);
-        const promotionDateKey = String(selectedPromotion.promotion_date || selectedPromotion.effective_date || '').slice(0, 10);
+        const effectiveDateKey = String(selectedPromotion.effective_date || '').slice(0, 10);
         const requests: Promise<any>[] = [
           promotionAPI.previewArrears(
             selectedPromotion.staff_id,
             selectedPromotion.new_grade_level,
             selectedPromotion.new_step,
-            promotionDateKey,
+            selectedPromotion.effective_date,
             selectedPromotion.old_grade_level,
             selectedPromotion.old_step,
-            selectedPromotion.old_basic_salary,
-            selectedPromotion.new_basic_salary,
           ),
         ];
 
@@ -372,25 +231,40 @@ export function PromotionsPage() {
         }
 
         const [result, arrearsResponse] = await Promise.all(requests);
-        let preview = buildPreviewFromApiResult(result);
+        setDetailsArrearsPreview({
+          monthlyDifference: result.monthlyDifference,
+          monthsOwed: result.monthsDiff,
+          totalArrears: result.totalArrears,
+          oldSalary: result.oldNetSalary,
+          newSalary: result.newNetSalary,
+          oldGrossSalary: result.oldGrossSalary,
+          newGrossSalary: result.newGrossSalary,
+          oldAllowances: result.oldAllowances,
+          newAllowances: result.newAllowances,
+          oldDeductions: result.oldDeductions,
+          newDeductions: result.newDeductions,
+          proratedFirstMonth: result.proratedFirstMonth,
+          fullMonthsAfter: result.fullMonthsAfter,
+        });
 
         if (Array.isArray(arrearsResponse)) {
           const matchedArrears = arrearsResponse
             .filter((arrears: any) =>
               arrears?.reason === 'promotion' &&
               String(arrears?.staff_id || '') === String(selectedPromotion.staff_id) &&
-              String(arrears?.effective_date || '').slice(0, 10) === promotionDateKey
+              String(arrears?.effective_date || '').slice(0, 10) === effectiveDateKey
             )
             .sort((a: any, b: any) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0];
 
-          if (matchedArrears) {
-            preview = applyStoredArrearsToPreview(preview, matchedArrears);
-          }
+          setDetailsStoredArrearsTotal(
+            matchedArrears ? Number(matchedArrears.total_arrears ?? matchedArrears.totalArrears ?? 0) : null,
+          );
+        } else {
+          setDetailsStoredArrearsTotal(null);
         }
-
-        setDetailsArrearsPreview(preview);
       } catch {
         setDetailsArrearsPreview(null);
+        setDetailsStoredArrearsTotal(null);
       } finally {
         setDetailsPreviewLoading(false);
       }
@@ -654,9 +528,9 @@ export function PromotionsPage() {
         <div>
           <div className="text-foreground">{new Date(row.effective_date).toLocaleDateString()}</div>
           {new Date(row.effective_date) < new Date() && row.status === 'approved' && (
-            <div className="text-xs text-green-700 dark:text-green-400 flex items-center gap-1 mt-1">
+            <div className="text-xs text-orange-600 dark:text-orange-400 flex items-center gap-1 mt-1">
               <AlertCircle className="w-3 h-3" />
-              <span className="tabular-nums">{formatCurrency(Number(row.arrears_total ?? 0))}</span>
+              Arrears Due
             </div>
           )}
         </div>
@@ -1138,7 +1012,136 @@ export function PromotionsPage() {
 
               {/* Arrears Preview */}
               {arrearsPreview && (
-                <PromotionArrearsPreviewCard title="Arrears Preview" preview={arrearsPreview} showZeroMonthsNote />
+                <div className="p-4 bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-900 rounded-lg">
+                  <h4 className="font-medium text-orange-900 dark:text-orange-400 mb-3 flex items-center gap-2">
+                    <Calendar className="w-4 h-4" />
+                    Arrears Preview
+                  </h4>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <span className="text-orange-700 dark:text-orange-300">Old Monthly Salary:</span>
+                      <div className="font-semibold text-orange-900 dark:text-orange-200">
+                        {formatCurrency(arrearsPreview.oldSalary)}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-orange-700 dark:text-orange-300">New Monthly Salary:</span>
+                      <div className="font-semibold text-orange-900 dark:text-orange-200">
+                        {formatCurrency(arrearsPreview.newSalary)}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-orange-700 dark:text-orange-300">Monthly Difference:</span>
+                      <div className="font-semibold text-orange-900 dark:text-orange-200">
+                        {formatCurrency(arrearsPreview.monthlyDifference)}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-orange-700 dark:text-orange-300">Months Owed:</span>
+                      <div className="font-semibold text-orange-900 dark:text-orange-200">
+                        {arrearsPreview.monthsOwed} months
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <span className="text-orange-700 dark:text-orange-300">Old Gross:</span>
+                      <div className="font-semibold text-orange-900 dark:text-orange-200">
+                        {formatCurrency(arrearsPreview.oldGrossSalary)}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-orange-700 dark:text-orange-300">New Gross:</span>
+                      <div className="font-semibold text-orange-900 dark:text-orange-200">
+                        {formatCurrency(arrearsPreview.newGrossSalary)}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-orange-700 dark:text-orange-300">Old Deductions:</span>
+                      <div className="font-semibold text-orange-900 dark:text-orange-200">
+                        {formatCurrency(arrearsPreview.oldDeductions.total)}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-orange-700 dark:text-orange-300">New Deductions:</span>
+                      <div className="font-semibold text-orange-900 dark:text-orange-200">
+                        {formatCurrency(arrearsPreview.newDeductions.total)}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-3 text-xs text-orange-700 dark:text-orange-300">
+                    Prorated first month: {formatCurrency(arrearsPreview.proratedFirstMonth)} · Full months after: {arrearsPreview.fullMonthsAfter}
+                  </div>
+                  {arrearsPreview.monthsOwed === 0 && (
+                    <div className="mt-2 text-xs text-orange-700 dark:text-orange-300">
+                      No arrears are currently owed for the selected effective date, but the monthly salary difference is shown for review.
+                    </div>
+                  )}
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="rounded-lg border border-orange-200 dark:border-orange-900 bg-white/60 dark:bg-orange-950/40 p-3">
+                      <div className="text-xs text-orange-800 dark:text-orange-300 mb-2">Old Allowances</div>
+                      <div className="space-y-1 text-sm">
+                        {arrearsPreview.oldAllowances.items.map((item, idx) => (
+                          <div key={`${item.code}-${idx}`} className="flex items-center justify-between">
+                            <span className="text-orange-900 dark:text-orange-100">{item.name}</span>
+                            <span className="text-orange-900 dark:text-orange-100">{formatCurrency(item.amount)}</span>
+                          </div>
+                        ))}
+                        {arrearsPreview.oldAllowances.items.length === 0 && (
+                          <div className="text-orange-700 dark:text-orange-300">No allowances</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-orange-200 dark:border-orange-900 bg-white/60 dark:bg-orange-950/40 p-3">
+                      <div className="text-xs text-orange-800 dark:text-orange-300 mb-2">New Allowances</div>
+                      <div className="space-y-1 text-sm">
+                        {arrearsPreview.newAllowances.items.map((item, idx) => (
+                          <div key={`${item.code}-${idx}`} className="flex items-center justify-between">
+                            <span className="text-orange-900 dark:text-orange-100">{item.name}</span>
+                            <span className="text-orange-900 dark:text-orange-100">{formatCurrency(item.amount)}</span>
+                          </div>
+                        ))}
+                        {arrearsPreview.newAllowances.items.length === 0 && (
+                          <div className="text-orange-700 dark:text-orange-300">No allowances</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-orange-200 dark:border-orange-900 bg-white/60 dark:bg-orange-950/40 p-3">
+                      <div className="text-xs text-orange-800 dark:text-orange-300 mb-2">Old Deductions</div>
+                      <div className="space-y-1 text-sm">
+                        {arrearsPreview.oldDeductions.items.map((item, idx) => (
+                          <div key={`${item.code}-${idx}`} className="flex items-center justify-between">
+                            <span className="text-orange-900 dark:text-orange-100">{item.name}</span>
+                            <span className="text-orange-900 dark:text-orange-100">{formatCurrency(item.amount)}</span>
+                          </div>
+                        ))}
+                        {arrearsPreview.oldDeductions.items.length === 0 && (
+                          <div className="text-orange-700 dark:text-orange-300">No deductions</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-orange-200 dark:border-orange-900 bg-white/60 dark:bg-orange-950/40 p-3">
+                      <div className="text-xs text-orange-800 dark:text-orange-300 mb-2">New Deductions</div>
+                      <div className="space-y-1 text-sm">
+                        {arrearsPreview.newDeductions.items.map((item, idx) => (
+                          <div key={`${item.code}-${idx}`} className="flex items-center justify-between">
+                            <span className="text-orange-900 dark:text-orange-100">{item.name}</span>
+                            <span className="text-orange-900 dark:text-orange-100">{formatCurrency(item.amount)}</span>
+                          </div>
+                        ))}
+                        {arrearsPreview.newDeductions.items.length === 0 && (
+                          <div className="text-orange-700 dark:text-orange-300">No deductions</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-3 pt-3 border-t border-orange-200 dark:border-orange-800">
+                    <span className="text-orange-700 dark:text-orange-300 text-sm">Total Arrears:</span>
+                    <div className="text-xl font-bold text-orange-900 dark:text-orange-100">
+                      {formatCurrency(arrearsPreview.totalArrears)}
+                    </div>
+                  </div>
+                </div>
               )}
 
               {/* Justification */}
@@ -1273,17 +1276,137 @@ export function PromotionsPage() {
               </div>
             )}
 
-            <div>
+            <div className="p-4 bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-900 rounded-lg">
+              <h4 className="font-medium text-orange-900 dark:text-orange-400 mb-2 flex items-center gap-2">
+                <Calendar className="w-4 h-4" />
+                Arrears Preview (Audit)
+              </h4>
               {detailsPreviewLoading ? (
-                <div className="p-4 bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-900 rounded-lg text-sm text-orange-700 dark:text-orange-300">
-                  Loading preview...
-                </div>
+                <div className="text-sm text-orange-700 dark:text-orange-300">Loading preview...</div>
               ) : detailsArrearsPreview ? (
-                <PromotionArrearsPreviewCard title="Arrears Preview" preview={detailsArrearsPreview} />
-              ) : (
-                <div className="p-4 bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-900 rounded-lg text-sm text-orange-700 dark:text-orange-300">
-                  No preview available
+                <div className="space-y-3 text-sm">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <span className="text-orange-700 dark:text-orange-300">Old Net:</span>
+                      <div className="font-semibold text-orange-900 dark:text-orange-200">
+                        {formatCurrency(detailsArrearsPreview.oldSalary)}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-orange-700 dark:text-orange-300">New Net:</span>
+                      <div className="font-semibold text-orange-900 dark:text-orange-200">
+                        {formatCurrency(detailsArrearsPreview.newSalary)}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-orange-700 dark:text-orange-300">Monthly Difference:</span>
+                      <div className="font-semibold text-orange-900 dark:text-orange-200">
+                        {formatCurrency(detailsArrearsPreview.monthlyDifference)}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-orange-700 dark:text-orange-300">Months Owed:</span>
+                      <div className="font-semibold text-orange-900 dark:text-orange-200">
+                        {detailsArrearsPreview.monthsOwed} months
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <span className="text-orange-700 dark:text-orange-300">Old Gross:</span>
+                      <div className="font-semibold text-orange-900 dark:text-orange-200">
+                        {formatCurrency(detailsArrearsPreview.oldGrossSalary)}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-orange-700 dark:text-orange-300">New Gross:</span>
+                      <div className="font-semibold text-orange-900 dark:text-orange-200">
+                        {formatCurrency(detailsArrearsPreview.newGrossSalary)}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-orange-700 dark:text-orange-300">Old Deductions:</span>
+                      <div className="font-semibold text-orange-900 dark:text-orange-200">
+                        {formatCurrency(detailsArrearsPreview.oldDeductions.total)}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-orange-700 dark:text-orange-300">New Deductions:</span>
+                      <div className="font-semibold text-orange-900 dark:text-orange-200">
+                        {formatCurrency(detailsArrearsPreview.newDeductions.total)}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-xs text-orange-700 dark:text-orange-300">
+                    Prorated first month: {formatCurrency(detailsArrearsPreview.proratedFirstMonth)} · Full months after: {detailsArrearsPreview.fullMonthsAfter}
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="rounded-lg border border-orange-200 dark:border-orange-900 bg-white/60 dark:bg-orange-950/40 p-3">
+                      <div className="text-xs text-orange-800 dark:text-orange-300 mb-2">Old Allowances</div>
+                      <div className="space-y-1 text-sm">
+                        {detailsArrearsPreview.oldAllowances.items.map((item, idx) => (
+                          <div key={`${item.code}-${idx}`} className="flex items-center justify-between">
+                            <span className="text-orange-900 dark:text-orange-100">{item.name}</span>
+                            <span className="text-orange-900 dark:text-orange-100">{formatCurrency(item.amount)}</span>
+                          </div>
+                        ))}
+                        {detailsArrearsPreview.oldAllowances.items.length === 0 && (
+                          <div className="text-orange-700 dark:text-orange-300">No allowances</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-orange-200 dark:border-orange-900 bg-white/60 dark:bg-orange-950/40 p-3">
+                      <div className="text-xs text-orange-800 dark:text-orange-300 mb-2">New Allowances</div>
+                      <div className="space-y-1 text-sm">
+                        {detailsArrearsPreview.newAllowances.items.map((item, idx) => (
+                          <div key={`${item.code}-${idx}`} className="flex items-center justify-between">
+                            <span className="text-orange-900 dark:text-orange-100">{item.name}</span>
+                            <span className="text-orange-900 dark:text-orange-100">{formatCurrency(item.amount)}</span>
+                          </div>
+                        ))}
+                        {detailsArrearsPreview.newAllowances.items.length === 0 && (
+                          <div className="text-orange-700 dark:text-orange-300">No allowances</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-orange-200 dark:border-orange-900 bg-white/60 dark:bg-orange-950/40 p-3">
+                      <div className="text-xs text-orange-800 dark:text-orange-300 mb-2">Old Deductions</div>
+                      <div className="space-y-1 text-sm">
+                        {detailsArrearsPreview.oldDeductions.items.map((item, idx) => (
+                          <div key={`${item.code}-${idx}`} className="flex items-center justify-between">
+                            <span className="text-orange-900 dark:text-orange-100">{item.name}</span>
+                            <span className="text-orange-900 dark:text-orange-100">{formatCurrency(item.amount)}</span>
+                          </div>
+                        ))}
+                        {detailsArrearsPreview.oldDeductions.items.length === 0 && (
+                          <div className="text-orange-700 dark:text-orange-300">No deductions</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-orange-200 dark:border-orange-900 bg-white/60 dark:bg-orange-950/40 p-3">
+                      <div className="text-xs text-orange-800 dark:text-orange-300 mb-2">New Deductions</div>
+                      <div className="space-y-1 text-sm">
+                        {detailsArrearsPreview.newDeductions.items.map((item, idx) => (
+                          <div key={`${item.code}-${idx}`} className="flex items-center justify-between">
+                            <span className="text-orange-900 dark:text-orange-100">{item.name}</span>
+                            <span className="text-orange-900 dark:text-orange-100">{formatCurrency(item.amount)}</span>
+                          </div>
+                        ))}
+                        {detailsArrearsPreview.newDeductions.items.length === 0 && (
+                          <div className="text-orange-700 dark:text-orange-300">No deductions</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="pt-2 border-t border-orange-200 dark:border-orange-900">
+                    <span className="text-orange-700 dark:text-orange-300">Total Arrears:</span>
+                    <div className="text-lg font-bold text-orange-900 dark:text-orange-100">
+                      {formatCurrency(detailsStoredArrearsTotal ?? detailsArrearsPreview.totalArrears)}
+                    </div>
+                  </div>
                 </div>
+              ) : (
+                <div className="text-sm text-orange-700 dark:text-orange-300">No preview available</div>
               )}
             </div>
 

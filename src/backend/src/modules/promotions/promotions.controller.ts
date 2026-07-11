@@ -28,8 +28,6 @@ export class PromotionsController {
       body.effectiveDate,
       body.oldGradeLevel,
       body.oldStep,
-      body.oldBasicSalary,
-      body.newBasicSalary,
     );
   }
 

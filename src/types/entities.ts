@@ -372,13 +372,9 @@ export interface Promotion {
   staff_id: string;
   old_grade_level: number | string;
   old_step: number;
-  old_basic_salary?: number | string;
   new_grade_level: number | string;
   new_step: number;
-  new_basic_salary?: number | string;
-  promotion_date?: string;
   effective_date: string;
-  arrears_total?: number;
   status: 'pending' | 'approved' | 'rejected';
   approved_by?: string;
   approval_date?: string;
