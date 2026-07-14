@@ -745,9 +745,20 @@ export class PayrollService {
 
       // Cooperative Contributions (Auto-Deduct)
       const staffCoops = cooperativeMemberships.filter((m) => m.staff_id === staffMember.id);
+      const payrollYear = Number(String(batch.payroll_month || '').slice(0, 4));
+      const payrollMonth = String(batch.payroll_month || '').slice(5, 7);
       for (const coop of staffCoops) {
-        const contributionAmount = parseFloat(coop.monthly_contribution);
-        if (contributionAmount > 0) {
+        const contributionAmount = parseFloat(coop.monthly_contribution || 0);
+        const registrationFeeAmount = parseFloat(coop.registration_fee_amount || 0);
+        const annualSubscriptionAmount = parseFloat(coop.annual_subscription_amount || 0);
+        const lastAnnualSubscriptionYear = Number(coop.last_annual_subscription_year || 0);
+        const shouldAddRecurringAnnualSubscription =
+          annualSubscriptionAmount > 0 &&
+          Boolean(coop.first_annual_subscription_paid_at) &&
+          payrollMonth === '01' &&
+          lastAnnualSubscriptionYear < payrollYear;
+
+        if (coop.auto_deduct_contribution && contributionAmount > 0) {
           deductionsArray.push({
             code: coop.cooperative_code,
             name: `${coop.cooperative_name} Contribution`,
@@ -755,8 +766,46 @@ export class PayrollService {
             cooperative_id: coop.cooperative_id,
             member_id: coop.member_id,
             is_cooperative: true,
+            contribution_type: 'regular',
           });
           totalDeductionsAmount += contributionAmount;
+        }
+
+        if (registrationFeeAmount > 0 && !coop.registration_fee_paid_at) {
+          deductionsArray.push({
+            code: `${coop.cooperative_code}-REG`,
+            name: `${coop.cooperative_name} Registration Fee`,
+            amount: registrationFeeAmount,
+            cooperative_id: coop.cooperative_id,
+            member_id: coop.member_id,
+            is_cooperative: true,
+            contribution_type: 'registration_fee',
+          });
+          totalDeductionsAmount += registrationFeeAmount;
+        }
+
+        if (annualSubscriptionAmount > 0 && !coop.first_annual_subscription_paid_at) {
+          deductionsArray.push({
+            code: `${coop.cooperative_code}-ANN`,
+            name: `${coop.cooperative_name} 1st Annual Subscription`,
+            amount: annualSubscriptionAmount,
+            cooperative_id: coop.cooperative_id,
+            member_id: coop.member_id,
+            is_cooperative: true,
+            contribution_type: 'annual_subscription',
+          });
+          totalDeductionsAmount += annualSubscriptionAmount;
+        } else if (shouldAddRecurringAnnualSubscription) {
+          deductionsArray.push({
+            code: `${coop.cooperative_code}-ANN`,
+            name: `${coop.cooperative_name} Annual Subscription`,
+            amount: annualSubscriptionAmount,
+            cooperative_id: coop.cooperative_id,
+            member_id: coop.member_id,
+            is_cooperative: true,
+            contribution_type: 'annual_subscription',
+          });
+          totalDeductionsAmount += annualSubscriptionAmount;
         }
       }
 
@@ -1595,6 +1644,7 @@ export class PayrollService {
               memberId: deduction.member_id,
               amount: parseFloat(deduction.amount),
               month: batch.payroll_month,
+              contributionType: deduction.contribution_type || 'regular',
             });
           }
         }

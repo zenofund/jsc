@@ -834,6 +834,7 @@ export interface Cooperative {
   name: string;
   code: string; // Short code (e.g., TCC, MPC, TRANSPORT)
   description: string;
+  registration_fee?: number;
   registration_number?: string;
   date_established: string;
   cooperative_type: 'thrift_credit' | 'multipurpose' | 'producer' | 'consumer' | 'housing' | 'transport' | 'other';
@@ -873,6 +874,11 @@ export interface CooperativeMember {
   department: string;
   join_date: string;
   monthly_contribution: number;
+  registration_fee_amount?: number;
+  registration_fee_paid_at?: string;
+  annual_subscription_amount?: number;
+  first_annual_subscription_paid_at?: string;
+  last_annual_subscription_year?: number;
   total_contributions: number;
   total_share_capital: number;
   shares_owned: number; // Number of shares
@@ -897,7 +903,13 @@ export interface CooperativeContribution {
   staff_name: string;
   contribution_month: string; // Format: YYYY-MM
   amount: number;
-  contribution_type: 'regular' | 'voluntary' | 'share_capital' | 'special_levy';
+  contribution_type:
+    | 'regular'
+    | 'voluntary'
+    | 'share_capital'
+    | 'special_levy'
+    | 'registration_fee'
+    | 'annual_subscription';
   payroll_batch_id?: string;
   payment_method: 'payroll_deduction' | 'cash' | 'bank_transfer';
   payment_date: string;

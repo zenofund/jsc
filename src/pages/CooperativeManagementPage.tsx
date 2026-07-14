@@ -55,6 +55,8 @@ interface MemberFormData {
   staff_id: string;
   monthly_contribution: number;
   shares_owned: number | '';
+  registration_fee_amount: number;
+  annual_subscription_amount: number;
 }
 
 interface ContributionFormData {
@@ -62,7 +64,13 @@ interface ContributionFormData {
   member_id: string;
   contribution_month: string;
   amount: number;
-  contribution_type: 'regular' | 'voluntary' | 'share_capital' | 'special_levy';
+  contribution_type:
+    | 'regular'
+    | 'voluntary'
+    | 'share_capital'
+    | 'special_levy'
+    | 'registration_fee'
+    | 'annual_subscription';
   payment_method: 'payroll_deduction' | 'cash' | 'bank_transfer';
   receipt_number: string;
 }
@@ -356,6 +364,8 @@ export function CooperativeManagementPage() {
         cooperative_id: formData.cooperative_id,
         monthly_contribution: formData.monthly_contribution,
         shares_owned: toOptionalNumber(formData.shares_owned),
+        registration_fee_amount: formData.registration_fee_amount,
+        annual_subscription_amount: formData.annual_subscription_amount,
       });
       toast.success(isTransfer ? 'Member transferred successfully' : 'Member updated successfully');
       setShowMemberModal(false);
@@ -1819,6 +1829,8 @@ function MemberFormModal({
       : (member as any)?.sharesOwned !== undefined && (member as any)?.sharesOwned !== null
         ? Number((member as any).sharesOwned)
         : '',
+    registration_fee_amount: Number((member as any)?.registration_fee_amount ?? 0),
+    annual_subscription_amount: Number((member as any)?.annual_subscription_amount ?? 0),
   }));
   const [staffSearchTerm, setStaffSearchTerm] = useState('');
 
@@ -1833,6 +1845,8 @@ function MemberFormModal({
           : (member as any).sharesOwned !== undefined && (member as any).sharesOwned !== null
             ? Number((member as any).sharesOwned)
             : '',
+        registration_fee_amount: Number((member as any).registration_fee_amount ?? 0),
+        annual_subscription_amount: Number((member as any).annual_subscription_amount ?? 0),
       });
     }
   }, [member]);
@@ -1861,14 +1875,15 @@ function MemberFormModal({
   }, [staff, staffSearchTerm]);
 
   useEffect(() => {
-    if (selectedCooperative && !isEditing) {
+    if (selectedCooperative && (!isEditing || isTransfer)) {
       setFormData(prev => ({
         ...prev,
         monthly_contribution: Number(selectedCooperative.monthly_contribution_required),
         shares_owned: hasShareCapitalValue ? (selectedCooperative.minimum_shares ?? '') : '',
+        registration_fee_amount: Number(selectedCooperative.registration_fee || 0),
       }));
     }
-  }, [selectedCooperative, hasShareCapitalValue, isEditing]);
+  }, [selectedCooperative, hasShareCapitalValue, isEditing, isTransfer]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1987,6 +2002,30 @@ function MemberFormModal({
           )}
         </div>
 
+        <div>
+          <label className="block text-sm mb-2">Registration Fee Payroll Deduction (₦)</label>
+          <NumberInput
+            value={formData.registration_fee_amount}
+            onChange={(value) => setFormData({ ...formData, registration_fee_amount: value })}
+            min={0}
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Deducted once from payroll after member registration.
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-sm mb-2">Annual Subscription Payroll Deduction (₦)</label>
+          <NumberInput
+            value={formData.annual_subscription_amount}
+            onChange={(value) => setFormData({ ...formData, annual_subscription_amount: value })}
+            min={0}
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            The first annual subscription is deducted once from payroll, then automatically every January afterward.
+          </p>
+        </div>
+
         {selectedCooperative && (
           <div className="p-4 rounded-lg bg-muted/50 border border-border">
             <h4 className="font-medium mb-2 text-sm">{isTransfer ? 'Transfer Setup Summary' : 'Initial Payment Summary'}</h4>
@@ -1999,9 +2038,24 @@ function MemberFormModal({
                 <span className="text-muted-foreground">First Month Contribution:</span>
                 <span>{formatCurrency(formData.monthly_contribution)}</span>
               </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Registration Fee:</span>
+                <span>{formatCurrency(formData.registration_fee_amount)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">1st Annual Subscription:</span>
+                <span>{formatCurrency(formData.annual_subscription_amount)}</span>
+              </div>
               <div className="flex justify-between font-medium pt-2 border-t border-border">
                 <span>Total:</span>
-                <span>{formatCurrency(shareCapitalTotal + Number(formData.monthly_contribution))}</span>
+                <span>
+                  {formatCurrency(
+                    shareCapitalTotal +
+                      Number(formData.monthly_contribution) +
+                      Number(formData.registration_fee_amount) +
+                      Number(formData.annual_subscription_amount),
+                  )}
+                </span>
               </div>
             </div>
           </div>

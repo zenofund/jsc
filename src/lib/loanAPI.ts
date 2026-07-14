@@ -597,13 +597,17 @@ export const cooperativeAPI = {
     staff_id: string;
     monthly_contribution: number;
     shares_owned?: number;
+    registration_fee_amount?: number;
+    annual_subscription_amount?: number;
   }) {
     // Map to backend DTO expectations
     const payload = {
       cooperativeId: data.cooperative_id,
       staffId: data.staff_id,
       monthlyContribution: data.monthly_contribution,
-      shares_owned: data.shares_owned
+      shares_owned: data.shares_owned,
+      registration_fee_amount: data.registration_fee_amount,
+      annual_subscription_amount: data.annual_subscription_amount,
     };
     return makeApiRequest('/cooperatives/members', { method: 'POST', body: JSON.stringify(payload) });
   },
@@ -614,7 +618,13 @@ export const cooperativeAPI = {
     member_id: string;
     contribution_month: string;
     amount: number;
-    contribution_type: 'regular' | 'voluntary' | 'share_capital' | 'special_levy';
+    contribution_type:
+      | 'regular'
+      | 'voluntary'
+      | 'share_capital'
+      | 'special_levy'
+      | 'registration_fee'
+      | 'annual_subscription';
     payroll_batch_id?: string;
     payment_method: 'payroll_deduction' | 'cash' | 'bank_transfer';
     receipt_number?: string;
@@ -698,6 +708,8 @@ export const cooperativeAPI = {
       cooperativeId?: string;
       monthly_contribution?: number;
       shares_owned?: number;
+      registration_fee_amount?: number;
+      annual_subscription_amount?: number;
       monthlyContribution?: number;
       sharesOwned?: number;
     },
@@ -709,6 +721,8 @@ export const cooperativeAPI = {
     if (cooperativeId !== undefined) payload.cooperativeId = cooperativeId;
     if (monthlyContribution !== undefined) payload.monthlyContribution = monthlyContribution;
     if (shares_owned !== undefined) payload.shares_owned = shares_owned;
+    if (data.registration_fee_amount !== undefined) payload.registration_fee_amount = data.registration_fee_amount;
+    if (data.annual_subscription_amount !== undefined) payload.annual_subscription_amount = data.annual_subscription_amount;
 
     return makeApiRequest(`/cooperatives/members/${memberId}`, {
       method: 'PUT',

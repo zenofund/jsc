@@ -19,6 +19,16 @@ export class AddCooperativeMemberDto {
   @IsOptional()
   shares_owned?: number;
 
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  registration_fee_amount?: number;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  annual_subscription_amount?: number;
+
   @IsString()
   @IsOptional()
   status?: string;

@@ -10,6 +10,11 @@ import {
   MigrationOpeningBalanceRowDto,
 } from './dto/migration-import.dto';
 
+const CONTRIBUTION_TOTAL_SQL = `COALESCE(SUM(CASE
+  WHEN cc.contribution_type IN ('registration_fee', 'annual_subscription') THEN 0
+  ELSE cc.amount
+END), 0)`;
+
 @Injectable()
 export class CooperativesService {
   private readonly logger = new Logger(CooperativesService.name);
@@ -91,8 +96,8 @@ export class CooperativesService {
       SELECT 
         c.*,
         (SELECT COUNT(*) FROM cooperative_members cm WHERE cm.cooperative_id = c.id AND cm.status = 'active') as total_members,
-        (SELECT COALESCE(SUM(cc.amount), 0) FROM cooperative_contributions cc WHERE cc.cooperative_id = c.id) as total_contributions,
-        (SELECT COALESCE(SUM(cc.amount), 0) FROM cooperative_contributions cc WHERE cc.cooperative_id = c.id) as total_share_capital,
+        (SELECT ${CONTRIBUTION_TOTAL_SQL} FROM cooperative_contributions cc WHERE cc.cooperative_id = c.id) as total_contributions,
+        (SELECT ${CONTRIBUTION_TOTAL_SQL} FROM cooperative_contributions cc WHERE cc.cooperative_id = c.id) as total_share_capital,
         (
           SELECT COALESCE(SUM(ld.amount_disbursed), 0)
           FROM loan_disbursements ld
@@ -130,8 +135,8 @@ export class CooperativesService {
       `SELECT 
         c.*,
         (SELECT COUNT(*) FROM cooperative_members cm WHERE cm.cooperative_id = c.id AND cm.status = 'active') as member_count,
-        (SELECT COALESCE(SUM(cc.amount), 0) FROM cooperative_contributions cc WHERE cc.cooperative_id = c.id) as total_contributions,
-        (SELECT COALESCE(SUM(cc.amount), 0) FROM cooperative_contributions cc WHERE cc.cooperative_id = c.id) as total_share_capital,
+        (SELECT ${CONTRIBUTION_TOTAL_SQL} FROM cooperative_contributions cc WHERE cc.cooperative_id = c.id) as total_contributions,
+        (SELECT ${CONTRIBUTION_TOTAL_SQL} FROM cooperative_contributions cc WHERE cc.cooperative_id = c.id) as total_share_capital,
         (
           SELECT COALESCE(SUM(ld.amount_disbursed), 0)
           FROM loan_disbursements ld
@@ -339,7 +344,7 @@ export class CooperativesService {
 
     // Check if cooperative exists
     const cooperative = await this.databaseService.queryOne(
-      'SELECT id, monthly_contribution FROM cooperatives WHERE id = $1',
+      'SELECT id, monthly_contribution, registration_fee FROM cooperatives WHERE id = $1',
       [dto.cooperativeId],
     );
 
@@ -361,9 +366,25 @@ export class CooperativesService {
       // Reactivate membership
       const member = await this.databaseService.queryOne(
         `UPDATE cooperative_members 
-        SET status = 'active', monthly_contribution = $1, shares_owned = $2, updated_at = NOW(), updated_by = $3
-        WHERE id = $4 RETURNING *`,
-        [dto.monthlyContribution || cooperative.monthly_contribution, dto.shares_owned || 0, userId, existingMember.id],
+        SET status = 'active',
+            monthly_contribution = $1,
+            shares_owned = $2,
+            registration_fee_amount = $3,
+            registration_fee_paid_at = NULL,
+            annual_subscription_amount = $4,
+            first_annual_subscription_paid_at = NULL,
+            last_annual_subscription_year = NULL,
+            updated_at = NOW(),
+            updated_by = $5
+        WHERE id = $6 RETURNING *`,
+        [
+          dto.monthlyContribution || cooperative.monthly_contribution,
+          dto.shares_owned || 0,
+          dto.registration_fee_amount ?? cooperative.registration_fee ?? 0,
+          dto.annual_subscription_amount ?? 0,
+          userId,
+          existingMember.id,
+        ],
       );
 
       this.logger.log(`Staff ${staff.staff_number} reactivated in cooperative ${dto.cooperativeId}`);
@@ -373,14 +394,17 @@ export class CooperativesService {
     // Add new member
     const member = await this.databaseService.queryOne(
       `INSERT INTO cooperative_members (
-        cooperative_id, staff_id, monthly_contribution, shares_owned, join_date, status, created_by
-      ) VALUES ($1, $2, $3, $4, NOW(), 'active', $5)
+        cooperative_id, staff_id, monthly_contribution, shares_owned, registration_fee_amount,
+        annual_subscription_amount, join_date, status, created_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), 'active', $7)
       RETURNING *`,
       [
         dto.cooperativeId,
         dto.staffId,
         dto.monthlyContribution || cooperative.monthly_contribution,
         dto.shares_owned || 0,
+        dto.registration_fee_amount ?? cooperative.registration_fee ?? 0,
+        dto.annual_subscription_amount ?? 0,
         userId,
       ],
     );
@@ -404,7 +428,7 @@ export class CooperativesService {
         s.last_name,
         s.email,
         COALESCE(d.name, 'Unassigned') as department,
-        COALESCE(SUM(cc.amount), 0) as total_contributions
+        ${CONTRIBUTION_TOTAL_SQL} as total_contributions
       FROM cooperative_members cm
       JOIN staff s ON cm.staff_id = s.id
       LEFT JOIN departments d ON s.department_id = d.id
@@ -435,7 +459,7 @@ export class CooperativesService {
         c.name,
         c.type,
         c.monthly_contribution as cooperative_monthly_contribution,
-        COALESCE(SUM(cc.amount), 0) as total_contributions
+        ${CONTRIBUTION_TOTAL_SQL} as total_contributions
       FROM cooperative_members cm
       JOIN cooperatives c ON cm.cooperative_id = c.id
       LEFT JOIN cooperative_contributions cc ON cm.id = cc.member_id
@@ -667,37 +691,80 @@ export class CooperativesService {
     memberId: string;
     amount: number;
     month: string;
+    contributionType?: string;
   }>, userId: string) {
     if (contributions.length === 0) {
       return [];
     }
 
-    const values = contributions
-      .map((c, i) => {
-        const baseIndex = i * 5;
-        return `($${baseIndex + 1}, $${baseIndex + 2}, $${baseIndex + 3}, $${baseIndex + 4}, $${baseIndex + 5}, $${contributions.length * 5 + 1})`;
-      })
-      .join(', ');
+    return this.databaseService.transaction(async (client) => {
+      const values = contributions
+        .map((_, i) => {
+          const baseIndex = i * 7;
+          return `($${baseIndex + 1}, $${baseIndex + 2}, $${baseIndex + 3}, $${baseIndex + 4}, $${baseIndex + 5}, 'payroll_deduction', $${baseIndex + 6}, $${baseIndex + 7})`;
+        })
+        .join(', ');
 
-    const params = contributions.flatMap(c => [
-      c.cooperativeId,
-      c.memberId,
-      c.amount,
-      c.month,
-      payrollBatchId,
-    ]);
-    params.push(userId);
+      const params = contributions.flatMap((c) => [
+        c.cooperativeId,
+        c.memberId,
+        c.amount,
+        c.month,
+        payrollBatchId,
+        c.contributionType || 'regular',
+        userId,
+      ]);
 
-    const result = await this.databaseService.query(
-      `INSERT INTO cooperative_contributions (
-        cooperative_id, member_id, amount, contribution_month, payroll_batch_id, created_by
-      ) VALUES ${values}
-      RETURNING *`,
-      params,
-    );
+      const result = await client.query(
+        `INSERT INTO cooperative_contributions (
+          cooperative_id, member_id, amount, contribution_month, payroll_batch_id, payment_method, contribution_type, created_by
+        ) VALUES ${values}
+        RETURNING *`,
+        params,
+      );
 
-    this.logger.log(`Bulk recorded ${contributions.length} contributions from payroll ${payrollBatchId}`);
-    return result;
+      const payrollYear = Number(String(contributions[0]?.month || '').slice(0, 4)) || new Date().getFullYear();
+      const registrationMemberIds = Array.from(
+        new Set(
+          contributions
+            .filter((contribution) => contribution.contributionType === 'registration_fee')
+            .map((contribution) => contribution.memberId),
+        ),
+      );
+      const annualMemberIds = Array.from(
+        new Set(
+          contributions
+            .filter((contribution) => contribution.contributionType === 'annual_subscription')
+            .map((contribution) => contribution.memberId),
+        ),
+      );
+
+      if (registrationMemberIds.length > 0) {
+        await client.query(
+          `UPDATE cooperative_members
+           SET registration_fee_paid_at = COALESCE(registration_fee_paid_at, NOW()),
+               updated_at = NOW(),
+               updated_by = $1
+           WHERE id = ANY($2::uuid[])`,
+          [userId, registrationMemberIds],
+        );
+      }
+
+      if (annualMemberIds.length > 0) {
+        await client.query(
+          `UPDATE cooperative_members
+           SET first_annual_subscription_paid_at = COALESCE(first_annual_subscription_paid_at, NOW()),
+               last_annual_subscription_year = GREATEST(COALESCE(last_annual_subscription_year, 0), $1),
+               updated_at = NOW(),
+               updated_by = $2
+           WHERE id = ANY($3::uuid[])`,
+          [payrollYear, userId, annualMemberIds],
+        );
+      }
+
+      this.logger.log(`Bulk recorded ${contributions.length} contributions from payroll ${payrollBatchId}`);
+      return result.rows;
+    });
   }
 
   async getAllMembers(staffId?: string) {
@@ -712,7 +779,7 @@ export class CooperativesService {
         s.email,
         c.name as cooperative_name,
         COALESCE(d.name, 'Unassigned') as department,
-        COALESCE(SUM(cc.amount), 0) as total_contributions
+        ${CONTRIBUTION_TOTAL_SQL} as total_contributions
       FROM cooperative_members cm
       JOIN staff s ON cm.staff_id = s.id
       LEFT JOIN departments d ON s.department_id = d.id
@@ -742,7 +809,7 @@ export class CooperativesService {
         s.last_name,
         c.name as cooperative_name,
         COALESCE(d.name, 'Unassigned') as department,
-        COALESCE(SUM(cc.amount), 0) as total_contributions
+        ${CONTRIBUTION_TOTAL_SQL} as total_contributions
       FROM cooperative_members cm
       JOIN staff s ON cm.staff_id = s.id
       LEFT JOIN departments d ON s.department_id = d.id
@@ -771,6 +838,14 @@ export class CooperativesService {
         dto.shares_owned !== undefined && dto.shares_owned !== null
           ? Number(dto.shares_owned)
           : undefined,
+      registrationFeeAmount:
+        dto.registration_fee_amount !== undefined && dto.registration_fee_amount !== null
+          ? Number(dto.registration_fee_amount)
+          : undefined,
+      annualSubscriptionAmount:
+        dto.annual_subscription_amount !== undefined && dto.annual_subscription_amount !== null
+          ? Number(dto.annual_subscription_amount)
+          : undefined,
     };
   }
 
@@ -779,7 +854,8 @@ export class CooperativesService {
     dto: Partial<AddCooperativeMemberDto> & { status?: string; suspension_reason?: string },
     userId: string,
   ) {
-    const { cooperativeId, monthlyContribution, sharesOwned } = this.normalizeMemberTransferInput(dto);
+    const { cooperativeId, monthlyContribution, sharesOwned, registrationFeeAmount, annualSubscriptionAmount } =
+      this.normalizeMemberTransferInput(dto);
 
     if (!cooperativeId) {
       throw new BadRequestException('Target cooperative is required for member transfer');
@@ -792,7 +868,7 @@ export class CooperativesService {
 
     return this.databaseService.transaction(async (client) => {
       const targetCooperativeRes = await client.query(
-        `SELECT id, name, monthly_contribution_required, monthly_contribution, minimum_shares
+        `SELECT id, name, monthly_contribution_required, monthly_contribution, minimum_shares, registration_fee
          FROM cooperatives
          WHERE id = $1`,
         [cooperativeId],
@@ -840,6 +916,8 @@ export class CooperativesService {
         monthlyContribution ??
         Number(targetCooperative.monthly_contribution_required ?? targetCooperative.monthly_contribution ?? 0);
       const nextSharesOwned = sharesOwned ?? 0;
+      const nextRegistrationFeeAmount = registrationFeeAmount ?? Number(targetCooperative.registration_fee ?? 0);
+      const nextAnnualSubscriptionAmount = annualSubscriptionAmount ?? 0;
 
       await client.query(
         `UPDATE cooperative_members
@@ -859,22 +937,43 @@ export class CooperativesService {
            SET status = 'active',
                monthly_contribution = $1,
                shares_owned = $2,
+               registration_fee_amount = $3,
+               registration_fee_paid_at = NULL,
+               annual_subscription_amount = $4,
+               first_annual_subscription_paid_at = NULL,
+               last_annual_subscription_year = NULL,
                suspension_reason = NULL,
                exit_date = NULL,
                updated_at = NOW(),
-               updated_by = $3
-           WHERE id = $4
+               updated_by = $5
+           WHERE id = $6
            RETURNING *`,
-          [nextMonthlyContribution, nextSharesOwned, userId, targetMembership.id],
+          [
+            nextMonthlyContribution,
+            nextSharesOwned,
+            nextRegistrationFeeAmount,
+            nextAnnualSubscriptionAmount,
+            userId,
+            targetMembership.id,
+          ],
         );
         transferredMember = reactivatedRes.rows?.[0];
       } else {
         const insertedRes = await client.query(
           `INSERT INTO cooperative_members (
-            cooperative_id, staff_id, monthly_contribution, shares_owned, join_date, status, created_by
-          ) VALUES ($1, $2, $3, $4, NOW(), 'active', $5)
+            cooperative_id, staff_id, monthly_contribution, shares_owned, registration_fee_amount,
+            annual_subscription_amount, join_date, status, created_by
+          ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), 'active', $7)
           RETURNING *`,
-          [cooperativeId, member.staff_id, nextMonthlyContribution, nextSharesOwned, userId],
+          [
+            cooperativeId,
+            member.staff_id,
+            nextMonthlyContribution,
+            nextSharesOwned,
+            nextRegistrationFeeAmount,
+            nextAnnualSubscriptionAmount,
+            userId,
+          ],
         );
         transferredMember = insertedRes.rows?.[0];
       }
@@ -907,6 +1006,16 @@ export class CooperativesService {
     if (dto.shares_owned !== undefined) {
       updates.push(`shares_owned = $${paramIndex++}`);
       values.push(dto.shares_owned);
+    }
+
+    if (dto.registration_fee_amount !== undefined) {
+      updates.push(`registration_fee_amount = $${paramIndex++}`);
+      values.push(dto.registration_fee_amount);
+    }
+
+    if (dto.annual_subscription_amount !== undefined) {
+      updates.push(`annual_subscription_amount = $${paramIndex++}`);
+      values.push(dto.annual_subscription_amount);
     }
 
     // Add status update logic
@@ -972,7 +1081,10 @@ export class CooperativesService {
       `SELECT
         (SELECT COUNT(*) FROM cooperative_members WHERE cooperative_id = $1) as total_members,
         (SELECT COUNT(*) FROM cooperative_members WHERE cooperative_id = $1 AND status = 'active') as active_members,
-        (SELECT COALESCE(SUM(amount), 0) FROM cooperative_contributions WHERE cooperative_id = $1) as total_contributions,
+        (SELECT COALESCE(SUM(CASE
+          WHEN contribution_type IN ('registration_fee', 'annual_subscription') THEN 0
+          ELSE amount
+        END), 0) FROM cooperative_contributions WHERE cooperative_id = $1) as total_contributions,
         (SELECT COALESCE(AVG(monthly_contribution), 0) FROM cooperative_members WHERE cooperative_id = $1 AND status = 'active') as average_contribution`,
       [id]
     );
@@ -1008,7 +1120,10 @@ export class CooperativesService {
         COUNT(DISTINCT CASE WHEN c.status = 'active' THEN c.id END) as active_cooperatives,
         COUNT(DISTINCT cm.id) as total_members,
         COUNT(DISTINCT CASE WHEN cm.status = 'active' THEN cm.id END) as active_members,
-        COALESCE(SUM(cc.amount), 0) as total_contributions,
+        COALESCE(SUM(CASE
+          WHEN cc.contribution_type IN ('registration_fee', 'annual_subscription') THEN 0
+          ELSE cc.amount
+        END), 0) as total_contributions,
         COUNT(DISTINCT cc.id) as total_contribution_transactions
       FROM cooperatives c
       LEFT JOIN cooperative_members cm ON c.id = cm.cooperative_id
@@ -1132,15 +1247,25 @@ export class CooperativesService {
         cm.staff_id,
         cm.cooperative_id,
         cm.monthly_contribution,
+        cm.registration_fee_amount,
+        cm.registration_fee_paid_at,
+        cm.annual_subscription_amount,
+        cm.first_annual_subscription_paid_at,
+        cm.last_annual_subscription_year,
         c.name as cooperative_name,
         c.code as cooperative_code,
+        c.auto_deduct_contribution,
         s.staff_number
       FROM cooperative_members cm
       JOIN cooperatives c ON cm.cooperative_id = c.id
       JOIN staff s ON cm.staff_id = s.id
-      WHERE c.auto_deduct_contribution = true 
-      AND c.status = 'active'
-      AND cm.status = 'active'`,
+      WHERE c.status = 'active'
+      AND cm.status = 'active'
+      AND (
+        c.auto_deduct_contribution = true
+        OR (COALESCE(cm.registration_fee_amount, 0) > 0 AND cm.registration_fee_paid_at IS NULL)
+        OR COALESCE(cm.annual_subscription_amount, 0) > 0
+      )`,
     );
   }
 
@@ -1155,6 +1280,7 @@ export class CooperativesService {
       memberId: string;
       amount: number;
       month: string;
+      contributionType?: string;
     }>, 
     userId: string
   ) {

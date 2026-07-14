@@ -33,6 +33,7 @@
     "db:migrate-report-shares-created-at": "node scripts/run-migration-059-add-report-shares-created-at.js",
     "db:migrate-department-fk": "node scripts/run-migration-060-department-fk-on-delete.js",
     "db:migrate-calculation-basis": "node scripts/run-migration-061-add-calculation-basis.js",
+    "db:migrate-cooperative-member-fees": "node scripts/run-migration-062-add-cooperative-member-fees.js",
     "test:salary-api": "node scripts/test-salary-api.js"
   },
   "dependencies": {
