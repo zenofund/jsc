@@ -12,6 +12,7 @@ import {
 import { PageSkeleton } from '../components/PageLoader';
 import { formatCurrency, formatCompactCurrency } from '../utils/format';
 import { loadPdfMake } from '../utils/loadPdfMake';
+import { exportSpreadsheet } from '../utils/exportSpreadsheet';
 
 export function ReportsPage() {
   const { user } = useAuth();
@@ -157,278 +158,303 @@ export function ReportsPage() {
     return ['FCT', 'Nasarawa', 'Niger'];
   };
 
-  const handleDownloadPayeScheduleCSV = async () => {
+  const handleDownloadPayeScheduleExcel = async () => {
     try {
       const state = String(payeScheduleState || 'FCT').trim() || 'FCT';
-      const csvText = await reportAPI.getPayeSchedule(selectedMonth, state, 'csv');
-      const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `paye_schedule_${state}_${selectedMonth}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      const schedule = await reportAPI.getPayeSchedule(selectedMonth, state, 'json');
+      const rows = Array.isArray(schedule?.rows)
+        ? schedule.rows.map((row: any, index: number) => ({
+            sn: index + 1,
+            staff_number: row.staff_number,
+            staff_name: row.staff_name,
+            tax_id: row.tax_id,
+            pit_remittance_state: row.pit_remittance_state,
+            payroll_month: row.payroll_month,
+            paye_amount: row.amount,
+          }))
+        : [];
+
+      exportSpreadsheet({
+        title: `PAYE Schedule - ${String(schedule?.state || state)} (${String(schedule?.month || selectedMonth)})`,
+        fileName: `paye_schedule_${state}_${selectedMonth}.xls`,
+        meta: [
+          { label: 'Organization', value: String(schedule?.organization_name || organizationName) },
+          { label: 'Total Staff', value: String(schedule?.total_staff ?? rows.length ?? 0) },
+          { label: 'Total Amount', value: String(schedule?.total_amount ?? '') },
+          { label: 'Missing Tax ID Count', value: String(schedule?.missing_tax_id_count ?? 0) },
+          { label: 'Generated At', value: new Date().toLocaleString() },
+        ],
+        columns: [
+          { key: 'sn', label: 'S/N' },
+          { key: 'staff_number', label: 'Staff Number' },
+          { key: 'staff_name', label: 'Staff Name' },
+          { key: 'tax_id', label: 'Tax ID' },
+          { key: 'pit_remittance_state', label: 'PIT State' },
+          { key: 'payroll_month', label: 'Payroll Month' },
+          { key: 'paye_amount', label: 'PAYE Amount' },
+        ],
+        rows,
+      });
     } catch (error: any) {
       console.error('PAYE Schedule Export Error:', error);
       showToast('error', error?.message || 'Failed to download PAYE schedule');
     }
   };
 
-  const handleExportCSV = () => {
+  const handleExportExcel = () => {
     if (!reportData) {
       showToast('error', 'No data to export');
       return;
     }
 
-    let csv = '';
-    let filename = '';
-
     try {
-      const currentDate = new Date().toLocaleDateString();
-      const commonHeader = `${organizationName.toUpperCase()}\n`;
-      
-      const formatCurrency = (val: number | string | undefined | null) => {
+      const formatAmount = (val: number | string | undefined | null) => {
         if (val === undefined || val === null) return '0.00';
         const num = typeof val === 'string' ? parseFloat(val) : val;
         return isNaN(num) ? '0.00' : num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       };
-      const csvCell = (val: any) => `"${String(val ?? '').replace(/"/g, '""')}"`;
-      const csvRow = (vals: any[]) => vals.map(csvCell).join(',') + '\n';
 
       if (activeTab === 'staff') {
-        // Staff Report CSV
-        const reportTitle = `STAFF REPORT\nGENERATED: ${currentDate}\n\n`;
         const totalStaff = reportData.staff?.length || 0;
-        const summary = `TOTAL STAFF: ${totalStaff}\n\n`;
-        
-        const headers = ['STAFF NUMBER', 'FIRST NAME', 'LAST NAME', 'DEPARTMENT', 'GRADE LEVEL', 'STEP', 'BASIC SALARY', 'STATUS'];
-        csv = commonHeader + reportTitle + summary + headers.join(',') + '\n';
-        
         const sortedStaff = sortStaffByGradeDesc(reportData.staff || []);
-        sortedStaff.forEach((staff: any) => {
-          const row = [
-            staff.staff_number,
-            staff.bio_data.first_name,
-            staff.bio_data.last_name,
-            staff.appointment.department,
-            staff.salary_info.grade_level,
-            staff.salary_info.step,
-            formatCurrency(staff.salary_info.basic_salary),
-            staff.status
-          ];
-          csv += row.map(val => `"${val}"`).join(',') + '\n';
+        const rows = sortedStaff.map((staff: any) => ({
+          staff_number: staff.staff_number,
+          first_name: staff.bio_data.first_name,
+          last_name: staff.bio_data.last_name,
+          department: staff.appointment.department,
+          grade_level: staff.salary_info.grade_level,
+          step: staff.salary_info.step,
+          basic_salary: formatAmount(staff.salary_info.basic_salary),
+          status: staff.status,
+        }));
+
+        exportSpreadsheet({
+          title: 'Staff Report',
+          fileName: `staff_report_${new Date().toISOString().split('T')[0]}.xls`,
+          meta: [
+            { label: 'Organization', value: organizationName },
+            { label: 'Total Staff', value: String(totalStaff) },
+            ...(staffDepartment ? [{ label: 'Department', value: staffDepartment }] : []),
+            { label: 'Generated At', value: new Date().toLocaleString() },
+          ],
+          columns: [
+            { key: 'staff_number', label: 'Staff Number' },
+            { key: 'first_name', label: 'First Name' },
+            { key: 'last_name', label: 'Last Name' },
+            { key: 'department', label: 'Department' },
+            { key: 'grade_level', label: 'Grade Level' },
+            { key: 'step', label: 'Step' },
+            { key: 'basic_salary', label: 'Basic Salary' },
+            { key: 'status', label: 'Status' },
+          ],
+          rows,
         });
-        filename = `staff_report_${new Date().toISOString().split('T')[0]}.csv`;
 
       } else if (activeTab === 'payroll') {
-        // Payroll Report CSV
-        const reportTitle = `PAYROLL REPORT - ${selectedMonth}\nGENERATED: ${currentDate}\n\n`;
-        
-        // Calculate totals if not available in summary
         const summaryData = {
             ...reportData.summary,
-            // Ensure total_deductions is present (fallback for older backend responses)
             total_deductions: reportData.summary?.total_deductions !== undefined 
                 ? reportData.summary.total_deductions 
                 : (reportData.lines?.reduce((sum: number, line: any) => sum + (line.total_deductions || 0), 0) || 0)
         };
+        const rows = (reportData.lines || []).map((line: any) => ({
+          staff_number: line.staff_number,
+          staff_name: line.staff_name,
+          basic_salary: formatAmount(line.basic_salary),
+          total_allowances: formatAmount(line.total_allowances),
+          gross_pay: formatAmount(line.gross_pay),
+          total_deductions: formatAmount(line.total_deductions),
+          net_pay: formatAmount(line.net_pay),
+        }));
 
-        const summary = [
-          `TOTAL STAFF,"${summaryData.total_staff || 0}"`,
-          `TOTAL BASIC SALARY,"${formatCurrency(summaryData.total_basic)}"`,
-          `TOTAL GROSS PAY,"${formatCurrency(summaryData.total_gross)}"`,
-          `TOTAL DEDUCTIONS,"${formatCurrency(summaryData.total_deductions)}"`,
-          `TOTAL NET PAY,"${formatCurrency(summaryData.total_net)}"\n\n`
-        ].join('\n');
-
-        const headers = ['STAFF NUMBER', 'STAFF NAME', 'BASIC SALARY', 'TOTAL ALLOWANCES', 'GROSS PAY', 'TOTAL DEDUCTIONS', 'NET PAY'];
-        csv = commonHeader + reportTitle + summary + headers.join(',') + '\n';
-        
-        (reportData.lines || []).forEach((line: any) => {
-          const row = [
-            line.staff_number,
-            line.staff_name,
-            formatCurrency(line.basic_salary),
-            formatCurrency(line.total_allowances),
-            formatCurrency(line.gross_pay),
-            formatCurrency(line.total_deductions),
-            formatCurrency(line.net_pay)
-          ];
-          csv += row.map(val => `"${val}"`).join(',') + '\n';
+        exportSpreadsheet({
+          title: `Payroll Report - ${selectedMonth}`,
+          fileName: `payroll_report_${selectedMonth}.xls`,
+          meta: [
+            { label: 'Organization', value: organizationName },
+            { label: 'Total Staff', value: String(summaryData.total_staff || 0) },
+            { label: 'Total Basic Salary', value: formatAmount(summaryData.total_basic) },
+            { label: 'Total Gross Pay', value: formatAmount(summaryData.total_gross) },
+            { label: 'Total Deductions', value: formatAmount(summaryData.total_deductions) },
+            { label: 'Total Net Pay', value: formatAmount(summaryData.total_net) },
+            { label: 'Generated At', value: new Date().toLocaleString() },
+          ],
+          columns: [
+            { key: 'staff_number', label: 'Staff Number' },
+            { key: 'staff_name', label: 'Staff Name' },
+            { key: 'basic_salary', label: 'Basic Salary' },
+            { key: 'total_allowances', label: 'Total Allowances' },
+            { key: 'gross_pay', label: 'Gross Pay' },
+            { key: 'total_deductions', label: 'Total Deductions' },
+            { key: 'net_pay', label: 'Net Pay' },
+          ],
+          rows,
         });
-        filename = `payroll_report_${selectedMonth}.csv`;
 
       } else if (activeTab === 'bank-schedule') {
-        const reportTitle = `PAYROLL BANK PAYMENT SCHEDULE (BY BANK)\nMONTH: ${selectedMonth}\nGENERATED: ${currentDate}\n\n`;
         const totals = reportData?.totals || {};
-        csv = commonHeader + reportTitle;
-        csv += csvRow(['TOTAL BANKS', totals.total_banks || 0]);
-        csv += csvRow(['TOTAL STAFF', totals.total_staff || 0]);
-        csv += csvRow(['TOTAL AMOUNT', formatCurrency(totals.total_amount || 0)]);
-        csv += csvRow(['MISSING BANK DETAILS', totals.missing_bank_details || 0]);
-        csv += '\n';
+        const rows = (reportData?.banks || []).flatMap((bank: any) =>
+          (bank.lines || []).map((line: any) => ({
+            bank_name: bank.bank_name,
+            staff_number: line.staff_number,
+            staff_name: line.staff_name,
+            account_number: String(line.account_number ?? '').trim(),
+            net_pay: formatAmount(line.net_pay || 0),
+          })),
+        );
 
-        (reportData?.banks || []).forEach((bank: any) => {
-          csv += csvRow(['BANK', bank.bank_name]);
-          csv += csvRow(['TOTAL STAFF', bank.total_staff || 0]);
-          csv += csvRow(['TOTAL AMOUNT', formatCurrency(bank.total_amount || 0)]);
-          csv += '\n';
-          const headers = ['STAFF NUMBER', 'STAFF NAME', 'ACCOUNT NUMBER', 'NET PAY'];
-          csv += csvRow(headers);
-          (bank.lines || []).forEach((l: any) => {
-            const acc = String(l.account_number ?? '').trim();
-            csv += csvRow([
-              l.staff_number,
-              l.staff_name,
-              acc ? `="${acc}"` : '',
-              formatCurrency(l.net_pay || 0),
-            ]);
-          });
-          csv += '\n\n';
+        exportSpreadsheet({
+          title: `Payroll Bank Schedule - ${selectedMonth}`,
+          fileName: `payroll_bank_schedule_${selectedMonth}_${new Date().toISOString().split('T')[0]}.xls`,
+          meta: [
+            { label: 'Organization', value: organizationName },
+            { label: 'Total Banks', value: String(totals.total_banks || 0) },
+            { label: 'Total Staff', value: String(totals.total_staff || 0) },
+            { label: 'Total Amount', value: formatAmount(totals.total_amount || 0) },
+            { label: 'Missing Bank Details', value: String(totals.missing_bank_details || 0) },
+            { label: 'Generated At', value: new Date().toLocaleString() },
+          ],
+          columns: [
+            { key: 'bank_name', label: 'Bank' },
+            { key: 'staff_number', label: 'Staff Number' },
+            { key: 'staff_name', label: 'Staff Name' },
+            { key: 'account_number', label: 'Account Number' },
+            { key: 'net_pay', label: 'Net Pay' },
+          ],
+          rows,
+        });
+      } else if (activeTab === 'variance') {
+        const rows = [
+          {
+            metric: 'Total Staff',
+            month_1: reportData.month1?.total_staff || 0,
+            month_2: reportData.month2?.total_staff || 0,
+            change: reportData.variance?.staff_change || 0,
+          },
+          {
+            metric: 'Total Net Pay',
+            month_1: formatAmount(reportData.month1?.total_net),
+            month_2: formatAmount(reportData.month2?.total_net),
+            change: formatAmount(reportData.variance?.amount_change),
+          },
+          {
+            metric: 'Percentage Change',
+            month_1: '',
+            month_2: '',
+            change: `${(reportData.variance?.percentage_change || 0).toFixed(2)}%`,
+          },
+        ];
+
+        exportSpreadsheet({
+          title: `Variance Report: ${month1} vs ${month2}`,
+          fileName: `variance_report_${month1}_vs_${month2}.xls`,
+          meta: [
+            { label: 'Organization', value: organizationName },
+            { label: 'Total Staff Change', value: String(reportData.variance?.staff_change || 0) },
+            { label: 'Total Net Pay Change', value: formatAmount(reportData.variance?.amount_change) },
+            { label: 'Percentage Change', value: `${(reportData.variance?.percentage_change || 0).toFixed(2)}%` },
+            { label: 'Generated At', value: new Date().toLocaleString() },
+          ],
+          columns: [
+            { key: 'metric', label: 'Metric' },
+            { key: 'month_1', label: month1 },
+            { key: 'month_2', label: month2 },
+            { key: 'change', label: 'Change' },
+          ],
+          rows,
         });
 
-        filename = `payroll_bank_schedule_${selectedMonth}_${new Date().toISOString().split('T')[0]}.csv`;
-      } else if (activeTab === 'variance') {
-        // Variance Report CSV
-        const reportTitle = `VARIANCE REPORT: ${month1} vs ${month2}\nGENERATED: ${currentDate}\n\n`;
-        
-        const summary = [
-            `TOTAL STAFF CHANGE,"${reportData.variance?.staff_change || 0}"`,
-            `TOTAL NET PAY CHANGE,"${formatCurrency(reportData.variance?.amount_change)}"`,
-            `PERCENTAGE CHANGE,"${(reportData.variance?.percentage_change || 0).toFixed(2)}%"\n\n`
-        ].join('\n');
-
-        const headers = ['METRIC', 'MONTH 1', 'MONTH 2', 'CHANGE'];
-        csv = commonHeader + reportTitle + summary + headers.join(',') + '\n';
-        
-        csv += `"TOTAL STAFF","${reportData.month1?.total_staff || 0}","${reportData.month2?.total_staff || 0}","${reportData.variance?.staff_change || 0}"\n`;
-        csv += `"TOTAL NET PAY","${formatCurrency(reportData.month1?.total_net)}","${formatCurrency(reportData.month2?.total_net)}","${formatCurrency(reportData.variance?.amount_change)}"\n`;
-        csv += `"PERCENTAGE CHANGE","","","${(reportData.variance?.percentage_change || 0).toFixed(2)}%"\n`;
-        filename = `variance_report_${month1}_vs_${month2}.csv`;
-
       } else if (activeTab === 'remittance') {
-        // Remittance Report CSV
-        const reportTitle = `${remittanceType.toUpperCase()} REMITTANCE REPORT - ${selectedMonth}\nGENERATED: ${currentDate}\n\n`;
-        
         const groups = Array.isArray(reportData.grouped_by_state) ? reportData.grouped_by_state : null;
         const rows = Array.isArray(reportData.remittances) ? reportData.remittances : [];
         const totalAmount = rows.reduce((sum: number, rem: any) => sum + (rem.amount || 0), 0) || 0;
         const totalStaff = rows.length || 0;
-        
-        const summary = [
-            `TOTAL STAFF,"${totalStaff}"`,
-            `TOTAL AMOUNT,"${formatCurrency(totalAmount)}"\n\n`
-        ].join('\n');
 
-        csv = commonHeader + reportTitle + summary;
+        const exportRows = rows.map((rem: any) => ({
+          pit_remittance_state: remittanceType === 'tax' ? rem.pit_remittance_state || 'FCT' : '',
+          staff_number: rem.staff_number,
+          staff_name: rem.staff_name,
+          amount: formatAmount(rem.amount),
+        }));
 
-        if (remittanceType === 'tax' && groups) {
-          csv += 'BREAKDOWN BY PIT REMITTANCE STATE\n';
-          groups.forEach((g: any) => {
-            csv += csvRow(['STATE', g.state || 'FCT']);
-            csv += csvRow(['TOTAL STAFF', g.total_staff || 0]);
-            csv += csvRow(['TOTAL AMOUNT', formatCurrency(g.total_amount || 0)]);
-            csv += '\n';
-          });
-        }
-
-        const headers = remittanceType === 'tax'
-          ? ['PIT REMITTANCE STATE', 'STAFF NUMBER', 'STAFF NAME', 'AMOUNT']
-          : ['STAFF NUMBER', 'STAFF NAME', 'AMOUNT'];
-        csv += headers.join(',') + '\n';
-        
-        rows.forEach((rem: any) => {
-          const row = remittanceType === 'tax'
-            ? [
-                rem.pit_remittance_state || 'FCT',
-                rem.staff_number,
-                rem.staff_name,
-                formatCurrency(rem.amount)
-              ]
-            : [
-                rem.staff_number,
-                rem.staff_name,
-                formatCurrency(rem.amount)
-              ];
-          csv += row.map(val => `"${val}"`).join(',') + '\n';
+        exportSpreadsheet({
+          title: `${remittanceType.toUpperCase()} Remittance Report - ${selectedMonth}`,
+          fileName: `${remittanceType}_remittance_${selectedMonth}.xls`,
+          meta: [
+            { label: 'Organization', value: organizationName },
+            { label: 'Total Staff', value: String(totalStaff) },
+            { label: 'Total Amount', value: formatAmount(totalAmount) },
+            ...(remittanceType === 'tax' && groups
+              ? groups.map((g: any) => ({
+                  label: `PIT State ${String(g.state || 'FCT')}`,
+                  value: `Staff: ${String(g.total_staff || 0)}, Amount: ${formatAmount(g.total_amount || 0)}`,
+                }))
+              : []),
+            { label: 'Generated At', value: new Date().toLocaleString() },
+          ],
+          columns:
+            remittanceType === 'tax'
+              ? [
+                  { key: 'pit_remittance_state', label: 'PIT Remittance State' },
+                  { key: 'staff_number', label: 'Staff Number' },
+                  { key: 'staff_name', label: 'Staff Name' },
+                  { key: 'amount', label: 'Amount' },
+                ]
+              : [
+                  { key: 'staff_number', label: 'Staff Number' },
+                  { key: 'staff_name', label: 'Staff Name' },
+                  { key: 'amount', label: 'Amount' },
+                ],
+          rows: exportRows,
         });
-        filename = `${remittanceType}_remittance_${selectedMonth}.csv`;
       }
-
-      // Download CSV
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement('a');
-      const url = URL.createObjectURL(blob);
-      link.setAttribute('href', url);
-      link.setAttribute('download', filename);
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      showToast('success', 'CSV exported successfully');
     } catch (error) {
-      showToast('error', 'Failed to export CSV');
-      console.error('CSV Export Error:', error);
+      showToast('error', 'Failed to export report');
+      console.error('Report Export Error:', error);
     }
   };
 
-  const handleExportSelectedBankCSV = () => {
+  const handleExportSelectedBankExcel = () => {
     if (!selectedBank) {
       showToast('error', 'No bank selected');
       return;
     }
 
     try {
-      const currentDate = new Date().toLocaleDateString();
-      const commonHeader = `${organizationName.toUpperCase()}\n`;
-      const formatCurrency = (val: number | string | undefined | null) => {
+      const formatAmount = (val: number | string | undefined | null) => {
         if (val === undefined || val === null) return '0.00';
         const num = typeof val === 'string' ? parseFloat(val) : val;
         return isNaN(num) ? '0.00' : num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       };
-      const csvCell = (val: any) => `"${String(val ?? '').replace(/"/g, '""')}"`;
-      const csvRow = (vals: any[]) => vals.map(csvCell).join(',') + '\n';
+      const rows = (selectedBank.lines || []).map((line: any) => ({
+        staff_number: line.staff_number,
+        staff_name: line.staff_name,
+        account_number: String(line.account_number ?? '').trim(),
+        net_pay: formatAmount(line.net_pay || 0),
+      }));
 
-      let csv = '';
-      csv += commonHeader;
-      csv += `PAYROLL BANK PAYMENT SCHEDULE (BY BANK)\n`;
-      csv += `MONTH: ${selectedMonth}\n`;
-      csv += `BANK: ${selectedBank.bank_name}\n`;
-      csv += `GENERATED: ${currentDate}\n\n`;
-
-      csv += csvRow(['TOTAL STAFF', selectedBank.total_staff || 0]);
-      csv += csvRow(['TOTAL AMOUNT', formatCurrency(selectedBank.total_amount || 0)]);
-      csv += '\n';
-
-      csv += csvRow(['STAFF NUMBER', 'STAFF NAME', 'ACCOUNT NUMBER', 'NET PAY']);
-      (selectedBank.lines || []).forEach((l: any) => {
-        const acc = String(l.account_number ?? '').trim();
-        csv += csvRow([
-          l.staff_number,
-          l.staff_name,
-          acc ? `="${acc}"` : '',
-          formatCurrency(l.net_pay || 0),
-        ]);
+      exportSpreadsheet({
+        title: `Payroll Bank Schedule - ${selectedMonth} (${String(selectedBank.bank_name || 'Bank')})`,
+        fileName: `payroll_bank_schedule_${String(selectedBank.bank_name || 'bank').replace(/\s+/g, '_')}_${selectedMonth}_${new Date().toISOString().split('T')[0]}.xls`,
+        meta: [
+          { label: 'Organization', value: organizationName },
+          { label: 'Total Staff', value: String(selectedBank.total_staff || 0) },
+          { label: 'Total Amount', value: formatAmount(selectedBank.total_amount || 0) },
+          { label: 'Generated At', value: new Date().toLocaleString() },
+        ],
+        columns: [
+          { key: 'staff_number', label: 'Staff Number' },
+          { key: 'staff_name', label: 'Staff Name' },
+          { key: 'account_number', label: 'Account Number' },
+          { key: 'net_pay', label: 'Net Pay' },
+        ],
+        rows,
       });
 
-      const filename = `payroll_bank_schedule_${String(selectedBank.bank_name || 'bank').replace(/\s+/g, '_')}_${selectedMonth}_${new Date().toISOString().split('T')[0]}.csv`;
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement('a');
-      const url = URL.createObjectURL(blob);
-      link.setAttribute('href', url);
-      link.setAttribute('download', filename);
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      showToast('success', 'Bank CSV exported successfully');
+      showToast('success', 'Bank report exported successfully');
     } catch (error) {
-      showToast('error', 'Failed to export bank CSV');
-      console.error('Bank CSV Export Error:', error);
+      showToast('error', 'Failed to export bank report');
+      console.error('Bank Export Error:', error);
     }
   };
 
@@ -932,11 +958,11 @@ export function ReportsPage() {
         </div>
         <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
           <button
-            onClick={handleExportCSV}
+            onClick={handleExportExcel}
             className="flex items-center gap-2 px-4 py-2 border border-border text-foreground rounded-lg hover:bg-accent"
           >
             <Download className="w-4 h-4" />
-            Export CSV
+            Export Excel
           </button>
           <button
             onClick={handleExportPDF}
@@ -1355,11 +1381,11 @@ export function ReportsPage() {
         footer={
           <div className="flex items-center justify-end gap-2">
             <button
-              onClick={handleExportSelectedBankCSV}
+              onClick={handleExportSelectedBankExcel}
               className="flex items-center gap-2 px-4 py-2 border border-border text-foreground rounded-lg hover:bg-accent"
             >
               <Download className="w-4 h-4" />
-              Export Bank CSV
+              Export Bank Excel
             </button>
             <button
               onClick={handleExportSelectedBankPDF}
@@ -1453,11 +1479,11 @@ export function ReportsPage() {
                 </div>
                 <div className="md:col-span-2 flex items-end">
                   <button
-                    onClick={handleDownloadPayeScheduleCSV}
+                    onClick={handleDownloadPayeScheduleExcel}
                     className="w-full md:w-auto flex items-center justify-center gap-2 px-4 py-2 border border-border text-foreground rounded-lg hover:bg-accent"
                   >
                     <Download className="w-4 h-4" />
-                    Download PAYE Schedule (CSV)
+                    Download PAYE Schedule (Excel)
                   </button>
                 </div>
               </div>

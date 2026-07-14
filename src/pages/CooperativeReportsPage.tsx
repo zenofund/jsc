@@ -15,6 +15,7 @@ import {
   Loader2,
   Search
 } from 'lucide-react';
+import { format } from 'date-fns';
 import { formatCompactCurrency, formatCurrency } from '../utils/format';
 import { PageSkeleton } from '../components/PageLoader';
 import { cooperativeAPI, disbursementAPI } from '../lib/loanAPI';
@@ -50,6 +51,39 @@ const isWithinDateRange = (value: string | null | undefined, dateRange: { from: 
 };
 
 const toNumber = (value: unknown) => Number(value || 0);
+
+const humanizeLabel = (value: string) =>
+  String(value || '')
+    .replace(/_/g, ' ')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (match) => match.toUpperCase());
+
+const isIsoDateString = (value: string) => {
+  const raw = String(value || '').trim();
+  if (!raw || !/^\d{4}-\d{2}-\d{2}/.test(raw)) return false;
+  const parsed = new Date(raw);
+  return !Number.isNaN(parsed.getTime());
+};
+
+const formatExportValue = (value: string | number | null | undefined) => {
+  if (value === null || value === undefined || value === '') return '';
+  if (typeof value === 'string' && isIsoDateString(value)) {
+    const parsed = new Date(value);
+    const hasTime = /T|\d{2}:\d{2}/.test(value);
+    return format(parsed, hasTime ? 'MMM dd, yyyy, h:mm a' : 'MMM dd, yyyy');
+  }
+  return String(value);
+};
+
+const escapeHtml = (value: string) =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 
 export function CooperativeReportsPage() {
   const [activeReport, setActiveReport] = useState<ReportType>('overview');
@@ -103,9 +137,9 @@ export function CooperativeReportsPage() {
         return;
       }
 
-      const csv = convertToCsv(rows);
+      const spreadsheet = buildSpreadsheetContent(rows);
       const timestamp = new Date().toISOString().slice(0, 10);
-      downloadCsv(csv, `cooperative_${activeReport}_report_${timestamp}.csv`);
+      downloadSpreadsheet(spreadsheet, `cooperative_${activeReport}_report_${timestamp}.xls`);
       toast.success(`${reportLabels[activeReport]} report downloaded successfully.`);
     } catch (error: any) {
       console.error('Error exporting report:', error);
@@ -223,31 +257,78 @@ export function CooperativeReportsPage() {
       }));
   };
 
-  const convertToCsv = (data: ExportRow[]): string => {
-    if (data.length === 0) return '';
-
+  const buildSpreadsheetContent = (data: ExportRow[]): string => {
     const headers = Array.from(
       data.reduce((set, row) => {
         Object.keys(row).forEach((key) => set.add(key));
         return set;
       }, new Set<string>()),
     );
-    const csvRows = [
-      headers.join(','),
-      ...data.map(row =>
-        headers
-          .map((fieldName) => {
-            const value = row[fieldName] ?? '';
-            return JSON.stringify(String(value));
-          })
-          .join(','),
-      ),
-    ];
-    return csvRows.join('\n');
+
+    const title = `Cooperative ${reportLabels[activeReport]} Report`;
+    const cooperativeLabel =
+      selectedCooperative === 'all'
+        ? 'All Cooperatives'
+        : cooperatives.find((coop) => coop.id === selectedCooperative)?.name || 'Selected Cooperative';
+    const generatedAt = format(new Date(), 'MMM dd, yyyy, h:mm a');
+    const dateRangeLabel = `${format(new Date(`${dateRange.from}T00:00:00`), 'MMM dd, yyyy')} - ${format(
+      new Date(`${dateRange.to}T00:00:00`),
+      'MMM dd, yyyy',
+    )}`;
+    const colspan = Math.max(headers.length, 1);
+
+    const metadataRows = [
+      `<tr><td colspan="${colspan}" style="font-size:16pt;font-weight:700;padding:12px 8px;text-align:left;">${escapeHtml(title)}</td></tr>`,
+      `<tr><td colspan="${colspan}" style="font-size:11pt;font-weight:600;padding:6px 8px;text-align:left;">${escapeHtml(
+        cooperativeLabel,
+      )}</td></tr>`,
+      `<tr><td colspan="${colspan}" style="font-size:10pt;padding:4px 8px;text-align:left;">Date Range: ${escapeHtml(
+        dateRangeLabel,
+      )}</td></tr>`,
+      `<tr><td colspan="${colspan}" style="font-size:10pt;padding:4px 8px 12px;text-align:left;">Generated At: ${escapeHtml(
+        generatedAt,
+      )}</td></tr>`,
+    ].join('');
+
+    const headerRow = `<tr>${headers
+      .map(
+        (header) =>
+          `<th style="background:#f3f4f6;font-weight:700;padding:8px;border:1px solid #d1d5db;text-align:left;">${escapeHtml(
+            humanizeLabel(header),
+          )}</th>`,
+      )
+      .join('')}</tr>`;
+
+    const bodyRows = data
+      .map(
+        (row) =>
+          `<tr>${headers
+            .map((fieldName) => {
+              const value = formatExportValue(row[fieldName]);
+              return `<td style="padding:8px;border:1px solid #e5e7eb;text-align:left;">${escapeHtml(value)}</td>`;
+            })
+            .join('')}</tr>`,
+      )
+      .join('');
+
+    return `<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>${escapeHtml(title)}</title>
+  </head>
+  <body>
+    <table>
+      ${metadataRows}
+      ${headerRow}
+      ${bodyRows}
+    </table>
+  </body>
+</html>`;
   };
 
-  const downloadCsv = (csvContent: string, fileName: string) => {
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const downloadSpreadsheet = (spreadsheetContent: string, fileName: string) => {
+    const blob = new Blob([`\ufeff${spreadsheetContent}`], { type: 'application/vnd.ms-excel;charset=utf-8;' });
     const link = document.createElement('a');
     if (link.download !== undefined) { // feature detection
       const url = URL.createObjectURL(blob);

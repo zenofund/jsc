@@ -6,6 +6,7 @@ import { salaryStructureAPI, allowanceAPI, deductionAPI } from '../lib/api-clien
 import { Plus, Edit, Trash2, Table, X, Save, Download, Check, AlertCircle, Upload, Loader2, MoreVertical } from 'lucide-react';
 import { StatusBadge } from '../components/StatusBadge';
 import { showToast } from '../utils/toast';
+import { exportSpreadsheet } from '../utils/exportSpreadsheet';
 import { SalaryStructureUpload } from '../components/SalaryStructureUpload';
 import { PageSkeleton } from '../components/PageLoader';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../components/ui/dropdown-menu';
@@ -410,20 +411,26 @@ export function PayrollSetupPage() {
     });
   };
 
-  const exportStructureToCSV = (structure: any) => {
-    let csv = 'Grade Level,Step,Basic Salary\n';
-    structure.grade_levels.forEach((gl: any) => {
-      gl.steps.forEach((s: any) => {
-        csv += `${gl.level},${s.step},${s.basic_salary}\n`;
-      });
+  const exportStructureToExcel = (structure: any) => {
+    const rows = (structure?.grade_levels || []).flatMap((gl: any) =>
+      (gl?.steps || []).map((s: any) => ({
+        grade_level: gl.level,
+        step: s.step,
+        basic_salary: s.basic_salary,
+      })),
+    );
+
+    exportSpreadsheet({
+      title: `${structure?.name || 'Salary'} Structure`,
+      fileName: `${String(structure?.name || 'salary_structure').replace(/\s+/g, '_')}_Salary_Structure.xls`,
+      meta: [{ label: 'Generated At', value: new Date().toLocaleString() }],
+      columns: [
+        { key: 'grade_level', label: 'Grade Level' },
+        { key: 'step', label: 'Step' },
+        { key: 'basic_salary', label: 'Basic Salary' },
+      ],
+      rows,
     });
-    
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${structure.name.replace(/\s+/g, '_')}_Salary_Structure.csv`;
-    a.click();
   };
 
   if (loading) {
@@ -513,12 +520,12 @@ export function PayrollSetupPage() {
                     <span className="hidden sm:inline">Edit Details</span>
                   </button>
                   <button
-                    onClick={() => exportStructureToCSV(selectedStructure)}
+                    onClick={() => exportStructureToExcel(selectedStructure)}
                     className="flex items-center justify-center gap-2 px-3 sm:px-4 py-2 rounded-lg border border-border hover:bg-accent transition-colors"
-                    title="Export CSV"
+                    title="Export Excel"
                   >
                     <Download className="w-4 h-4" />
-                    <span className="hidden sm:inline">Export CSV</span>
+                    <span className="hidden sm:inline">Export Excel</span>
                   </button>
                   <button
                     onClick={() => handleDeleteStructure(selectedStructure.id, selectedStructure.name)}

@@ -20,6 +20,7 @@ import { notificationAPI } from '../lib/api-client';
 import { PageSkeleton } from '../components/PageLoader';
 import { useAuth } from '../contexts/AuthContext';
 import toast from 'react-hot-toast';
+import { exportSpreadsheet } from '../utils/exportSpreadsheet';
 
 export default function NotificationsPage() {
   const { user } = useAuth();
@@ -252,26 +253,34 @@ export default function NotificationsPage() {
 
   // Export notifications
   const handleExport = () => {
-    const csv = [
-      ['Date', 'Type', 'Category', 'Priority', 'Title', 'Message', 'Status'],
-      ...filteredNotifications.map(n => [
-        new Date(n.created_at).toLocaleString(),
-        n.type,
-        n.category,
-        n.priority,
-        n.title,
-        n.message,
-        n.is_read ? 'Read' : 'Unread'
-      ])
-    ].map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
+    exportSpreadsheet({
+      title: 'Notifications Report',
+      fileName: `notifications-${new Date().toISOString().split('T')[0]}.xls`,
+      meta: [
+        ...(user?.full_name ? [{ label: 'Exported By', value: user.full_name }] : []),
+        { label: 'Total', value: String(filteredNotifications.length) },
+        { label: 'Generated At', value: new Date().toLocaleString() },
+      ],
+      columns: [
+        { key: 'created_at', label: 'Date' },
+        { key: 'type', label: 'Type' },
+        { key: 'category', label: 'Category' },
+        { key: 'priority', label: 'Priority' },
+        { key: 'title', label: 'Title' },
+        { key: 'message', label: 'Message' },
+        { key: 'status', label: 'Status' },
+      ],
+      rows: filteredNotifications.map((n) => ({
+        created_at: n.created_at,
+        type: n.type,
+        category: n.category,
+        priority: n.priority,
+        title: n.title,
+        message: n.message,
+        status: n.is_read ? 'Read' : 'Unread',
+      })),
+    });
 
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `notifications-${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
     toast.success('Notifications exported');
   };
 
@@ -364,7 +373,7 @@ export default function NotificationsPage() {
               <button
                 onClick={handleExport}
                 className="p-2 hover:bg-accent rounded-lg transition-colors"
-                title="Export to CSV"
+                title="Export to Excel"
               >
                 <Download className="w-5 h-5 text-muted-foreground" />
               </button>

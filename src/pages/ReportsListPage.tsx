@@ -169,7 +169,7 @@ const ReportsListPage: React.FC = () => {
     dayOfWeek: '1',
     dayOfMonth: '1',
     recipients: '',
-    exportFormat: 'csv',
+    exportFormat: 'excel',
   });
 
   // Load templates on mount
@@ -419,7 +419,7 @@ const ReportsListPage: React.FC = () => {
       dayOfWeek: '1',
       dayOfMonth: '1',
       recipients: '',
-      exportFormat: 'csv',
+      exportFormat: 'excel',
     });
   };
 

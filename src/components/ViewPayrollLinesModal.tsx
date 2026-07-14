@@ -7,6 +7,7 @@ import { formatCurrency } from '../utils/format';
 import { payrollAPI } from '../lib/api-client';
 import { getBankByName } from '../constants/banks';
 import { loadPdfMake } from '../utils/loadPdfMake';
+import { exportSpreadsheet } from '../utils/exportSpreadsheet';
 
 interface ViewPayrollLinesModalProps {
   isOpen: boolean;
@@ -374,10 +375,9 @@ export function ViewPayrollLinesModal({
 
   if (!batch) return null;
 
-  const handleExportCSV = async () => {
+  const handleExportExcel = async () => {
     try {
       setExporting('csv');
-      // Fetch all lines for export
       const response = await payrollAPI.getPayrollLines(batch.id, { limit: 100000, sort: sortDirection });
       const allLinesRaw = Array.isArray(response) ? response : (response.data || []);
       const allLines = [...allLinesRaw].sort((a, b) => compareLines(a, b, sortDirection));
@@ -388,39 +388,44 @@ export function ViewPayrollLinesModal({
       }
 
       const { columns, moneyTotals } = collectExportModel(allLines);
+      const dataRows = allLines.map((line, index) =>
+        columns.reduce((acc: Record<string, any>, col) => {
+          acc[col.id] = col.get(line, index);
+          return acc;
+        }, {}),
+      );
 
-      const headers = columns.map((c) => csvCell(c.header)).join(',');
+      const emptyRow = columns.reduce((acc: Record<string, any>, col) => {
+        acc[col.id] = '';
+        return acc;
+      }, {});
 
-      const rows = allLines.map((line, index) => {
-        const cells = columns.map((c) => csvCell(c.get(line, index)));
-        return cells.join(',');
+      const totalsRow = columns.reduce((acc: Record<string, any>, col) => {
+        if (col.id === 'staff_name') {
+          acc[col.id] = 'TOTAL';
+          return acc;
+        }
+        if (!col.isMoney) {
+          acc[col.id] = '';
+          return acc;
+        }
+        acc[col.id] = round2(moneyTotals.get(col.id) ?? 0).toFixed(2);
+        return acc;
+      }, {});
+
+      exportSpreadsheet({
+        title: `Payroll Lines - Batch ${batch.batch_number}`,
+        fileName: `payroll_lines_${batch.batch_number}_${new Date().toISOString().split('T')[0]}.xls`,
+        meta: [
+          { label: 'Total Staff', value: String(batch.total_staff ?? '') },
+          { label: 'Total Gross', value: String(batch.total_gross ?? '') },
+          { label: 'Total Deductions', value: String(batch.total_deductions ?? '') },
+          { label: 'Total Net', value: String(batch.total_net ?? '') },
+          { label: 'Generated At', value: new Date().toLocaleString() },
+        ],
+        columns: columns.map((c) => ({ key: c.id, label: c.header })),
+        rows: [...dataRows, emptyRow, totalsRow],
       });
-
-      const totalRow = columns
-        .map((c) => {
-          if (c.id === 'staff_name') return csvCell('TOTAL');
-          if (!c.isMoney) return csvCell('');
-          return csvCell(round2(moneyTotals.get(c.id) ?? 0).toFixed(2));
-        })
-        .join(',');
-
-      const csvContent = [
-        headers,
-        ...rows,
-        '', // Empty line
-        totalRow
-      ].join('\n');
-
-      // Create Download Link
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement('a');
-      const url = URL.createObjectURL(blob);
-      link.setAttribute('href', url);
-      link.setAttribute('download', `payroll_lines_${batch.batch_number}_${new Date().toISOString().split('T')[0]}.csv`);
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
     } catch (error) {
       console.error('Export failed', error);
     } finally {
@@ -572,12 +577,12 @@ export function ViewPayrollLinesModal({
               />
               <div className="flex flex-col sm:flex-row gap-2">
                 <button
-                    onClick={handleExportCSV}
+                    onClick={handleExportExcel}
                     disabled={exporting !== null || isLoading}
                     className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50"
                 >
                     {exporting === 'csv' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-                    Export CSV
+                    Export Excel
                 </button>
                 <button
                     onClick={handleExportPDF}

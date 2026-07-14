@@ -12,6 +12,7 @@ import type { LoanType, LoanApplication, LoanDisbursement, Cooperative, Staff } 
 import { PageSkeleton } from '../components/PageLoader';
 import { showToast } from '../utils/toast';
 import { formatCompactCurrency, formatCurrency } from '../utils/format';
+import { exportSpreadsheet } from '../utils/exportSpreadsheet';
 import { Modal } from '../components/Modal';
 import { NumberInput } from '../components/NumberInput';
 import { formatStaffName } from '../lib/name-utils';
@@ -2306,34 +2307,33 @@ function ReportsTab() {
     return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
   };
 
-  const exportCSV = () => {
+  const exportExcel = () => {
     if (!selectedReport || reportRows.length === 0 || reportColumns.length === 0) {
       showToast.warning('No data to export');
       return;
     }
-    const headers = reportColumns.map((c) => c.label);
-    const lines = [headers.join(',')];
-    reportRows.forEach((row) => {
-      const line = reportColumns
-        .map((col) => {
-          const value = row[col.key];
-          const text = value === undefined || value === null ? '' : String(value);
-          return `"${text.replace(/"/g, '""')}"`;
-        })
-        .join(',');
-      lines.push(line);
+
+    const reportMeta = reports.find((r) => r.key === selectedReport);
+    const dateLabel = `${new Date(dateFrom).toLocaleDateString()} - ${new Date(dateTo).toLocaleDateString()}`;
+
+    exportSpreadsheet({
+      title: reportMeta?.name || 'Loan Report',
+      fileName: `${selectedReport.replace(/[^a-z0-9]+/gi, '_').toLowerCase()}_report_${new Date()
+        .toISOString()
+        .slice(0, 10)}.xls`,
+      meta: [
+        ...(cooperativeFilter !== 'all'
+          ? [{ label: 'Cooperative', value: cooperatives.find((c) => c.id === cooperativeFilter)?.name || 'Selected' }]
+          : []),
+        ...(statusFilter !== 'all' ? [{ label: 'Status', value: statusFilter }] : []),
+        { label: 'Date Range', value: dateLabel },
+        { label: 'Generated At', value: new Date().toLocaleString() },
+      ],
+      columns: reportColumns.map((col) => ({ key: col.key, label: col.label })),
+      rows: reportRows,
     });
-    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    const filename = `${selectedReport.replace(/[^a-z0-9]+/gi, '_').toLowerCase()}_report_${new Date().toISOString().slice(0, 10)}.csv`;
-    link.setAttribute('href', url);
-    link.setAttribute('download', filename);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    showToast.success('Report exported', filename);
+
+    showToast.success('Report exported');
   };
 
   const buildReportView = (
@@ -2782,10 +2782,10 @@ function ReportsTab() {
                 Refresh
               </button>
               <button
-                onClick={exportCSV}
+                onClick={exportExcel}
                 className="px-3 py-2 rounded bg-primary text-primary-foreground text-sm hover:bg-primary/90"
               >
-                Export CSV
+                Export Excel
               </button>
             </div>
           </div>
