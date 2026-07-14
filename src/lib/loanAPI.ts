@@ -694,15 +694,19 @@ export const cooperativeAPI = {
   async updateMember(
     memberId: string,
     data: {
+      cooperative_id?: string;
+      cooperativeId?: string;
       monthly_contribution?: number;
       shares_owned?: number;
       monthlyContribution?: number;
       sharesOwned?: number;
     },
   ) {
+    const cooperativeId = data.cooperativeId ?? data.cooperative_id;
     const monthlyContribution = data.monthlyContribution ?? data.monthly_contribution;
     const shares_owned = data.shares_owned ?? data.sharesOwned;
     const payload: any = {};
+    if (cooperativeId !== undefined) payload.cooperativeId = cooperativeId;
     if (monthlyContribution !== undefined) payload.monthlyContribution = monthlyContribution;
     if (shares_owned !== undefined) payload.shares_owned = shares_owned;
 

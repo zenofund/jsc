@@ -349,11 +349,15 @@ export function CooperativeManagementPage() {
   const handleUpdateMember = async (memberId: string, formData: MemberFormData) => {
     try {
       setIsSubmitting(true);
+      const isTransfer = Boolean(
+        editingMember && formData.cooperative_id && formData.cooperative_id !== editingMember.cooperative_id,
+      );
       await cooperativeAPI.updateMember(memberId, {
+        cooperative_id: formData.cooperative_id,
         monthly_contribution: formData.monthly_contribution,
         shares_owned: toOptionalNumber(formData.shares_owned),
       });
-      toast.success('Member updated successfully');
+      toast.success(isTransfer ? 'Member transferred successfully' : 'Member updated successfully');
       setShowMemberModal(false);
       setEditingMember(null);
       reloadDashboardData();
@@ -1805,6 +1809,7 @@ function MemberFormModal({
   isSubmitting?: boolean;
 }) {
   const isEditing = Boolean(member);
+  const originalCooperativeId = member?.cooperative_id || '';
   const [formData, setFormData] = useState<MemberFormData>(() => ({
     cooperative_id: member?.cooperative_id || '',
     staff_id: member?.staff_id || '',
@@ -1833,6 +1838,9 @@ function MemberFormModal({
   }, [member]);
 
   const selectedCooperative = cooperatives.find(c => c.id === formData.cooperative_id);
+  const originalCooperative = cooperatives.find((c) => c.id === originalCooperativeId);
+  const isTransfer = isEditing && Boolean(originalCooperativeId) && formData.cooperative_id !== originalCooperativeId;
+  const modalTitle = isEditing ? (isTransfer ? 'Transfer Member' : 'Edit Member') : 'Register New Member';
   const shareCapitalValue = Number(selectedCooperative?.share_capital_value || 0);
   const hasShareCapitalValue = shareCapitalValue > 0;
   const shareCount = Number(formData.shares_owned || 0);
@@ -1878,7 +1886,7 @@ function MemberFormModal({
         setStaffSearchTerm('');
         onClose();
       }}
-      title={member ? 'Edit Member' : 'Register New Member'}
+      title={modalTitle}
       size="lg"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -1889,7 +1897,6 @@ function MemberFormModal({
             onChange={(e) => setFormData({ ...formData, cooperative_id: e.target.value })}
             className="w-full px-3 py-2 rounded-lg border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             required
-            disabled={isEditing}
           >
             <option value="">Select Cooperative</option>
             {cooperatives.map((coop) => (
@@ -1899,6 +1906,20 @@ function MemberFormModal({
             ))}
           </select>
         </div>
+
+        {isTransfer && selectedCooperative && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <p className="font-medium">Member Transfer Workflow</p>
+            <p className="mt-1">
+              This will close the current membership in {originalCooperative?.name || 'the current cooperative'} and
+              activate membership in {selectedCooperative.name}.
+            </p>
+            <p className="mt-1">
+              Historical contributions remain under the old cooperative. Transfer is blocked if there is an active
+              outstanding loan in the current cooperative.
+            </p>
+          </div>
+        )}
 
         <div>
           <label className="block text-sm mb-2">Staff Member *</label>
@@ -1968,7 +1989,7 @@ function MemberFormModal({
 
         {selectedCooperative && (
           <div className="p-4 rounded-lg bg-muted/50 border border-border">
-            <h4 className="font-medium mb-2 text-sm">Initial Payment Summary</h4>
+            <h4 className="font-medium mb-2 text-sm">{isTransfer ? 'Transfer Setup Summary' : 'Initial Payment Summary'}</h4>
             <div className="space-y-1 text-sm">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Share Capital:</span>
@@ -2002,10 +2023,10 @@ function MemberFormModal({
             {isSubmitting ? (
               <span className="flex items-center justify-center gap-2">
                 <Loader2 className="w-4 h-4 animate-spin" />
-                {member ? 'Updating...' : 'Registering...'}
+                {member ? (isTransfer ? 'Transferring...' : 'Updating...') : 'Registering...'}
               </span>
             ) : (
-              member ? 'Update Member' : 'Register Member'
+              member ? (isTransfer ? 'Transfer Member' : 'Update Member') : 'Register Member'
             )}
           </button>
         </div>

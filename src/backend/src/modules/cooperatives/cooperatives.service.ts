@@ -760,8 +760,140 @@ export class CooperativesService {
     return member;
   }
 
+  private normalizeMemberTransferInput(dto: Partial<AddCooperativeMemberDto> & { status?: string; suspension_reason?: string }) {
+    return {
+      cooperativeId: String(dto.cooperativeId || '').trim(),
+      monthlyContribution:
+        dto.monthlyContribution !== undefined && dto.monthlyContribution !== null
+          ? Number(dto.monthlyContribution)
+          : undefined,
+      sharesOwned:
+        dto.shares_owned !== undefined && dto.shares_owned !== null
+          ? Number(dto.shares_owned)
+          : undefined,
+    };
+  }
+
+  private async transferMember(
+    member: any,
+    dto: Partial<AddCooperativeMemberDto> & { status?: string; suspension_reason?: string },
+    userId: string,
+  ) {
+    const { cooperativeId, monthlyContribution, sharesOwned } = this.normalizeMemberTransferInput(dto);
+
+    if (!cooperativeId) {
+      throw new BadRequestException('Target cooperative is required for member transfer');
+    }
+
+    const sourceCooperativeId = String(member.cooperative_id || '').trim();
+    if (!sourceCooperativeId || cooperativeId === sourceCooperativeId) {
+      throw new BadRequestException('Select a different cooperative to transfer this member');
+    }
+
+    return this.databaseService.transaction(async (client) => {
+      const targetCooperativeRes = await client.query(
+        `SELECT id, name, monthly_contribution_required, monthly_contribution, minimum_shares
+         FROM cooperatives
+         WHERE id = $1`,
+        [cooperativeId],
+      );
+      const targetCooperative = targetCooperativeRes.rows?.[0];
+
+      if (!targetCooperative) {
+        throw new NotFoundException('Target cooperative not found');
+      }
+
+      const sourceOutstandingLoanRes = await client.query(
+        `SELECT ld.id
+         FROM loan_disbursements ld
+         JOIN loan_applications la ON ld.loan_application_id = la.id
+         JOIN loan_types lt ON la.loan_type_id = lt.id
+         WHERE ld.staff_id = $1
+           AND lt.cooperative_id = $2
+           AND ld.status = 'active'
+           AND ld.balance_outstanding > 0
+         LIMIT 1`,
+        [member.staff_id, sourceCooperativeId],
+      );
+
+      if ((sourceOutstandingLoanRes.rows?.length || 0) > 0) {
+        throw new BadRequestException(
+          'Cannot transfer member with an active outstanding loan in the current cooperative. Resolve the loan first.',
+        );
+      }
+
+      const targetMembershipRes = await client.query(
+        `SELECT id, status
+         FROM cooperative_members
+         WHERE cooperative_id = $1 AND staff_id = $2
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [cooperativeId, member.staff_id],
+      );
+      const targetMembership = targetMembershipRes.rows?.[0];
+
+      if (targetMembership && targetMembership.status !== 'inactive') {
+        throw new BadRequestException('Staff already has an active or suspended membership in the target cooperative');
+      }
+
+      const nextMonthlyContribution =
+        monthlyContribution ??
+        Number(targetCooperative.monthly_contribution_required ?? targetCooperative.monthly_contribution ?? 0);
+      const nextSharesOwned = sharesOwned ?? 0;
+
+      await client.query(
+        `UPDATE cooperative_members
+         SET status = 'inactive',
+             exit_date = COALESCE(exit_date, NOW()),
+             updated_at = NOW(),
+             updated_by = $1
+         WHERE id = $2`,
+        [userId, member.id],
+      );
+
+      let transferredMember;
+
+      if (targetMembership?.id) {
+        const reactivatedRes = await client.query(
+          `UPDATE cooperative_members
+           SET status = 'active',
+               monthly_contribution = $1,
+               shares_owned = $2,
+               suspension_reason = NULL,
+               exit_date = NULL,
+               updated_at = NOW(),
+               updated_by = $3
+           WHERE id = $4
+           RETURNING *`,
+          [nextMonthlyContribution, nextSharesOwned, userId, targetMembership.id],
+        );
+        transferredMember = reactivatedRes.rows?.[0];
+      } else {
+        const insertedRes = await client.query(
+          `INSERT INTO cooperative_members (
+            cooperative_id, staff_id, monthly_contribution, shares_owned, join_date, status, created_by
+          ) VALUES ($1, $2, $3, $4, NOW(), 'active', $5)
+          RETURNING *`,
+          [cooperativeId, member.staff_id, nextMonthlyContribution, nextSharesOwned, userId],
+        );
+        transferredMember = insertedRes.rows?.[0];
+      }
+
+      this.logger.log(
+        `Transferred member ${member.staff_number || member.staff_id} from cooperative ${sourceCooperativeId} to ${cooperativeId}`,
+      );
+
+      return transferredMember;
+    });
+  }
+
   async updateMember(id: string, dto: Partial<AddCooperativeMemberDto> & { status?: string, suspension_reason?: string }, userId: string) {
-    await this.getMemberById(id);
+    const member = await this.getMemberById(id);
+    const { cooperativeId } = this.normalizeMemberTransferInput(dto);
+
+    if (cooperativeId && cooperativeId !== String(member.cooperative_id || '').trim()) {
+      return this.transferMember(member, dto, userId);
+    }
 
     const updates = [];
     const values = [];
