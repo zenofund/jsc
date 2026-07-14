@@ -40,6 +40,15 @@ type DisbursementEditForm = {
   remarks: string;
 };
 
+type AssignLoanForm = {
+  staffId: string;
+  loanTypeId: string;
+  requestedAmount: number;
+  tenureMonths: number | '';
+  purpose: string;
+  autoApproveDisburse: boolean;
+};
+
 type LoanEditPreview = {
   interestAmount: number;
   totalRepayment: number;
@@ -281,15 +290,17 @@ function ApplicationsTab({
   const [applicationEditData, setApplicationEditData] = useState<ApplicationEditForm | null>(null);
   const [isUpdatingApplication, setIsUpdatingApplication] = useState(false);
 
-  // Assign Loan State
-  const [assignLoanData, setAssignLoanData] = useState({
+  const createEmptyAssignLoanData = (): AssignLoanForm => ({
     staffId: '',
     loanTypeId: '',
     requestedAmount: 0,
-    tenureMonths: 1,
+    tenureMonths: '',
     purpose: '',
     autoApproveDisburse: false,
   });
+
+  // Assign Loan State
+  const [assignLoanData, setAssignLoanData] = useState<AssignLoanForm>(createEmptyAssignLoanData);
   const [assigningLoan, setAssigningLoan] = useState(false);
   const [loanTypesList, setLoanTypesList] = useState<LoanType[]>([]);
   const [staffSearchTerm, setStaffSearchTerm] = useState('');
@@ -391,7 +402,14 @@ function ApplicationsTab({
 
     const handleAssignLoan = async (e: React.FormEvent) => {
       e.preventDefault();
-      if (!assignLoanData.staffId || !assignLoanData.loanTypeId || assignLoanData.requestedAmount <= 0 || assignLoanData.tenureMonths <= 0 || !assignLoanData.purpose) {
+      const tenureMonths = Number(assignLoanData.tenureMonths);
+      if (
+        !assignLoanData.staffId ||
+        !assignLoanData.loanTypeId ||
+        assignLoanData.requestedAmount <= 0 ||
+        tenureMonths <= 0 ||
+        !assignLoanData.purpose
+      ) {
         showToast.error('Error', 'Please fill in all required fields correctly');
         return;
       }
@@ -406,7 +424,7 @@ function ApplicationsTab({
             showToast.error('Invalid Amount', `Maximum loan amount is ${formatCurrency(selectedLoanType.max_amount)}`);
             return;
           }
-          if (selectedLoanType.max_tenure_months !== undefined && assignLoanData.tenureMonths > selectedLoanType.max_tenure_months) {
+          if (selectedLoanType.max_tenure_months !== undefined && tenureMonths > selectedLoanType.max_tenure_months) {
             showToast.error('Invalid Tenure', `Maximum tenure is ${selectedLoanType.max_tenure_months} months`);
             return;
           }
@@ -417,7 +435,7 @@ function ApplicationsTab({
           staffId: assignLoanData.staffId,
           loanTypeId: assignLoanData.loanTypeId,
           requestedAmount: assignLoanData.requestedAmount,
-          tenureMonths: assignLoanData.tenureMonths,
+          tenureMonths,
           purpose: assignLoanData.purpose,
           guarantors: [] // Admin assigning usually overrides guarantor requirement or handles offline
         };
@@ -457,14 +475,7 @@ function ApplicationsTab({
         
         setShowAssignModal(false);
         setStaffSearchTerm('');
-        setAssignLoanData({
-          staffId: '',
-          loanTypeId: '',
-          requestedAmount: 0,
-          tenureMonths: 1,
-          purpose: '',
-          autoApproveDisburse: false,
-        });
+        setAssignLoanData(createEmptyAssignLoanData());
         onRefresh();
         
       } catch (error: any) {
@@ -1011,6 +1022,7 @@ function ApplicationsTab({
           onClose={() => {
             setShowAssignModal(false);
             setStaffSearchTerm('');
+            setAssignLoanData(createEmptyAssignLoanData());
           }}
           title="Assign Loan to Staff"
           size="md"
@@ -1082,7 +1094,12 @@ function ApplicationsTab({
                 type="number"
                 min="1"
                 value={assignLoanData.tenureMonths || ''}
-                onChange={(e) => setAssignLoanData({ ...assignLoanData, tenureMonths: Number(e.target.value) })}
+                onChange={(e) =>
+                  setAssignLoanData({
+                    ...assignLoanData,
+                    tenureMonths: e.target.value === '' ? '' : Number(e.target.value),
+                  })
+                }
                 className="w-full px-3 py-2 rounded-lg border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 required
               />
