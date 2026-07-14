@@ -62,6 +62,42 @@ const ReportsListPage: React.FC = () => {
     (window as any).navigateTo(view);
   };
 
+  const humanizeLabel = (value: string) => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const spaced = raw
+      .replace(/_/g, ' ')
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return spaced.replace(/\b\w/g, (match) => match.toUpperCase());
+  };
+
+  const isIsoDateString = (value: string) => {
+    const raw = String(value || '').trim();
+    if (!raw) return false;
+    if (!/^\d{4}-\d{2}-\d{2}/.test(raw)) return false;
+    const parsed = new Date(raw);
+    return !Number.isNaN(parsed.getTime());
+  };
+
+  const formatCellValue = (value: any) => {
+    if (value === null || value === undefined) return '-';
+    if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      return format(value, 'MMM dd, yyyy, h:mm a');
+    }
+
+    if (typeof value === 'string' && isIsoDateString(value)) {
+      const date = new Date(value);
+      const hasTime = /T|\d{2}:\d{2}/.test(value);
+      return format(date, hasTime ? 'MMM dd, yyyy, h:mm a' : 'MMM dd, yyyy');
+    }
+
+    return String(value);
+  };
+
   // State
   const [activeTab, setActiveTab] = useState('all');
   const [templates, setTemplates] = useState<ReportTemplate[]>([]);
@@ -840,7 +876,7 @@ const ReportsListPage: React.FC = () => {
         <DialogContent className="max-w-6xl max-h-[80vh] overflow-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between">
-              <span>{resultsDialog.result?.template.name}</span>
+              <span className="font-semibold">{resultsDialog.result?.template.name}</span>
               <div className="flex gap-2">
                 <Button size="sm" variant="outline" onClick={() => exportData('csv')}>
                   <Download className="h-4 w-4 mr-2" />
@@ -908,9 +944,9 @@ const ReportsListPage: React.FC = () => {
                     {Object.keys(resultsDialog.result.data[0]).map((key) => (
                       <th
                         key={key}
-                        className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                        className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400"
                       >
-                        {key}
+                        {humanizeLabel(key)}
                       </th>
                     ))}
                   </tr>
@@ -923,7 +959,7 @@ const ReportsListPage: React.FC = () => {
                           key={cellIdx}
                           className="px-4 py-3 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100"
                         >
-                          {value !== null && value !== undefined ? String(value) : '-'}
+                          {formatCellValue(value)}
                         </td>
                       ))}
                     </tr>
