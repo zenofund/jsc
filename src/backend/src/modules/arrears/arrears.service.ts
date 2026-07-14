@@ -1,11 +1,16 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { DatabaseService } from '@common/database/database.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationCategory, NotificationPriority, NotificationType } from '../notifications/dto/notification.dto';
 
 @Injectable()
 export class ArrearsService {
   private readonly logger = new Logger(ArrearsService.name);
 
-  constructor(private readonly databaseService: DatabaseService) {}
+  constructor(
+    private readonly databaseService: DatabaseService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   /**
    * Create manual arrears/adjustment
@@ -31,13 +36,14 @@ export class ArrearsService {
 
     const totalArrears = parseFloat(amount);
 
-    await this.databaseService.query(
+    const arrearsRecord = await this.databaseService.queryOne(
       `INSERT INTO arrears (
         staff_id, reason, old_salary, new_salary, 
         old_basic_salary, new_basic_salary,
         effective_date, months_owed, total_arrears, 
         status, details, created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      RETURNING *`,
       [
         staffId, reason || 'other', 
         staff.current_basic_salary || 0, staff.current_basic_salary || 0, // No salary change implies same salary
@@ -45,6 +51,26 @@ export class ArrearsService {
         effectiveDate, monthsOwed, totalArrears,
         'pending', JSON.stringify(details), userId
       ]
+    );
+
+    await Promise.all(
+      ['admin', 'payroll_officer'].map((role) =>
+        this.notificationsService.createRoleNotification({
+          role,
+          type: NotificationType.ARREARS,
+          category: NotificationCategory.ACTION_REQUIRED,
+          title: 'Arrears approval required',
+          message: `Manual arrears for ${staff.staff_number} is pending approval (${totalArrears.toFixed(2)}).`,
+          link: '/arrears',
+          entity_type: 'arrears',
+          entity_id: arrearsRecord?.id,
+          priority: NotificationPriority.HIGH,
+          action_label: 'Review',
+          action_link: '/arrears',
+          created_by: userId,
+          metadata: { arrears_id: arrearsRecord?.id, staff_id: staffId },
+        }),
+      ),
     );
 
     this.logger.log(`Manual arrears created for staff ${staff.staff_number} by user ${userId}`);
@@ -104,6 +130,26 @@ export class ArrearsService {
       `UPDATE arrears SET status = 'approved', updated_at = NOW() WHERE id = $1`,
       [id]
     );
+
+    if (arrears.created_by) {
+      const staff = await this.databaseService.queryOne('SELECT staff_number, first_name, last_name FROM staff WHERE id = $1', [arrears.staff_id]);
+      const staffName = [staff?.first_name, staff?.last_name].filter(Boolean).join(' ').trim() || staff?.staff_number || 'Staff';
+      await this.notificationsService.create({
+        recipient_id: arrears.created_by,
+        type: NotificationType.ARREARS,
+        category: NotificationCategory.SUCCESS,
+        title: 'Arrears approved',
+        message: `${staffName} arrears was approved.`,
+        link: '/arrears',
+        entity_type: 'arrears',
+        entity_id: arrears.id,
+        priority: NotificationPriority.MEDIUM,
+        action_label: 'View',
+        action_link: '/arrears',
+        created_by: userId,
+        metadata: { arrears_id: arrears.id, staff_id: arrears.staff_id },
+      });
+    }
 
     this.logger.log(`Arrears ${id} approved by user ${userId}`);
     return { message: 'Arrears approved successfully' };

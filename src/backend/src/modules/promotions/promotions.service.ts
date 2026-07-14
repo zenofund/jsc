@@ -1,6 +1,8 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { DatabaseService } from '@common/database/database.service';
 import { SalaryLookupService } from '../salary-structures/salary-lookup.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationCategory, NotificationPriority, NotificationType } from '../notifications/dto/notification.dto';
 
 @Injectable()
 export class PromotionsService {
@@ -8,7 +10,8 @@ export class PromotionsService {
 
   constructor(
     private readonly databaseService: DatabaseService,
-    private readonly salaryLookupService: SalaryLookupService
+    private readonly salaryLookupService: SalaryLookupService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   /**
@@ -138,6 +141,29 @@ export class PromotionsService {
 
     this.logger.log(`Promotion request created for staff ${staff.staff_number}`);
 
+    if (status === 'pending') {
+      const staffName = [staff.first_name, staff.last_name].filter(Boolean).join(' ').trim() || staff.staff_number;
+      await Promise.all(
+        ['admin', 'hr_manager'].map((role) =>
+          this.notificationsService.createRoleNotification({
+            role,
+            type: NotificationType.PROMOTION,
+            category: NotificationCategory.ACTION_REQUIRED,
+            title: 'Promotion approval required',
+            message: `${staffName} (${staff.staff_number}) promotion to GL ${newGradeLevel}/Step ${newStep} is pending approval.`,
+            link: '/promotions',
+            entity_type: 'promotion',
+            entity_id: result.id,
+            priority: NotificationPriority.HIGH,
+            action_label: 'Review',
+            action_link: '/promotions',
+            created_by: userId,
+            metadata: { promotion_id: result.id, staff_id: staffId },
+          }),
+        ),
+      );
+    }
+
     // If created as approved (e.g. by admin directly), process it immediately
     if (status === 'approved') {
         await this.processPromotionApproval(result.id, userId);
@@ -167,6 +193,26 @@ export class PromotionsService {
 
     await this.processPromotionApproval(id, userId);
 
+    if (promotion.created_by) {
+      const staff = await this.databaseService.queryOne('SELECT staff_number, first_name, last_name FROM staff WHERE id = $1', [promotion.staff_id]);
+      const staffName = [staff?.first_name, staff?.last_name].filter(Boolean).join(' ').trim() || staff?.staff_number || 'Staff';
+      await this.notificationsService.create({
+        recipient_id: promotion.created_by,
+        type: NotificationType.PROMOTION,
+        category: NotificationCategory.SUCCESS,
+        title: 'Promotion approved',
+        message: `${staffName} promotion was approved.`,
+        link: '/promotions',
+        entity_type: 'promotion',
+        entity_id: promotion.id,
+        priority: NotificationPriority.MEDIUM,
+        action_label: 'View',
+        action_link: '/promotions',
+        created_by: userId,
+        metadata: { promotion_id: promotion.id, staff_id: promotion.staff_id },
+      });
+    }
+
     return { message: 'Promotion approved successfully' };
   }
 
@@ -188,6 +234,26 @@ export class PromotionsService {
       `UPDATE promotions SET status = 'rejected', rejection_reason = $1, updated_at = NOW() WHERE id = $2`,
       [reason, id]
     );
+
+    if (promotion.created_by) {
+      const staff = await this.databaseService.queryOne('SELECT staff_number, first_name, last_name FROM staff WHERE id = $1', [promotion.staff_id]);
+      const staffName = [staff?.first_name, staff?.last_name].filter(Boolean).join(' ').trim() || staff?.staff_number || 'Staff';
+      await this.notificationsService.create({
+        recipient_id: promotion.created_by,
+        type: NotificationType.PROMOTION,
+        category: NotificationCategory.WARNING,
+        title: 'Promotion rejected',
+        message: `${staffName} promotion was rejected.`,
+        link: '/promotions',
+        entity_type: 'promotion',
+        entity_id: promotion.id,
+        priority: NotificationPriority.MEDIUM,
+        action_label: 'View',
+        action_link: '/promotions',
+        created_by: userId,
+        metadata: { promotion_id: promotion.id, staff_id: promotion.staff_id, reason },
+      });
+    }
 
     return { message: 'Promotion rejected successfully' };
   }
@@ -442,19 +508,40 @@ export class PromotionsService {
             });
           }
           
-          await this.databaseService.query(
+          const arrearsRecord = await this.databaseService.queryOne(
             `INSERT INTO arrears (
               staff_id, reason, old_salary, new_salary, 
               old_basic_salary, new_basic_salary,
               effective_date, months_owed, total_arrears, 
               status, details, created_by
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            RETURNING *`,
             [
               staff.id, 'promotion', oldNetSalary, newNetSalary,
               oldBasicSalary, newBasicSalaryFloat,
               promotion.promotion_date, monthsDiff, totalArrears,
               'pending', JSON.stringify(details), userId
             ]
+          );
+
+          await Promise.all(
+            ['admin', 'payroll_officer'].map((role) =>
+              this.notificationsService.createRoleNotification({
+                role,
+                type: NotificationType.ARREARS,
+                category: NotificationCategory.ACTION_REQUIRED,
+                title: 'Arrears approval required',
+                message: `Promotion arrears for ${staff.staff_number} is pending approval (${totalArrears.toFixed(2)}).`,
+                link: '/arrears',
+                entity_type: 'arrears',
+                entity_id: arrearsRecord?.id,
+                priority: NotificationPriority.HIGH,
+                action_label: 'Review',
+                action_link: '/arrears',
+                created_by: userId,
+                metadata: { arrears_id: arrearsRecord?.id, staff_id: staff.id, promotion_id: promotionId },
+              }),
+            ),
           );
 
           // Mark promotion as having arrears calculated

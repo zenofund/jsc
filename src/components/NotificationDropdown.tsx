@@ -77,8 +77,21 @@ export function NotificationDropdown({ onNavigate }: NotificationDropdownProps) 
     let socket: Socket | null = null;
     
     if (user) {
-      // Base URL for socket (remove /api/v1 from API URL if present, or default to localhost:3000)
-      const socketUrl = 'http://localhost:3000'; 
+      const deriveSocketBaseUrl = () => {
+        const apiUrl = String(import.meta.env.VITE_API_URL || '').trim();
+        if (apiUrl) {
+          try {
+            const parsed = new URL(apiUrl);
+            return parsed.origin;
+          } catch {
+            const stripped = apiUrl.replace(/\/api\/v1\/?$/, '');
+            return stripped || window.location.origin;
+          }
+        }
+        return window.location.origin;
+      };
+
+      const socketUrl = deriveSocketBaseUrl();
       
       socket = io(`${socketUrl}/notifications`, {
         auth: {

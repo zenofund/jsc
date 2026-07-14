@@ -145,18 +145,21 @@ export class NotificationsService {
       ],
     );
 
+    const result = this.formatNotification(notification);
+    this.notificationsGateway.sendNotification(result);
+
     if (dto.recipient_id !== 'all' && this.shouldSendPush(dto)) {
       await this.sendPushNotification(dto.recipient_id, {
         title: dto.title,
         body: dto.message,
         url: dto.action_link || dto.link || '/notifications',
-        data: notification,
+        data: result,
         actions: dto.action_link ? [{ action: 'open', title: dto.action_label || 'Open' }] : undefined,
       });
     }
 
     this.logger.log(`Notification created for ${dto.recipient_id}: ${dto.title}`);
-    return this.formatNotification(notification);
+    return result;
   }
 
   /**
@@ -209,6 +212,9 @@ export class NotificationsService {
       params,
     );
 
+    const results = notifications.map((n) => this.formatNotification(n));
+    results.forEach((result) => this.notificationsGateway.sendNotification(result));
+
     if (this.shouldSendPush(notificationData as CreateNotificationDto)) {
       await Promise.all(
         recipient_ids.map((recipientId) =>
@@ -226,7 +232,7 @@ export class NotificationsService {
     }
 
     this.logger.log(`Bulk created ${recipient_ids.length} notifications: ${notificationData.title}`);
-    return notifications.map(n => this.formatNotification(n));
+    return results;
   }
 
   /**
