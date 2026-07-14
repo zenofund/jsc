@@ -27,6 +27,7 @@ import {
   Table as TableIcon
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { format } from 'date-fns';
 import { PageSkeleton } from '../components/PageLoader';
 
 const REPORT_BUILDER_EDIT_KEY = 'jsc_report_builder_template_id';
@@ -38,6 +39,42 @@ const CustomReportBuilderPage: React.FC = () => {
   // Navigation helper
   const navigate = (view: string) => {
     (window as any).navigateTo(view);
+  };
+
+  const humanizeLabel = (value: string) => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const spaced = raw
+      .replace(/_/g, ' ')
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return spaced.replace(/\b\w/g, (match) => match.toUpperCase());
+  };
+
+  const isIsoDateString = (value: string) => {
+    const raw = String(value || '').trim();
+    if (!raw) return false;
+    if (!/^\d{4}-\d{2}-\d{2}/.test(raw)) return false;
+    const parsed = new Date(raw);
+    return !Number.isNaN(parsed.getTime());
+  };
+
+  const formatCellValue = (value: any) => {
+    if (value === null || value === undefined) return '-';
+    if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      return format(value, 'MMM dd, yyyy, h:mm a');
+    }
+
+    if (typeof value === 'string' && isIsoDateString(value)) {
+      const date = new Date(value);
+      const hasTime = /T|\d{2}:\d{2}/.test(value);
+      return format(date, hasTime ? 'MMM dd, yyyy, h:mm a' : 'MMM dd, yyyy');
+    }
+
+    return String(value);
   };
 
   // State
@@ -1091,6 +1128,7 @@ const CustomReportBuilderPage: React.FC = () => {
                     : 'Click "Preview" to see results'
                   }
                 </CardDescription>
+                {reportName && <div className="text-sm font-semibold text-card-foreground">{reportName}</div>}
                 <div className="text-xs text-muted-foreground">
                   {(() => {
                     const parsedLimit = parseInt(reportLimit, 10);
@@ -1142,9 +1180,9 @@ const CustomReportBuilderPage: React.FC = () => {
                             {Object.keys(previewData[0] || {}).map((key) => (
                               <th
                                 key={key}
-                                className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                                className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400"
                               >
-                                {key}
+                                {humanizeLabel(key)}
                               </th>
                             ))}
                           </tr>
@@ -1157,7 +1195,7 @@ const CustomReportBuilderPage: React.FC = () => {
                                   key={cellIdx}
                                   className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100"
                                 >
-                                  {value !== null && value !== undefined ? String(value) : '-'}
+                                  {formatCellValue(value)}
                                 </td>
                               ))}
                             </tr>
