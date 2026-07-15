@@ -243,7 +243,7 @@ export const authAPI = {
           staff_id: data.user.staff_id || data.user.staffId,
           permissions: data.user.permissions || [],
           status: data.user.status || 'active',
-          must_change_password: data.user.must_change_password || false,
+          must_change_password: data.user.must_change_password ?? false,
           created_at: data.user.created_at || new Date().toISOString(),
         },
       };
@@ -283,7 +283,7 @@ export const authAPI = {
         staff_id: data.staff_id || data.staffId || (data.user && (data.user.staff_id || data.user.staffId)),
         permissions: data.permissions || [],
         status: data.status || 'active',
-        must_change_password: data.must_change_password || false,
+        must_change_password: data.must_change_password ?? false,
         created_at: data.created_at || new Date().toISOString(),
       };
     } catch (error) {

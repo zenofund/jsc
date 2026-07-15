@@ -67,11 +67,61 @@ export class StaffService implements OnModuleInit {
     }
   }
 
+  private normalizeEmail(email: unknown): string | null {
+    const normalized = String(email || '').trim().toLowerCase();
+    return normalized || null;
+  }
+
+  private async ensureEmailIsAvailable(
+    email: string,
+    options?: {
+      excludeUserId?: string | null;
+      excludeStaffId?: string | null;
+      client?: any;
+    },
+  ) {
+    const client = options?.client;
+    const queryOne = async (text: string, params: any[]) => {
+      if (client) {
+        const result = await client.query(text, params);
+        return result.rows[0] ?? null;
+      }
+      return this.databaseService.queryOne(text, params);
+    };
+
+    const userConflict = await queryOne(
+      `SELECT id
+       FROM users
+       WHERE LOWER(email) = LOWER($1)
+         AND ($2::uuid IS NULL OR id <> $2)
+       LIMIT 1`,
+      [email, options?.excludeUserId ?? null],
+    );
+
+    if (userConflict) {
+      throw new BadRequestException('Email address is already in use by another user account');
+    }
+
+    const staffConflict = await queryOne(
+      `SELECT id
+       FROM staff
+       WHERE LOWER(email) = LOWER($1)
+         AND ($2::uuid IS NULL OR id <> $2)
+       LIMIT 1`,
+      [email, options?.excludeStaffId ?? null],
+    );
+
+    if (staffConflict) {
+      throw new BadRequestException('Email address is already in use by another staff record');
+    }
+  }
+
   /**
    * Create new staff member
    */
   async create(createStaffDto: CreateStaffDto, userId: string) {
     const staffNumber = String(createStaffDto.staffNumber || '').trim();
+    const normalizedEmail = this.normalizeEmail(createStaffDto.email);
     if (!staffNumber) {
       throw new BadRequestException('Staff number is required');
     }
@@ -85,10 +135,10 @@ export class StaffService implements OnModuleInit {
     }
 
     // Check if email already exists
-    if (createStaffDto.email) {
+    if (normalizedEmail) {
       const existing = await this.databaseService.queryOne(
-        'SELECT id FROM staff WHERE email = $1',
-        [createStaffDto.email],
+        'SELECT id FROM staff WHERE LOWER(email) = LOWER($1)',
+        [normalizedEmail],
       );
       if (existing) {
         throw new BadRequestException('Email already exists');
@@ -161,7 +211,7 @@ export class StaffService implements OnModuleInit {
         createStaffDto.gender,
         createStaffDto.maritalStatus || null,
         createStaffDto.phone || null,
-        createStaffDto.email || null,
+        normalizedEmail,
         createStaffDto.address || null,
         createStaffDto.stateOfOrigin,
         createStaffDto.lgaOfOrigin,
@@ -216,7 +266,7 @@ export class StaffService implements OnModuleInit {
     this.logger.log(`Staff created: ${staffNumber} by user ${userId}`);
     
     // Automatically create user account if email is provided
-    if (createStaffDto.email) {
+    if (normalizedEmail) {
       try {
         await this.createUserAccountForStaff(staff.id, staff.email, `${staff.first_name} ${staff.last_name}`, userId);
       } catch (error) {
@@ -249,14 +299,19 @@ export class StaffService implements OnModuleInit {
    * Automatically create user account for newly created staff
    */
   private async createUserAccountForStaff(staffId: string, email: string, fullName: string, createdBy: string) {
+    const normalizedEmail = this.normalizeEmail(email);
+    if (!normalizedEmail) {
+      return null;
+    }
+
     // Check if user account already exists
     const existingUser = await this.databaseService.queryOne(
-      'SELECT id FROM users WHERE email = $1 OR staff_id = $2',
-      [email, staffId],
+      'SELECT id FROM users WHERE LOWER(email) = LOWER($1) OR staff_id = $2',
+      [normalizedEmail, staffId],
     );
 
     if (existingUser) {
-      this.logger.warn(`User account already exists for email ${email}`);
+      this.logger.warn(`User account already exists for email ${normalizedEmail}`);
       return null;
     }
 
@@ -268,13 +323,13 @@ export class StaffService implements OnModuleInit {
       `INSERT INTO users (email, password_hash, full_name, role, staff_id, status, must_change_password)
        VALUES ($1, $2, $3, 'staff', $4, 'active', TRUE)
        RETURNING id, email, full_name, role`,
-      [email, passwordHash, fullName, staffId],
+      [normalizedEmail, passwordHash, fullName, staffId],
     );
 
     // Send welcome email with credentials
     try {
-      await this.emailService.sendWelcomeEmail(email, fullName, defaultPassword);
-      this.logger.log(`Welcome email sent to ${email}`);
+      await this.emailService.sendWelcomeEmail(normalizedEmail, fullName, defaultPassword);
+      this.logger.log(`Welcome email sent to ${normalizedEmail}`);
     } catch (error) {
       this.logger.error(`Failed to send welcome email: ${error.message}`);
     }
@@ -398,6 +453,10 @@ export class StaffService implements OnModuleInit {
    */
   async update(id: string, updateStaffDto: UpdateStaffDto, userId: string) {
     const existing = await this.findOne(id);
+    const linkedUser = await this.databaseService.queryOne(
+      'SELECT id, email FROM users WHERE staff_id = $1 LIMIT 1',
+      [id],
+    );
     let computedBasicSalary: number | null = null;
 
     if (updateStaffDto.gradeLevel !== undefined || updateStaffDto.step !== undefined) {
@@ -410,6 +469,12 @@ export class StaffService implements OnModuleInit {
     const updates = [];
     const params = [];
     let paramIndex = 1;
+    const emailProvided = updateStaffDto.email !== undefined;
+    const normalizedEmail = emailProvided ? this.normalizeEmail(updateStaffDto.email) : null;
+
+    if (emailProvided && !normalizedEmail) {
+      throw new BadRequestException('Email is required');
+    }
 
     // Build dynamic update query
     Object.entries(updateStaffDto).forEach(([key, value]) => {
@@ -417,7 +482,7 @@ export class StaffService implements OnModuleInit {
         // Convert camelCase to snake_case
         const snakeKey = key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
         updates.push(`${snakeKey} = $${paramIndex}`);
-        params.push(value);
+        params.push(key === 'email' ? normalizedEmail : value);
         paramIndex++;
       }
     });
@@ -432,17 +497,37 @@ export class StaffService implements OnModuleInit {
       throw new BadRequestException('No fields to update');
     }
 
-    updates.push(`updated_at = NOW()`);
-    params.push(id);
+    const updated = await this.databaseService.transaction(async (client) => {
+      if (normalizedEmail && normalizedEmail !== this.normalizeEmail(existing.email)) {
+        await this.ensureEmailIsAvailable(normalizedEmail, {
+          excludeStaffId: id,
+          excludeUserId: linkedUser?.id,
+          client,
+        });
+      }
 
-    const query = `
-      UPDATE staff 
-      SET ${updates.join(', ')}
-      WHERE id = $${paramIndex}
-      RETURNING *
-    `;
+      updates.push(`updated_at = NOW()`);
+      params.push(id);
 
-    const updated = await this.databaseService.queryOne(query, params);
+      const query = `
+        UPDATE staff 
+        SET ${updates.join(', ')}
+        WHERE id = $${paramIndex}
+        RETURNING *
+      `;
+
+      const updatedResult = await client.query(query, params);
+      const updatedStaff = updatedResult.rows[0];
+
+      if (normalizedEmail && linkedUser) {
+        await client.query(
+          'UPDATE users SET email = $1, updated_at = NOW() WHERE id = $2',
+          [normalizedEmail, linkedUser.id],
+        );
+      }
+
+      return updatedStaff;
+    });
 
     // Log audit trail
     await this.auditService.log({
@@ -1318,7 +1403,7 @@ export class StaffService implements OnModuleInit {
       try {
         // Check if user exists with same email but not linked
         const existingUser = await this.databaseService.queryOne(
-          'SELECT id FROM users WHERE email = $1',
+          'SELECT id FROM users WHERE LOWER(email) = LOWER($1)',
           [staff.email]
         );
 
@@ -1352,15 +1437,16 @@ export class StaffService implements OnModuleInit {
    */
   async createUserAccount(staffId: string, role: string, userId: string) {
     const staff = await this.findOne(staffId);
+    const normalizedEmail = this.normalizeEmail(staff.email);
 
-    if (!staff.email) {
+    if (!normalizedEmail) {
       throw new BadRequestException('Staff member must have an email address');
     }
 
     // Check if user account already exists
     const existingUser = await this.databaseService.queryOne(
-      'SELECT id FROM users WHERE email = $1 OR staff_id = $2',
-      [staff.email, staffId],
+      'SELECT id FROM users WHERE LOWER(email) = LOWER($1) OR staff_id = $2',
+      [normalizedEmail, staffId],
     );
 
     if (existingUser) {
@@ -1377,7 +1463,7 @@ export class StaffService implements OnModuleInit {
        VALUES ($1, $2, $3, $4, $5, 'active', TRUE)
        RETURNING id, email, full_name, role`,
       [
-        staff.email,
+        normalizedEmail,
         passwordHash,
         `${staff.first_name} ${staff.last_name}`,
         role,
@@ -1388,11 +1474,11 @@ export class StaffService implements OnModuleInit {
     // Send welcome email
     try {
       await this.emailService.sendWelcomeEmail(
-        staff.email,
+        normalizedEmail,
         `${staff.first_name} ${staff.last_name}`,
         tempPassword,
       );
-      this.logger.log(`Welcome email sent to ${staff.email}`);
+      this.logger.log(`Welcome email sent to ${normalizedEmail}`);
     } catch (error) {
       this.logger.error(`Failed to send welcome email: ${error.message}`);
       // Don't fail the user creation if email fails

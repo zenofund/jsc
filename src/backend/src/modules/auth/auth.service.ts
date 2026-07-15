@@ -36,6 +36,55 @@ export class AuthService {
     return false;
   }
 
+  private normalizeEmail(email: unknown): string | null {
+    const normalized = String(email || '').trim().toLowerCase();
+    return normalized || null;
+  }
+
+  private async ensureEmailIsAvailable(
+    email: string,
+    options?: {
+      excludeUserId?: string | null;
+      excludeStaffId?: string | null;
+      client?: any;
+    },
+  ) {
+    const client = options?.client;
+    const queryOne = async (text: string, params: any[]) => {
+      if (client) {
+        const result = await client.query(text, params);
+        return result.rows[0] ?? null;
+      }
+      return this.databaseService.queryOne(text, params);
+    };
+
+    const userConflict = await queryOne(
+      `SELECT id
+       FROM users
+       WHERE LOWER(email) = LOWER($1)
+         AND ($2::uuid IS NULL OR id <> $2)
+       LIMIT 1`,
+      [email, options?.excludeUserId ?? null],
+    );
+
+    if (userConflict) {
+      throw new BadRequestException('Email address is already in use by another user account');
+    }
+
+    const staffConflict = await queryOne(
+      `SELECT id
+       FROM staff
+       WHERE LOWER(email) = LOWER($1)
+         AND ($2::uuid IS NULL OR id <> $2)
+       LIMIT 1`,
+      [email, options?.excludeStaffId ?? null],
+    );
+
+    if (staffConflict) {
+      throw new BadRequestException('Email address is already in use by another staff record');
+    }
+  }
+
   private async getRoleTemplatePermissions(role: string): Promise<string[]> {
     const normalizedRole = this.normalizeRole(role);
     if (!normalizedRole) return [];
@@ -92,12 +141,17 @@ export class AuthService {
    * Validate user credentials
    */
   async validateUser(email: string, password: string): Promise<any> {
+    const normalizedEmail = this.normalizeEmail(email);
+    if (!normalizedEmail) {
+      return null;
+    }
+
     const user = await this.databaseService.queryOne(
       `SELECT id, email, password_hash, full_name, role, permissions, department_id, staff_id, status,
               totp_secret, totp_enabled, current_session_id, must_change_password
        FROM users 
        WHERE email = $1 AND status = 'active'`,
-      [email],
+      [normalizedEmail],
     );
 
     if (!user) {
@@ -463,36 +517,84 @@ export class AuthService {
     const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
 
     const normalizedRole = this.normalizeRole(createUserDto.role);
+    const normalizedEmail = this.normalizeEmail(createUserDto.email);
+    if (!normalizedEmail) {
+      throw new BadRequestException('Email is required');
+    }
+
+    const fullName = createUserDto.full_name || createUserDto.fullName;
+    const departmentId = createUserDto.department_id || createUserDto.departmentId || null;
+    const staffId = createUserDto.staff_id || createUserDto.staffId || null;
+    const mustChangePassword =
+      createUserDto.must_change_password ?? createUserDto.mustChangePassword ?? true;
     const requestedPermissions = Array.isArray(createUserDto.permissions)
       ? createUserDto.permissions.map((p: string) => String(p))
       : [];
     const permissions =
       requestedPermissions.length > 0 ? requestedPermissions : await this.getRoleTemplatePermissions(normalizedRole);
 
-    const result = await this.databaseService.queryOne(
-      `INSERT INTO users (email, password_hash, full_name, role, permissions, department_id, staff_id, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING id, email, full_name, role, permissions, department_id, staff_id, status`,  
-      [
-        createUserDto.email,
-        hashedPassword,
-        createUserDto.full_name || createUserDto.fullName,
-        normalizedRole,
-        permissions,
-        createUserDto.department_id || createUserDto.departmentId || null,
-        createUserDto.staff_id || createUserDto.staffId || null,
-        'active',
-      ],
-    );
+    const result = await this.databaseService.transaction(async (client) => {
+      await this.ensureEmailIsAvailable(normalizedEmail, {
+        excludeStaffId: staffId,
+        client,
+      });
 
-    this.logger.log(`New user created: ${createUserDto.email} by ${createdBy}`);
+      if (staffId) {
+        const linkedStaff = await client.query(
+          'SELECT id, email FROM staff WHERE id = $1',
+          [staffId],
+        );
+        const staffRecord = linkedStaff.rows[0];
+
+        if (!staffRecord) {
+          throw new BadRequestException('Linked staff member not found');
+        }
+
+        const existingLinkedUser = await client.query(
+          'SELECT id FROM users WHERE staff_id = $1 LIMIT 1',
+          [staffId],
+        );
+
+        if (existingLinkedUser.rows.length > 0) {
+          throw new BadRequestException('A user account already exists for the selected staff member');
+        }
+
+        if (this.normalizeEmail(staffRecord.email) !== normalizedEmail) {
+          await client.query(
+            'UPDATE staff SET email = $1, updated_at = NOW() WHERE id = $2',
+            [normalizedEmail, staffId],
+          );
+        }
+      }
+
+      const inserted = await client.query(
+        `INSERT INTO users (email, password_hash, full_name, role, permissions, department_id, staff_id, status, must_change_password)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         RETURNING id, email, full_name, role, permissions, department_id, staff_id, status, must_change_password`,
+        [
+          normalizedEmail,
+          hashedPassword,
+          fullName,
+          normalizedRole,
+          permissions,
+          departmentId,
+          staffId,
+          'active',
+          Boolean(mustChangePassword),
+        ],
+      );
+
+      return inserted.rows[0];
+    });
+
+    this.logger.log(`New user created: ${normalizedEmail} by ${createdBy}`);
 
     await this.auditService.log({
       userId: createdBy,
       action: AuditAction.CREATE,
       entity: 'user',
       entityId: result.id,
-      description: `Created user ${createUserDto.email}`,
+      description: `Created user ${normalizedEmail}`,
       newValues: result,
     });
 
@@ -503,13 +605,30 @@ export class AuthService {
    * Update user details (Admin only)
    */
   async updateUser(userId: string, updateUserDto: any, updatedBy?: string) {
+    const existingUser = await this.databaseService.queryOne(
+      `SELECT id, email, full_name, role, permissions, department_id, staff_id, status
+       FROM users
+       WHERE id = $1`,
+      [userId],
+    );
+
+    if (!existingUser) {
+      throw new NotFoundException('User not found');
+    }
+
     const fields = [];
     const values = [];
     let paramIndex = 1;
+    const emailProvided = updateUserDto.email !== undefined;
+    const normalizedEmail = emailProvided ? this.normalizeEmail(updateUserDto.email) : null;
 
-    if (updateUserDto.email) {
+    if (emailProvided && !normalizedEmail) {
+      throw new BadRequestException('Email is required');
+    }
+
+    if (emailProvided && normalizedEmail) {
       fields.push(`email = $${paramIndex++}`);
-      values.push(updateUserDto.email);
+      values.push(normalizedEmail);
     }
 
     const fullName = updateUserDto.full_name || updateUserDto.fullName;
@@ -561,14 +680,33 @@ export class AuthService {
       return { message: 'No changes to update' };
     }
 
-    values.push(userId);
-    const query = `UPDATE users SET ${fields.join(', ')} WHERE id = $${paramIndex} RETURNING id, email, full_name, role, permissions, status`;
+    const result = await this.databaseService.transaction(async (client) => {
+      if (normalizedEmail && normalizedEmail !== this.normalizeEmail(existingUser.email)) {
+        await this.ensureEmailIsAvailable(normalizedEmail, {
+          excludeUserId: userId,
+          excludeStaffId: existingUser.staff_id,
+          client,
+        });
+      }
 
-    const result = await this.databaseService.queryOne(query, values);
+      values.push(userId);
+      const query = `UPDATE users SET ${fields.join(', ')}, updated_at = NOW() WHERE id = $${paramIndex} RETURNING id, email, full_name, role, permissions, status, staff_id`;
+      const updatedResult = await client.query(query, values);
+      const updatedUser = updatedResult.rows[0];
 
-    if (!result) {
-      throw new NotFoundException('User not found');
-    }
+      if (!updatedUser) {
+        throw new NotFoundException('User not found');
+      }
+
+      if (normalizedEmail && existingUser.staff_id) {
+        await client.query(
+          'UPDATE staff SET email = $1, updated_at = NOW() WHERE id = $2',
+          [normalizedEmail, existingUser.staff_id],
+        );
+      }
+
+      return updatedUser;
+    });
 
     this.logger.log(`User ${userId} updated`);
 
@@ -654,14 +792,21 @@ export class AuthService {
    * Request password reset - Generate reset token and send email
    */
   async requestPasswordReset(email: string) {
+    const normalizedEmail = this.normalizeEmail(email);
+    if (!normalizedEmail) {
+      return {
+        message: 'If your email is registered, you will receive password reset instructions',
+      };
+    }
+
     const user = await this.databaseService.queryOne(
       'SELECT id, email, full_name FROM users WHERE email = $1 AND status = $2',
-      [email, 'active'],
+      [normalizedEmail, 'active'],
     );
 
     // Always return success to prevent email enumeration attacks
     if (!user) {
-      this.logger.warn(`Password reset requested for non-existent email: ${email}`);
+      this.logger.warn(`Password reset requested for non-existent email: ${normalizedEmail}`);
       return {
         message: 'If your email is registered, you will receive password reset instructions',
       };
@@ -688,7 +833,7 @@ export class AuthService {
     // For now, log the token (in production, this should be in an email)
     const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password?token=${resetToken}`;
     
-    this.logger.log(`Password reset requested for ${email}`);
+    this.logger.log(`Password reset requested for ${normalizedEmail}`);
     this.logger.log(`Reset link (DEVELOPMENT ONLY - should be emailed): ${resetLink}`);
 
     // Send email with reset link
@@ -743,7 +888,7 @@ export class AuthService {
     
     try {
       await this.databaseService.query(
-        'UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2',
+        'UPDATE users SET password_hash = $1, must_change_password = FALSE, updated_at = NOW() WHERE id = $2',
         [hashedPassword, resetRecord.user_id],
       );
 

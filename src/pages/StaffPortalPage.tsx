@@ -13,7 +13,8 @@ import {
   leaveAPI,
   staffAPI,
   payslipAPI,
-  notificationAPI
+  notificationAPI,
+  authAPI
 } from '../lib/api-client';
 import { NotificationIntegration } from '../lib/notification-integration';
 import { loanApplicationAPI as loanAPI, loanTypeAPI, disbursementAPI, guarantorAPI, cooperativeAPI } from '../lib/loanAPI';
@@ -49,8 +50,14 @@ export function StaffPortalPage() {
   const [showCurrentPwd, setShowCurrentPwd] = useState(false);
   const [showNewPwd, setShowNewPwd] = useState(false);
   const [showConfirmPwd, setShowConfirmPwd] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [pushSupported, setPushSupported] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
   
   // Dashboard data
   const [dashboardStats, setDashboardStats] = useState<any>(null);
@@ -261,6 +268,61 @@ export function StaffPortalPage() {
       showToast('error', 'Failed to load staff portal data');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const resetPasswordForm = () => {
+    setPasswordForm({
+      currentPassword: '',
+      newPassword: '',
+      confirmPassword: '',
+    });
+    setShowCurrentPwd(false);
+    setShowNewPwd(false);
+    setShowConfirmPwd(false);
+  };
+
+  const handleChangePassword = async () => {
+    if (!user?.id) {
+      showToast('error', 'Unable to determine the current user');
+      return;
+    }
+
+    if (!passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword) {
+      showToast('error', 'Please fill in all password fields');
+      return;
+    }
+
+    if (passwordForm.newPassword.length < 8) {
+      showToast('error', 'New password must be at least 8 characters long');
+      return;
+    }
+
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      showToast('error', 'New password and confirm password do not match');
+      return;
+    }
+
+    if (passwordForm.currentPassword === passwordForm.newPassword) {
+      showToast('error', 'New password must be different from current password');
+      return;
+    }
+
+    try {
+      setIsChangingPassword(true);
+      await authAPI.changePassword(
+        user.id,
+        passwordForm.currentPassword,
+        passwordForm.newPassword,
+        passwordForm.confirmPassword,
+      );
+      showToast('success', 'Password changed successfully');
+      resetPasswordForm();
+    } catch (error: any) {
+      const errorMessage = error?.message || 'Failed to change password';
+      showToast('error', errorMessage);
+    } finally {
+      setIsChangingPassword(false);
     }
   };
 
@@ -1658,12 +1720,16 @@ export function StaffPortalPage() {
               <div className="relative">
                 <input
                   type={showCurrentPwd ? 'text' : 'password'}
+                  value={passwordForm.currentPassword}
+                  onChange={(e) => setPasswordForm((prev) => ({ ...prev, currentPassword: e.target.value }))}
                   className="w-full pr-10 px-3 py-2 border border-border rounded-md bg-card text-card-foreground"
+                  disabled={isChangingPassword}
                 />
                 <button
                   type="button"
                   onClick={() => setShowCurrentPwd(!showCurrentPwd)}
                   className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  disabled={isChangingPassword}
                 >
                   {showCurrentPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -1674,12 +1740,16 @@ export function StaffPortalPage() {
               <div className="relative">
                 <input
                   type={showNewPwd ? 'text' : 'password'}
+                  value={passwordForm.newPassword}
+                  onChange={(e) => setPasswordForm((prev) => ({ ...prev, newPassword: e.target.value }))}
                   className="w-full pr-10 px-3 py-2 border border-border rounded-md bg-card text-card-foreground"
+                  disabled={isChangingPassword}
                 />
                 <button
                   type="button"
                   onClick={() => setShowNewPwd(!showNewPwd)}
                   className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  disabled={isChangingPassword}
                 >
                   {showNewPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -1690,19 +1760,29 @@ export function StaffPortalPage() {
               <div className="relative">
                 <input
                   type={showConfirmPwd ? 'text' : 'password'}
+                  value={passwordForm.confirmPassword}
+                  onChange={(e) => setPasswordForm((prev) => ({ ...prev, confirmPassword: e.target.value }))}
                   className="w-full pr-10 px-3 py-2 border border-border rounded-md bg-card text-card-foreground"
+                  disabled={isChangingPassword}
                 />
                 <button
                   type="button"
                   onClick={() => setShowConfirmPwd(!showConfirmPwd)}
                   className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  disabled={isChangingPassword}
                 >
                   {showConfirmPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
             </div>
-            <button className="md:col-start-2 md:col-span-1 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
-              Update Password
+            <button
+              type="button"
+              onClick={handleChangePassword}
+              disabled={isChangingPassword}
+              className={`md:col-start-2 md:col-span-1 px-4 py-2 rounded text-white flex items-center justify-center gap-2 ${isChangingPassword ? 'bg-green-500 opacity-75 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'}`}
+            >
+              {isChangingPassword && <Loader2 className="h-4 w-4 animate-spin" />}
+              {isChangingPassword ? 'Updating...' : 'Update Password'}
             </button>
           </div>
         </div>
