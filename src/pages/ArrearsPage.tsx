@@ -346,7 +346,15 @@ export function ArrearsPage() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Effective Date</p>
-                <p className="font-medium text-foreground">{selectedArrears.effective_date}</p>
+                <p className="font-medium text-foreground">
+                  {selectedArrears.effective_date 
+                    ? new Date(selectedArrears.effective_date).toLocaleDateString('en-GB', { 
+                        day: 'numeric', 
+                        month: 'short', 
+                        year: 'numeric' 
+                      })
+                    : 'N/A'}
+                </p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Status</p>
@@ -382,17 +390,17 @@ export function ArrearsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {(selectedArrears.arrears_details || []).map((detail: any, index: number) => (
+                    {(selectedArrears.details || selectedArrears.arrears_details || []).map((detail: any, index: number) => (
                       <tr key={index} className="border-t border-border">
                         <td className="px-4 py-2 text-foreground">{detail.month}</td>
                         <td className="px-4 py-2 text-foreground text-right">₦{Number(detail.amount).toLocaleString()}</td>
                       </tr>
                     ))}
-                    {(!selectedArrears.arrears_details || selectedArrears.arrears_details.length === 0) && (
+                    {(!(selectedArrears.details || selectedArrears.arrears_details) || (selectedArrears.details || selectedArrears.arrears_details).length === 0) && (
                       <tr>
-                         <td colSpan={2} className="px-4 py-4 text-center text-muted-foreground">
-                            No breakdown details available
-                         </td>
+                        <td colSpan={2} className="px-4 py-6 text-center text-muted-foreground">
+                          No breakdown details available
+                        </td>
                       </tr>
                     )}
                   </tbody>
