@@ -588,7 +588,7 @@ export const cooperativeAPI = {
 
   // Get all memberships for a staff
   async getMembershipsByStaffId(staffId: string) {
-    return makeApiRequest(`/cooperatives/members?staff_id=${staffId}`, { method: 'GET' });
+    return makeApiRequest(`/cooperatives/staff/${staffId}/memberships`, { method: 'GET' });
   },
 
   // Register new member

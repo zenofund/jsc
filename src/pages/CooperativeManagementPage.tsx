@@ -1926,12 +1926,12 @@ function MemberFormModal({
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             <p className="font-medium">Member Transfer Workflow</p>
             <p className="mt-1">
-              This will close the current membership in {originalCooperative?.name || 'the current cooperative'} and
-              activate membership in {selectedCooperative.name}.
+              This will move the member completely from {originalCooperative?.name || 'the current cooperative'} to{' '}
+              {selectedCooperative.name}.
             </p>
             <p className="mt-1">
-              Historical contributions remain under the old cooperative. Transfer is blocked if there is an active
-              outstanding loan in the current cooperative.
+              The old cooperative membership will be removed so the member no longer counts there. Transfer is blocked
+              if there is an active outstanding loan in the current cooperative.
             </p>
           </div>
         )}

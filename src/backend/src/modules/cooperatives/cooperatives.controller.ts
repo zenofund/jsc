@@ -46,8 +46,12 @@ export class CooperativesController {
 
   @Get('members')
   @ApiOperation({ summary: 'Get all cooperative members' })
-  getAllMembers(@Query('staff_id') staffId?: string) {
-    return this.cooperativesService.getAllMembers(staffId);
+  getAllMembers(
+    @Query('staff_id') staffId?: string,
+    @Query('cooperative_id') cooperativeId?: string,
+    @Query('status') status?: string,
+  ) {
+    return this.cooperativesService.getAllMembers({ staffId, cooperativeId, status });
   }
 
   @Get('staff/:staffId/memberships')

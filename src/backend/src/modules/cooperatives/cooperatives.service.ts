@@ -767,7 +767,7 @@ export class CooperativesService {
     });
   }
 
-  async getAllMembers(staffId?: string) {
+  async getAllMembers(filters?: { staffId?: string; cooperativeId?: string; status?: string }) {
     let query = `
       SELECT 
         cm.*,
@@ -787,10 +787,26 @@ export class CooperativesService {
       LEFT JOIN cooperative_contributions cc ON cm.id = cc.member_id
     `;
     const params = [];
+    const conditions = [];
+    let paramIndex = 1;
 
-    if (staffId) {
-      query += ' WHERE cm.staff_id = $1';
-      params.push(staffId);
+    if (filters?.staffId) {
+      conditions.push(`cm.staff_id = $${paramIndex++}`);
+      params.push(filters.staffId);
+    }
+
+    if (filters?.cooperativeId) {
+      conditions.push(`cm.cooperative_id = $${paramIndex++}`);
+      params.push(filters.cooperativeId);
+    }
+
+    if (filters?.status) {
+      conditions.push(`cm.status = $${paramIndex++}`);
+      params.push(filters.status);
+    }
+
+    if (conditions.length > 0) {
+      query += ` WHERE ${conditions.join(' AND ')}`;
     }
 
     query += ' GROUP BY cm.id, s.staff_number, s.first_name, s.middle_name, s.last_name, s.email, c.name, d.name ORDER BY cm.created_at DESC';
@@ -919,64 +935,57 @@ export class CooperativesService {
       const nextRegistrationFeeAmount = registrationFeeAmount ?? Number(targetCooperative.registration_fee ?? 0);
       const nextAnnualSubscriptionAmount = annualSubscriptionAmount ?? 0;
 
+      if (targetMembership?.id) {
+        await client.query(
+          `UPDATE cooperative_contributions
+           SET member_id = $1,
+               cooperative_id = $2
+           WHERE member_id = $3`,
+          [member.id, cooperativeId, targetMembership.id],
+        );
+        await client.query(
+          `DELETE FROM cooperative_members
+           WHERE id = $1`,
+          [targetMembership.id],
+        );
+      }
+
       await client.query(
-        `UPDATE cooperative_members
-         SET status = 'inactive',
-             exit_date = COALESCE(exit_date, NOW()),
-             updated_at = NOW(),
-             updated_by = $1
-         WHERE id = $2`,
-        [userId, member.id],
+        `UPDATE cooperative_contributions
+         SET cooperative_id = $1
+         WHERE member_id = $2`,
+        [cooperativeId, member.id],
       );
 
-      let transferredMember;
-
-      if (targetMembership?.id) {
-        const reactivatedRes = await client.query(
-          `UPDATE cooperative_members
-           SET status = 'active',
-               monthly_contribution = $1,
-               shares_owned = $2,
-               registration_fee_amount = $3,
-               registration_fee_paid_at = NULL,
-               annual_subscription_amount = $4,
-               first_annual_subscription_paid_at = NULL,
-               last_annual_subscription_year = NULL,
-               suspension_reason = NULL,
-               exit_date = NULL,
-               updated_at = NOW(),
-               updated_by = $5
-           WHERE id = $6
-           RETURNING *`,
-          [
-            nextMonthlyContribution,
-            nextSharesOwned,
-            nextRegistrationFeeAmount,
-            nextAnnualSubscriptionAmount,
-            userId,
-            targetMembership.id,
-          ],
-        );
-        transferredMember = reactivatedRes.rows?.[0];
-      } else {
-        const insertedRes = await client.query(
-          `INSERT INTO cooperative_members (
-            cooperative_id, staff_id, monthly_contribution, shares_owned, registration_fee_amount,
-            annual_subscription_amount, join_date, status, created_by
-          ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), 'active', $7)
-          RETURNING *`,
-          [
-            cooperativeId,
-            member.staff_id,
-            nextMonthlyContribution,
-            nextSharesOwned,
-            nextRegistrationFeeAmount,
-            nextAnnualSubscriptionAmount,
-            userId,
-          ],
-        );
-        transferredMember = insertedRes.rows?.[0];
-      }
+      const transferredRes = await client.query(
+        `UPDATE cooperative_members
+         SET cooperative_id = $1,
+             status = 'active',
+             monthly_contribution = $2,
+             shares_owned = $3,
+             registration_fee_amount = $4,
+             registration_fee_paid_at = NULL,
+             annual_subscription_amount = $5,
+             first_annual_subscription_paid_at = NULL,
+             last_annual_subscription_year = NULL,
+             suspension_reason = NULL,
+             exit_date = NULL,
+             join_date = NOW(),
+             updated_at = NOW(),
+             updated_by = $6
+         WHERE id = $7
+         RETURNING *`,
+        [
+          cooperativeId,
+          nextMonthlyContribution,
+          nextSharesOwned,
+          nextRegistrationFeeAmount,
+          nextAnnualSubscriptionAmount,
+          userId,
+          member.id,
+        ],
+      );
+      const transferredMember = transferredRes.rows?.[0];
 
       this.logger.log(
         `Transferred member ${member.staff_number || member.staff_id} from cooperative ${sourceCooperativeId} to ${cooperativeId}`,
