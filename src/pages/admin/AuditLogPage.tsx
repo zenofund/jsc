@@ -34,6 +34,8 @@ export function AuditLogPage() {
   const [loading, setLoading] = useState(true);
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [filter, setFilter] = useState('');
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [resolvedEntity, setResolvedEntity] = useState<ResolvedEntityInfo | null>(null);
@@ -1171,12 +1173,16 @@ export function AuditLogPage() {
     resolve();
   }, [showDetailsModal, selectedLog]);
 
-  const loadLogs = async () => {
+  const loadLogs = async (currentPage: number = 1) => {
     try {
       setLoading(true);
-      const result = await auditAPI.getAll({ limit: 50 });
+      const result = await auditAPI.getAll({ page: currentPage, limit: 50 });
       const data = Array.isArray(result) ? result : (result.data || result.items || []);
       setLogs(data);
+      if (result && result.meta) {
+        setTotalPages(result.meta.totalPages || 1);
+        setPage(result.meta.page || 1);
+      }
     } catch (error) {
       console.error('Failed to load audit logs:', error);
     } finally {
@@ -1185,8 +1191,8 @@ export function AuditLogPage() {
   };
 
   useEffect(() => {
-    loadLogs();
-  }, []);
+    loadLogs(page);
+  }, [page]);
 
   const filteredLogs = useMemo(
     () =>
@@ -1250,7 +1256,7 @@ export function AuditLogPage() {
     },
   ];
 
-  if (loading) return <PageSkeleton />;
+  if (loading && logs.length === 0) return <PageSkeleton />;
 
   return (
     <div className="space-y-6">
@@ -1268,7 +1274,7 @@ export function AuditLogPage() {
           <p className="text-muted-foreground text-sm sm:text-base">Track all system activities and changes</p>
         </div>
         <button 
-          onClick={loadLogs}
+          onClick={() => loadLogs(page)}
           className="flex items-center justify-center px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 w-full sm:w-auto"
         >
           <RefreshCw className="w-4 h-4 mr-2" />
@@ -1300,6 +1306,11 @@ export function AuditLogPage() {
           onRowClick={(log) => {
             setSelectedLog(log);
             setShowDetailsModal(true);
+          }}
+          serverSidePagination={{
+            currentPage: page,
+            totalPages: totalPages,
+            onPageChange: (newPage) => setPage(newPage)
           }}
         />
       </div>

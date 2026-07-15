@@ -16,6 +16,11 @@ interface DataTableProps<T> {
   onEdit?: (row: T) => void;
   searchControls?: React.ReactNode;
   itemsPerPage?: number;
+  serverSidePagination?: {
+    currentPage: number;
+    totalPages: number;
+    onPageChange: (page: number) => void;
+  };
 }
 
 // Helper for deep recursive search
@@ -46,10 +51,14 @@ export function DataTable<T extends Record<string, any>>({
   onEdit,
   searchControls,
   itemsPerPage = 10,
+  serverSidePagination,
 }: DataTableProps<T>) {
-  const [currentPage, setCurrentPage] = useState(1);
+  const [internalCurrentPage, setInternalCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortConfig, setSortConfig] = useState<{ index: number; direction: 'asc' | 'desc' } | null>(null);
+
+  const currentPage = serverSidePagination ? serverSidePagination.currentPage : internalCurrentPage;
+  const setCurrentPage = serverSidePagination ? serverSidePagination.onPageChange : setInternalCurrentPage;
 
   const getSearchScore = (obj: any, query: string): number => {
   if (obj === null || obj === undefined) return 0;
@@ -114,9 +123,12 @@ export function DataTable<T extends Record<string, any>>({
   });
 
   // Pagination
-  const totalPages = Math.ceil(sortedData.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
+  const totalPages = serverSidePagination 
+    ? serverSidePagination.totalPages 
+    : Math.ceil(sortedData.length / itemsPerPage);
+    
+  const startIndex = serverSidePagination ? 0 : (currentPage - 1) * itemsPerPage;
+  const endIndex = serverSidePagination ? sortedData.length : startIndex + itemsPerPage;
   const currentData = sortedData.slice(startIndex, endIndex);
 
   const handleSort = (index: number) => {
@@ -245,7 +257,7 @@ export function DataTable<T extends Record<string, any>>({
                 <ChevronsLeft className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
               <button
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
                 disabled={currentPage === 1}
                 className="p-1 sm:p-1.5 rounded hover:bg-accent text-card-foreground disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 title="Previous page"
@@ -257,7 +269,7 @@ export function DataTable<T extends Record<string, any>>({
                 <span className="sm:hidden">{currentPage}/{totalPages}</span>
               </span>
               <button
-                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
                 disabled={currentPage === totalPages}
                 className="p-1 sm:p-1.5 rounded hover:bg-accent text-card-foreground disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 title="Next page"
