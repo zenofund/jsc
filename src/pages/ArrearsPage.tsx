@@ -654,7 +654,7 @@ export function ArrearsPage() {
         <Modal
           isOpen={!!selectedArrears}
           onClose={() => setSelectedArrears(null)}
-          title={`Arrears Details - ${selectedArrears.staff_number}`}
+          title={selectedArrears.staff_name ? `Arrears Details - ${selectedArrears.staff_name}` : 'Arrears Details'}
           size="lg"
         >
           <div className="space-y-6">

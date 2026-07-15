@@ -52,6 +52,10 @@ export class ArrearsService {
     return `${year}-${String(month).padStart(2, '0')}`;
   }
 
+  private getStaffName(staff: any) {
+    return [staff?.first_name, staff?.last_name].filter(Boolean).join(' ').trim();
+  }
+
   private buildMonthlyBreakdown(
     effectiveDate: any,
     monthsOwed: number,
@@ -192,6 +196,7 @@ export class ArrearsService {
     }];
 
     const totalArrears = this.roundCurrency(parseFloat(amount));
+    const staffName = this.getStaffName(staff);
 
     const arrearsRecord = await this.databaseService.queryOne(
       `INSERT INTO arrears (
@@ -217,7 +222,9 @@ export class ArrearsService {
           type: NotificationType.ARREARS,
           category: NotificationCategory.ACTION_REQUIRED,
           title: 'Arrears approval required',
-          message: `Manual arrears for ${staff.staff_number} is pending approval (${totalArrears.toFixed(2)}).`,
+          message: staffName
+            ? `Manual arrears for ${staffName} is pending approval (${totalArrears.toFixed(2)}).`
+            : `Manual arrears is pending approval (${totalArrears.toFixed(2)}).`,
           link: '/arrears',
           entity_type: 'arrears',
           entity_id: arrearsRecord?.id,
@@ -294,13 +301,13 @@ export class ArrearsService {
 
     if (arrears.created_by) {
       const staff = await this.databaseService.queryOne('SELECT staff_number, first_name, last_name FROM staff WHERE id = $1', [arrears.staff_id]);
-      const staffName = [staff?.first_name, staff?.last_name].filter(Boolean).join(' ').trim() || staff?.staff_number || 'Staff';
+      const staffName = this.getStaffName(staff);
       await this.notificationsService.create({
         recipient_id: arrears.created_by,
         type: NotificationType.ARREARS,
         category: NotificationCategory.SUCCESS,
         title: 'Arrears approved',
-        message: `${staffName} arrears was approved.`,
+        message: staffName ? `${staffName} arrears was approved.` : 'Arrears was approved.',
         link: '/arrears',
         entity_type: 'arrears',
         entity_id: arrears.id,
@@ -337,15 +344,15 @@ export class ArrearsService {
 
     if (arrears.created_by) {
       const staff = await this.databaseService.queryOne('SELECT staff_number, first_name, last_name FROM staff WHERE id = $1', [arrears.staff_id]);
-      const staffName = [staff?.first_name, staff?.last_name].filter(Boolean).join(' ').trim() || staff?.staff_number || 'Staff';
+      const staffName = this.getStaffName(staff);
       await this.notificationsService.create({
         recipient_id: arrears.created_by,
         type: NotificationType.ARREARS,
         category: NotificationCategory.WARNING,
         title: 'Arrears rejected',
         message: rejectionReason
-          ? `${staffName} arrears was rejected. Reason: ${rejectionReason}`
-          : `${staffName} arrears was rejected.`,
+          ? `${staffName ? `${staffName} arrears` : 'Arrears'} was rejected. Reason: ${rejectionReason}`
+          : `${staffName ? `${staffName} arrears` : 'Arrears'} was rejected.`,
         link: '/arrears',
         entity_type: 'arrears',
         entity_id: arrears.id,

@@ -1052,7 +1052,12 @@ export function StaffListPage() {
         updateStaffDto
       );
 
-      showToast('success', `Staff ${editingStaff.staff_number} updated successfully`);
+      showToast(
+        'success',
+        formatStaffFirstLastName(editingStaff)
+          ? `${formatStaffFirstLastName(editingStaff)} updated successfully`
+          : 'Staff updated successfully'
+      );
       setShowFormModal(false);
       setCurrentStep(1);
       setEditingStaff(null);

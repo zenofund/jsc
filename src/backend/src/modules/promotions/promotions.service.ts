@@ -57,6 +57,10 @@ export class PromotionsService {
     return `${year}-${String(month).padStart(2, '0')}`;
   }
 
+  private getStaffName(staff: any) {
+    return [staff?.first_name, staff?.last_name].filter(Boolean).join(' ').trim();
+  }
+
   /**
    * Reduce a grade level token to a single canonical form so exclusion rules
    * configured in System Config always match the staff record regardless of how
@@ -184,7 +188,7 @@ export class PromotionsService {
 
     this.logger.log(`Promotion request created for staff ${staff.staff_number}`);
 
-    const staffName = [staff.first_name, staff.last_name].filter(Boolean).join(' ').trim() || staff.staff_number;
+    const staffName = this.getStaffName(staff);
 
     await this.auditService.log({
       userId,
@@ -203,7 +207,9 @@ export class PromotionsService {
             type: NotificationType.PROMOTION,
             category: NotificationCategory.ACTION_REQUIRED,
             title: 'Promotion approval required',
-            message: `${staffName} (${staff.staff_number}) promotion to GL ${newGradeLevel}/Step ${newStep} is pending approval.`,
+            message: staffName
+              ? `${staffName} promotion to GL ${newGradeLevel}/Step ${newStep} is pending approval.`
+              : `Promotion to GL ${newGradeLevel}/Step ${newStep} is pending approval.`,
             link: '/promotions',
             entity_type: 'promotion',
             entity_id: result.id,
@@ -247,7 +253,7 @@ export class PromotionsService {
     const updatedPromotion = await this.databaseService.queryOne('SELECT * FROM promotions WHERE id = $1', [id]);
 
     const staff = await this.databaseService.queryOne('SELECT staff_number, first_name, last_name FROM staff WHERE id = $1', [promotion.staff_id]);
-    const staffName = [staff?.first_name, staff?.last_name].filter(Boolean).join(' ').trim() || staff?.staff_number || 'Staff';
+    const staffName = this.getStaffName(staff);
     
     await this.auditService.log({
       userId,
@@ -267,7 +273,7 @@ export class PromotionsService {
         type: NotificationType.PROMOTION,
         category: NotificationCategory.SUCCESS,
         title: 'Promotion approved',
-        message: `${staffName} promotion was approved.`,
+        message: staffName ? `${staffName} promotion was approved.` : 'Promotion was approved.',
         link: '/promotions',
         entity_type: 'promotion',
         entity_id: promotion.id,
@@ -304,7 +310,7 @@ export class PromotionsService {
     const updatedPromotion = await this.databaseService.queryOne('SELECT * FROM promotions WHERE id = $1', [id]);
 
     const staff = await this.databaseService.queryOne('SELECT staff_number, first_name, last_name FROM staff WHERE id = $1', [promotion.staff_id]);
-    const staffName = [staff?.first_name, staff?.last_name].filter(Boolean).join(' ').trim() || staff?.staff_number || 'Staff';
+    const staffName = this.getStaffName(staff);
     
     await this.auditService.log({
       userId,
@@ -322,7 +328,7 @@ export class PromotionsService {
         type: NotificationType.PROMOTION,
         category: NotificationCategory.WARNING,
         title: 'Promotion rejected',
-        message: `${staffName} promotion was rejected.`,
+        message: staffName ? `${staffName} promotion was rejected.` : 'Promotion was rejected.',
         link: '/promotions',
         entity_type: 'promotion',
         entity_id: promotion.id,
@@ -569,6 +575,7 @@ export class PromotionsService {
         const monthlyDifference = newNetSalary - oldNetSalary;
         
         if (monthlyDifference > 0) {
+          const staffName = this.getStaffName(staff);
           const daysInEffectiveMonth = new Date(Date.UTC(effectiveParts.year, effectiveParts.month, 0)).getUTCDate();
           const effectiveDay = effectiveParts.day;
           const eligibleDays = Math.max(0, daysInEffectiveMonth - (effectiveDay - 1));
@@ -612,7 +619,9 @@ export class PromotionsService {
                 type: NotificationType.ARREARS,
                 category: NotificationCategory.ACTION_REQUIRED,
                 title: 'Arrears approval required',
-                message: `Promotion arrears for ${staff.staff_number} is pending approval (${totalArrears.toFixed(2)}).`,
+                message: staffName
+                  ? `Promotion arrears for ${staffName} is pending approval (${totalArrears.toFixed(2)}).`
+                  : `Promotion arrears is pending approval (${totalArrears.toFixed(2)}).`,
                 link: '/arrears',
                 entity_type: 'arrears',
                 entity_id: arrearsRecord?.id,
