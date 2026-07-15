@@ -1028,7 +1028,6 @@ export class PayrollService {
     let nhfRelief = 0;
     let nhisRelief = 0;
     let rentRelief = 0;
-    const cra = 0;
     let grossIncomeRelief = 0;
 
     if (!isContractStaff) {
@@ -1052,7 +1051,7 @@ export class PayrollService {
       );
     }
 
-    const totalReliefs = round2(cra + grossIncomeRelief + pensionRelief + nhfRelief + nhisRelief + rentRelief);
+    const totalReliefs = round2(grossIncomeRelief + pensionRelief + nhfRelief + nhisRelief + rentRelief);
     const taxableIncomeAfterReliefs = Math.max(0, round2(annualTaxableIncome - totalReliefs));
 
     const configuredBrackets = Array.isArray(taxConfig?.tax_brackets)

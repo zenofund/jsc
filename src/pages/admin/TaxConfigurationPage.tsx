@@ -22,8 +22,6 @@ interface TaxBand {
 
 interface TaxConfiguration {
   enabled: boolean;
-  consolidated_relief_allowance: number; // Deprecated: Set to 0
-  gross_income_relief_percentage: number; // Deprecated: Set to 0
   rent_relief_percentage: number; // New: % of Housing Allowance
   minimum_tax_rate: number; // percentage
   pension_relief_percentage: number; // percentage
@@ -34,8 +32,6 @@ interface TaxConfiguration {
 
 const DEFAULT_CONFIG: TaxConfiguration = {
   enabled: true,
-  consolidated_relief_allowance: 0,
-  gross_income_relief_percentage: 0,
   rent_relief_percentage: 60,
   minimum_tax_rate: 1,
   pension_relief_percentage: 8,
@@ -70,8 +66,6 @@ export function TaxConfigurationPage() {
       } else {
         setConfig({
           enabled: data.enabled ?? DEFAULT_CONFIG.enabled,
-          consolidated_relief_allowance: data.consolidated_relief_allowance ?? DEFAULT_CONFIG.consolidated_relief_allowance,
-          gross_income_relief_percentage: data.gross_income_relief_percentage ?? DEFAULT_CONFIG.gross_income_relief_percentage,
           rent_relief_percentage: data.rent_relief_percentage ?? DEFAULT_CONFIG.rent_relief_percentage,
           minimum_tax_rate: data.minimum_tax_rate ?? DEFAULT_CONFIG.minimum_tax_rate,
           pension_relief_percentage: data.pension_relief_percentage ?? DEFAULT_CONFIG.pension_relief_percentage,
@@ -267,7 +261,6 @@ export function TaxConfigurationPage() {
                 <p className="font-medium mb-1">Tax Calculation Logic</p>
                 <p>Taxable Income = Gross Income - (Pension + NHF + Rent Relief).</p>
                 <p className="mt-1">Rent Relief is {config.rent_relief_percentage}% of Housing Allowance.</p>
-                <p className="mt-1 text-xs opacity-80">Note: CRA and Gross Income Relief have been abolished.</p>
               </div>
             </CardContent>
           </Card>

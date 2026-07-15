@@ -9,7 +9,6 @@ Successfully implemented **Nigerian Progressive PAYE Tax Calculation Engine** wi
 
 ### 1. Core Tax Engine (`/lib/tax-engine.ts`)
 - ✅ Progressive tax band calculation (6 bands: 7%, 11%, 15%, 19%, 21%, 24%)
-- ✅ Consolidated Relief Allowance (CRA) calculation
 - ✅ Statutory deductions (Pension 8%, NHF 2.5%)
 - ✅ Annual-to-monthly tax conversion
 - ✅ Minimum tax rule (0.5% fallback)
@@ -25,9 +24,6 @@ Successfully implemented **Nigerian Progressive PAYE Tax Calculation Engine** wi
 ```typescript
 tax_configuration?: {
   tax_bands: { min: number; max: number; rate: number }[];
-  cra_rate_1: number;
-  cra_fixed_amount: number;
-  cra_rate_2: number;
   minimum_tax_rate: number;
   nhf_rate: number;
   pension_rate: number;
@@ -40,7 +36,6 @@ tax_configuration?: {
 tax_details?: {
   gross_income: number;
   annual_gross: number;
-  cra_amount: number;
   pension_deduction: number;
   nhf_deduction: number;
   total_relief: number;
@@ -76,7 +71,6 @@ settingsAPI.updateTaxConfiguration(taxConfig, userId, userEmail)
 ### 5. Seed Data
 ✅ Default tax configuration seeded in system settings:
 - Nigerian PAYE tax bands (2024)
-- CRA calculation parameters
 - Pension and NHF rates
 - Minimum tax rate
 
@@ -103,17 +97,12 @@ settingsAPI.updateTaxConfiguration(taxConfig, userId, userEmail)
 └──────────────────┬──────────────────────────────────┘
                    │
 ┌──────────────────▼──────────────────────────────────┐
-│ 3. CONSOLIDATED RELIEF ALLOWANCE (CRA)              │
-│    = MAX[(1% of gross + ₦200K), (20% of gross)]    │
+│ 3. TAXABLE INCOME                                    │
+│    = Annual Gross - (Pension + NHF)                 │
 └──────────────────┬──────────────────────────────────┘
                    │
 ┌──────────────────▼──────────────────────────────────┐
-│ 4. TAXABLE INCOME                                    │
-│    = Annual Gross - (CRA + Pension + NHF)           │
-└──────────────────┬──────────────────────────────────┘
-                   │
-┌──────────────────▼──────────────────────────────────┐
-│ 5. PROGRESSIVE TAX CALCULATION                       │
+│ 4. PROGRESSIVE TAX CALCULATION                       │
 │    Band 1: First ₦300K @ 7%                         │
 │    Band 2: Next ₦300K @ 11%                         │
 │    Band 3: Next ₦500K @ 15%                         │
@@ -123,7 +112,7 @@ settingsAPI.updateTaxConfiguration(taxConfig, userId, userEmail)
 └──────────────────┬──────────────────────────────────┘
                    │
 ┌──────────────────▼──────────────────────────────────┐
-│ 6. MONTHLY PAYE TAX                                  │
+│ 5. MONTHLY PAYE TAX                                  │
 │    = Annual Tax ÷ 12                                │
 └─────────────────────────────────────────────────────┘
 ```
@@ -140,7 +129,6 @@ const tax = grossPay * 0.07;
 
 **Problems:**
 - ❌ Not progressive
-- ❌ No CRA consideration
 - ❌ Doesn't account for relief allowances
 - ❌ Tax compliance issues
 - ❌ Unfair to low earners
@@ -165,7 +153,6 @@ payrollLine.tax_details = tax_details;
 
 **Benefits:**
 - ✅ Fully progressive calculation
-- ✅ CRA automatically calculated
 - ✅ Pension and NHF deducted pre-tax
 - ✅ FIRS compliant
 - ✅ Fair and equitable
@@ -179,7 +166,6 @@ payrollLine.tax_details = tax_details;
 ### Example 1: GL7 Staff (₦174,180 basic)
 **Monthly Gross**: ₦304,815  
 **Annual Gross**: ₦3,657,780  
-**CRA**: ₦731,556  
 **Pension**: ₦167,053  
 **NHF**: ₦52,204  
 **Taxable Income**: ₦2,706,967  
@@ -189,7 +175,6 @@ payrollLine.tax_details = tax_details;
 ### Example 2: GL14 Staff (₦714,660 basic)
 **Monthly Gross**: ₦1,250,655  
 **Annual Gross**: ₦15,007,860  
-**CRA**: ₦3,001,572  
 **Pension**: ₦686,870  
 **NHF**: ₦214,648  
 **Taxable Income**: ₦11,104,770  
@@ -199,7 +184,6 @@ payrollLine.tax_details = tax_details;
 ### Example 3: GL17 Staff (₦1,351,630 basic)
 **Monthly Gross**: ₦2,365,353  
 **Annual Gross**: ₦28,384,236  
-**CRA**: ₦5,676,847  
 **Pension**: ₦1,297,562  
 **NHF**: ₦405,489  
 **Taxable Income**: ₦21,004,338  
@@ -310,7 +294,6 @@ console.log('Tax breakdown:', lines[0].tax_details);
 1. **Federal Inland Revenue Service (FIRS)**: https://www.firs.gov.ng
 2. **Personal Income Tax Act (PITA)**: Nigerian Tax Laws
 3. **Tax Bands**: FIRS Official Schedule
-4. **CRA Formula**: PITA Section 33
 
 ---
 

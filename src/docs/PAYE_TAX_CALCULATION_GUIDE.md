@@ -32,30 +32,17 @@ Monthly Gross = Basic Salary + All Taxable Allowances
 - **NHF (National Housing Fund)**: 2.5% of basic salary (annualized)
 - **NHIS (if applicable)**: Fixed or percentage amount (annualized)
 
-### Step 3: Calculate Consolidated Relief Allowance (CRA)
+### Step 3: Calculate Total Relief
 ```
-CRA = MAXIMUM OF:
-  Option 1: (1% of Annual Gross) + ₦200,000
-  Option 2: 20% of Annual Gross
+Total Relief = Annual Pension + Annual NHF + Annual NHIS
 ```
 
-**Example:**
-- Annual Gross = ₦1,200,000
-- Option 1 = (₦1,200,000 × 1%) + ₦200,000 = ₦212,000
-- Option 2 = ₦1,200,000 × 20% = ₦240,000
-- **CRA = ₦240,000** (higher of the two)
-
-### Step 4: Calculate Total Relief
-```
-Total Relief = CRA + Annual Pension + Annual NHF + Annual NHIS
-```
-
-### Step 5: Calculate Taxable Income
+### Step 4: Calculate Taxable Income
 ```
 Annual Taxable Income = Annual Gross - Total Relief
 ```
 
-### Step 6: Apply Progressive Tax Bands
+### Step 5: Apply Progressive Tax Bands
 Tax is calculated progressively across bands:
 
 **Example: Annual Taxable Income = ₦1,500,000**
@@ -68,7 +55,7 @@ Tax is calculated progressively across bands:
 | 4 | ₦1,100,000 - ₦1,500,000 | ₦400,000 | 19% | ₦76,000 |
 | **Total** | | | | **₦205,000** |
 
-### Step 7: Calculate Monthly PAYE
+### Step 6: Calculate Monthly PAYE
 ```
 Monthly PAYE = Annual Tax ÷ 12
 ```
@@ -100,24 +87,17 @@ Annual Pension (8%) = ₦150,000 × 12 × 8% = ₦144,000
 Annual NHF (2.5%) = ₦150,000 × 12 × 2.5% = ₦45,000
 ```
 
-#### 3. CRA Calculation
+#### 3. Total Relief
 ```
-Option 1 = (₦3,150,000 × 1%) + ₦200,000 = ₦231,500
-Option 2 = ₦3,150,000 × 20% = ₦630,000
-CRA = ₦630,000 (higher)
+Total Relief = ₦144,000 + ₦45,000 = ₦189,000
 ```
 
-#### 4. Total Relief
+#### 4. Taxable Income
 ```
-Total Relief = ₦630,000 + ₦144,000 + ₦45,000 = ₦819,000
-```
-
-#### 5. Taxable Income
-```
-Annual Taxable Income = ₦3,150,000 - ₦819,000 = ₦2,331,000
+Annual Taxable Income = ₦3,150,000 - ₦189,000 = ₦2,961,000
 ```
 
-#### 6. Progressive Tax Calculation
+#### 5. Progressive Tax Calculation
 
 | Band | Range | Taxable | Rate | Tax |
 |------|-------|---------|------|-----|
@@ -128,12 +108,12 @@ Annual Taxable Income = ₦3,150,000 - ₦819,000 = ₦2,331,000
 | 5 | ₦1,600,000 - ₦2,331,000 | ₦731,000 | 21% | ₦153,510 |
 | **Total** | | | | **₦377,510** |
 
-#### 7. Monthly PAYE
+#### 6. Monthly PAYE
 ```
 Monthly PAYE = ₦377,510 ÷ 12 = ₦31,459.17
 ```
 
-#### 8. Effective Tax Rate
+#### 7. Effective Tax Rate
 ```
 Effective Rate = (₦377,510 ÷ ₦3,150,000) × 100 = 11.98%
 ```
@@ -158,9 +138,6 @@ const newTaxConfig = {
     { min: 300000, max: 600000, rate: 11 },
     // ... more bands
   ],
-  cra_rate_1: 1,
-  cra_fixed_amount: 200000,
-  cra_rate_2: 20,
   minimum_tax_rate: 0.5,
   nhf_rate: 2.5,
   pension_rate: 8,
@@ -203,7 +180,6 @@ When payroll is generated, each staff member's `PayrollLine` includes a `tax_det
 {
   gross_income: number;              // Monthly gross
   annual_gross: number;              // Annual gross
-  cra_amount: number;                // Consolidated Relief Allowance
   pension_deduction: number;         // Monthly pension
   nhf_deduction: number;             // Monthly NHF
   total_relief: number;              // Annual total relief
@@ -228,7 +204,6 @@ When payroll is generated, each staff member's `PayrollLine` includes a `tax_det
 
 ✅ **FIRS Compliant**: Implements official Nigerian tax bands
 ✅ **Progressive Calculation**: Tax applied incrementally across bands
-✅ **CRA Support**: Proper Consolidated Relief Allowance calculation
 ✅ **Statutory Deductions**: Pension, NHF deducted before tax
 ✅ **Minimum Tax**: Ensures minimum tax obligation is met
 ✅ **Audit Trail**: All tax calculations logged with full breakdown
@@ -245,7 +220,7 @@ tax_amount = gross_pay × 7%
 
 ### New System (Production-Ready):
 ```typescript
-// Progressive bands with CRA and relief - COMPLIANT
+// Progressive bands with relief - COMPLIANT
 tax_amount = calculatePAYE(input).monthly_tax
 ```
 

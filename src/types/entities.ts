@@ -296,7 +296,6 @@ export interface PayrollLine {
   tax_details?: {
     gross_income: number;
     annual_gross: number;
-    cra_amount: number;
     pension_deduction: number;
     nhf_deduction: number;
     total_relief: number;
@@ -450,9 +449,6 @@ export interface SystemSettings {
   pension_rate: number;
   tax_configuration?: {
     tax_bands: { min: number; max: number; rate: number }[];
-    cra_rate_1: number;
-    cra_fixed_amount: number;
-    cra_rate_2: number;
     minimum_tax_rate: number;
     nhf_rate: number;
     pension_rate: number;

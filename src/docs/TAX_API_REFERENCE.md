@@ -65,34 +65,6 @@ console.log('Tax to deduct:', monthly_tax);
 
 ---
 
-### `calculateCRA(annualGrossIncome, config)`
-
-Calculate Consolidated Relief Allowance.
-
-**Parameters:**
-- `annualGrossIncome` (number): Annual gross income
-- `config` (TaxConfiguration): Tax configuration (optional)
-
-**Returns:** `number` - CRA amount
-
-**Formula:**
-```
-CRA = MAX(
-  (1% of annual gross + ₦200,000),
-  (20% of annual gross)
-)
-```
-
-**Example:**
-```typescript
-import { calculateCRA } from './lib/tax-engine';
-
-const cra = calculateCRA(3150000);
-// Returns: 630000 (20% of 3.15M)
-```
-
----
-
 ### `calculateProgressiveTax(taxableIncome, taxBands)`
 
 Apply progressive tax bands to calculate total tax.
@@ -140,9 +112,6 @@ const config = {
     { min: 0, max: 300000, rate: 7 },
     // ... more bands
   ],
-  cra_rate_1: 1,
-  cra_fixed_amount: 200000,
-  cra_rate_2: 20,
   minimum_tax_rate: 0.5,
   nhf_rate: 2.5,
   pension_rate: 8,
@@ -182,7 +151,6 @@ Gross Income (Monthly): ₦262,500
 Gross Income (Annual): ₦3,150,000
 
 Deductions & Relief:
-  Consolidated Relief Allowance: ₦630,000
   Pension (8%): ₦144,000
   NHF (2.5%): ₦45,000
   Total Relief: ₦819,000
@@ -227,9 +195,6 @@ console.log(taxConfig);
     { "min": 1600000, "max": 3200000, "rate": 21 },
     { "min": 3200000, "max": null, "rate": 24 }
   ],
-  "cra_rate_1": 1,
-  "cra_fixed_amount": 200000,
-  "cra_rate_2": 20,
   "minimum_tax_rate": 0.5,
   "nhf_rate": 2.5,
   "pension_rate": 8,
@@ -256,9 +221,6 @@ const newConfig = {
     { min: 1600000, max: 3200000, rate: 21 },
     { min: 3200000, max: Infinity, rate: 24 },
   ],
-  cra_rate_1: 1,
-  cra_fixed_amount: 200000,
-  cra_rate_2: 20,
   minimum_tax_rate: 0.5,
   nhf_rate: 2.5,
   pension_rate: 8,
@@ -303,7 +265,6 @@ console.log(result);
 
 **Result:**
 - Annual Gross: ₦3,657,780
-- CRA: ₦731,556
 - Annual Pension: ₦167,053
 - Annual NHF: ₦52,204
 - Taxable Income: ₦2,706,967
@@ -332,7 +293,6 @@ const result = calculatePAYE({
 
 **Result:**
 - Annual Gross: ₦15,007,860
-- CRA: ₦3,001,572
 - Annual Pension: ₦686,870
 - Annual NHF: ₦214,648
 - Taxable Income: ₦11,104,770
@@ -361,7 +321,6 @@ const result = calculatePAYE({
 
 **Result:**
 - Annual Gross: ₦28,384,236
-- CRA: ₦5,676,847
 - Annual Pension: ₦1,297,562
 - Annual NHF: ₦405,489
 - Taxable Income: ₦21,004,338
@@ -377,9 +336,6 @@ const result = calculatePAYE({
 ```typescript
 interface TaxConfiguration {
   tax_bands: { min: number; max: number; rate: number }[];
-  cra_rate_1: number;           // 1% of gross
-  cra_fixed_amount: number;     // ₦200,000
-  cra_rate_2: number;           // 20% of gross
   minimum_tax_rate: number;     // 0.5%
   nhf_rate: number;             // 2.5%
   pension_rate: number;         // 8%
@@ -407,7 +363,6 @@ interface TaxCalculationInput {
 interface TaxCalculationResult {
   gross_income: number;
   annual_gross: number;
-  cra_amount: number;
   pension_deduction: number;
   nhf_deduction: number;
   total_relief: number;

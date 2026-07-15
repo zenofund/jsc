@@ -1,6 +1,6 @@
 /**
  * Nigerian PAYE Tax Calculation Engine
- * Implements progressive tax bands, CRA, and tax relief as per Nigerian tax laws
+ * Implements progressive tax bands and tax relief as per Nigerian tax laws
  * 
  * Reference: Personal Income Tax Act (PITA) - Federal Inland Revenue Service (FIRS)
  */
@@ -17,9 +17,6 @@ export const NIGERIAN_TAX_BANDS = [
 
 export interface TaxConfiguration {
   tax_bands: { min: number; max: number; rate: number }[];
-  cra_rate_1: number;           // 1% of gross
-  cra_fixed_amount: number;     // ₦200,000
-  cra_rate_2: number;           // 20% of gross
   minimum_tax_rate: number;     // Minimum tax (0.5% of gross for companies, 1% for individuals)
   nhf_rate: number;             // National Housing Fund rate (2.5%)
   pension_rate: number;         // Pension contribution rate (8%)
@@ -28,9 +25,6 @@ export interface TaxConfiguration {
 
 export const DEFAULT_TAX_CONFIG: TaxConfiguration = {
   tax_bands: NIGERIAN_TAX_BANDS,
-  cra_rate_1: 1,                // 1% of gross income
-  cra_fixed_amount: 200000,     // ₦200,000 fixed amount
-  cra_rate_2: 20,               // 20% of gross income
   minimum_tax_rate: 0.5,        // 0.5% minimum tax
   nhf_rate: 2.5,                // 2.5% NHF
   pension_rate: 8,              // 8% pension
@@ -50,7 +44,6 @@ export interface TaxCalculationInput {
 export interface TaxCalculationResult {
   gross_income: number;
   annual_gross: number;
-  cra_amount: number;
   pension_deduction: number;
   nhf_deduction: number;
   total_relief: number;
@@ -68,19 +61,6 @@ export interface TaxCalculationResult {
   monthly_tax: number;
   effective_tax_rate: number;
   calculation_method: 'progressive' | 'minimum';
-}
-
-/**
- * Calculate Consolidated Relief Allowance (CRA)
- * CRA = Higher of:
- * 1. (1% of gross income) + ₦200,000, OR
- * 2. 20% of gross income
- */
-export function calculateCRA(annualGrossIncome: number, config: TaxConfiguration = DEFAULT_TAX_CONFIG): number {
-  const option1 = (annualGrossIncome * config.cra_rate_1 / 100) + config.cra_fixed_amount;
-  const option2 = annualGrossIncome * config.cra_rate_2 / 100;
-  
-  return Math.max(option1, option2);
 }
 
 /**
@@ -146,11 +126,8 @@ export function calculatePAYE(
   const nhisDeduction = input.nhis_amount ?? 0;
   const annualNHIS = nhisDeduction * 12;
 
-  // Step 3: Calculate Consolidated Relief Allowance (CRA)
-  const craAmount = calculateCRA(annualGrossIncome, config);
-
   // Step 4: Calculate total relief/deductions
-  const totalAnnualRelief = craAmount + annualPension + annualNHF + annualNHIS;
+  const totalAnnualRelief = annualPension + annualNHF + annualNHIS;
 
   // Step 5: Calculate taxable income
   const annualTaxableIncome = Math.max(0, annualGrossIncome - totalAnnualRelief);
@@ -174,7 +151,6 @@ export function calculatePAYE(
   return {
     gross_income: monthlyGrossIncome,
     annual_gross: annualGrossIncome,
-    cra_amount: craAmount,
     pension_deduction: pensionDeduction,
     nhf_deduction: nhfDeduction,
     total_relief: totalAnnualRelief,
@@ -253,14 +229,6 @@ export function validateTaxConfig(config: TaxConfiguration): { valid: boolean; e
     errors.push('NHF rate must be between 0 and 100');
   }
 
-  if (config.cra_rate_1 < 0 || config.cra_rate_1 > 100) {
-    errors.push('CRA rate 1 must be between 0 and 100');
-  }
-
-  if (config.cra_rate_2 < 0 || config.cra_rate_2 > 100) {
-    errors.push('CRA rate 2 must be between 0 and 100');
-  }
-
   return {
     valid: errors.length === 0,
     errors,
@@ -286,7 +254,6 @@ export function generateTaxSummary(taxResult: TaxCalculationResult): string {
   summary += `Gross Income (Monthly): ₦${taxResult.gross_income.toLocaleString()}\n`;
   summary += `Gross Income (Annual): ₦${taxResult.annual_gross.toLocaleString()}\n\n`;
   summary += `Deductions & Relief:\n`;
-  summary += `  Consolidated Relief Allowance: ₦${taxResult.cra_amount.toLocaleString()}\n`;
   summary += `  Pension (8%): ₦${(taxResult.pension_deduction * 12).toLocaleString()}\n`;
   summary += `  NHF (2.5%): ₦${(taxResult.nhf_deduction * 12).toLocaleString()}\n`;
   summary += `  Total Relief: ₦${taxResult.total_relief.toLocaleString()}\n\n`;
