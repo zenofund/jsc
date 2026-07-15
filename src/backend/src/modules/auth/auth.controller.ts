@@ -9,8 +9,10 @@ import { TwoFactorEnableDto, TwoFactorSetupDto } from './dto/two-factor.dto';
 import { Public } from '@common/decorators/public.decorator';
 import { Roles } from '@common/decorators/roles.decorator';
 import { BadRequestException } from '@nestjs/common';
+import { SkipAudit } from '../../common/decorators/skip-audit.decorator';
 
 @ApiTags('Authentication')
+@SkipAudit()
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}

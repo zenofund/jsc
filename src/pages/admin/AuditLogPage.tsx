@@ -337,6 +337,8 @@ export function AuditLogPage() {
     if (action === 'delete') return `${target} was removed.`;
     if (action === 'approve') return `${target} was approved.`;
     if (action === 'reject') return `${target} was rejected.`;
+    if (action === 'login') return `The user signed into their account.`;
+    if (action === 'logout') return `The user signed out of their account.`;
     return `${toDisplayCase(action) || 'This'} action was recorded for this ${recordType}.`;
   };
 
@@ -809,6 +811,12 @@ export function AuditLogPage() {
     }
     if (action === 'reject') {
       return `${actor} rejected ${target} at ${when}.`;
+    }
+    if (action === 'login') {
+      return `${actor} logged into the system at ${when}.`;
+    }
+    if (action === 'logout') {
+      return `${actor} logged out of the system at ${when}.`;
     }
     if (action) {
       return `${actor} performed ${formatEntity(action)} on ${target} at ${when}.`;
