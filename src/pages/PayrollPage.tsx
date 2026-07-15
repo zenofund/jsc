@@ -31,6 +31,7 @@ export function PayrollPage() {
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [processingBatchId, setProcessingBatchId] = useState<string | null>(null);
+  const [processingAction, setProcessingAction] = useState<'generate' | 'regenerate' | 'submit' | 'lock' | null>(null);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [batchToRegenerate, setBatchToRegenerate] = useState<string | null>(null);
   const [showTraceModal, setShowTraceModal] = useState(false);
@@ -63,6 +64,7 @@ export function PayrollPage() {
       setBatches(data.sort((a: PayrollBatch, b: PayrollBatch) => b.created_at.localeCompare(a.created_at)));
     } catch (error: any) {
       console.error('Failed to load payroll batches:', error);
+      showToast('error', error.message || 'Failed to load payroll batches');
       // Show user-friendly error message
       if (error.message && error.message.includes('Backend server is not available')) {
         console.error('\n⚠️  BACKEND NOT RUNNING ⚠️');
@@ -80,7 +82,7 @@ export function PayrollPage() {
 
   const handleCreateBatch = async () => {
     if (!selectedMonth) {
-      console.error('Please select a month');
+      showToast('warning', 'Please select a payroll month');
       return;
     }
 
@@ -105,7 +107,7 @@ export function PayrollPage() {
       showToast('success', `Payroll batch ${batch.batch_number} created`);
       setShowCreateModal(false);
       setSelectedMonth('');
-      loadBatches();
+      await loadBatches();
     } catch (error: any) {
       console.error('Failed to create payroll batch:', error);
       showToast('error', error.response?.data?.message || error.message || 'Failed to create payroll batch');
@@ -114,22 +116,27 @@ export function PayrollPage() {
     }
   };
 
-  const handleGenerateLines = async (batchId: string) => {
+  const handleGenerateLines = async (batchId: string, mode: 'generate' | 'regenerate' = 'generate') => {
     try {
       setProcessingBatchId(batchId);
+      setProcessingAction(mode);
+      showToast('info', mode === 'regenerate' ? 'Regenerating payroll lines. Please wait...' : 'Generating payroll lines. Please wait...');
       await payrollAPI.generatePayrollLines(batchId, user!.id, user!.email);
       console.log('Payroll lines generated successfully');
-      loadBatches();
-    } catch (error) {
+      showToast('success', mode === 'regenerate' ? 'Payroll lines regenerated successfully' : 'Payroll lines generated successfully');
+      await loadBatches();
+    } catch (error: any) {
       console.error('Failed to generate payroll lines:', error);
+      showToast('error', error.message || (mode === 'regenerate' ? 'Failed to regenerate payroll lines' : 'Failed to generate payroll lines'));
     } finally {
       setProcessingBatchId(null);
+      setProcessingAction(null);
     }
   };
 
   const handleConfirmRegenerate = () => {
     if (batchToRegenerate) {
-      handleGenerateLines(batchToRegenerate);
+      handleGenerateLines(batchToRegenerate, 'regenerate');
       setShowConfirmDialog(false);
       setBatchToRegenerate(null);
     }
@@ -159,7 +166,7 @@ export function PayrollPage() {
       setShowPaymentModal(false);
       setPaymentBatch(null);
       setPaymentReference('');
-      loadBatches();
+      await loadBatches();
     } catch (error: any) {
       console.error('Failed to execute payment:', error);
       showToast('error', error.message || 'Failed to execute payment');
@@ -172,6 +179,7 @@ export function PayrollPage() {
     try {
       setTraceLoading(true);
       setShowTraceModal(true);
+      setSelectedBatch(batch);
       const data = await payrollAPI.getPaymentTrace(batch.id);
       setTraceData(data);
     } catch (error: any) {
@@ -186,45 +194,57 @@ export function PayrollPage() {
     try {
       const token = localStorage.getItem('jsc_auth_token');
       if (!user || !token) {
-        console.error('You must be logged in to submit payroll for approval.');
+        showToast('error', 'You must be logged in to submit payroll for approval');
         return;
       }
+
+      setProcessingBatchId(batchId);
+      setProcessingAction('submit');
+      showToast('info', 'Checking payroll before submission...');
 
       const linesResp = await payrollAPI.getPayrollLines(batchId);
       const linesData = Array.isArray(linesResp) ? linesResp : (linesResp?.data || []);
       if (!Array.isArray(linesData) || linesData.length === 0) {
-        console.error('Cannot submit: no payroll lines found for this batch.');
+        showToast('warning', 'Cannot submit: no payroll lines found for this batch');
         return;
       }
 
       const settings = await settingsAPI.getSettings().catch(() => null);
       const workflow = settings?.value?.approval_workflow || settings?.approval_workflow || settings?.general_settings?.approval_workflow || [];
       if (!Array.isArray(workflow) || workflow.length === 0) {
-        console.error('Cannot submit: approval workflow is not configured.');
+        showToast('warning', 'Cannot submit: approval workflow is not configured');
         return;
       }
 
-      setProcessingBatchId(batchId);
+      showToast('info', 'Submitting payroll for approval...');
       await payrollAPI.submitForApproval(batchId, user!.id, user!.email);
       console.log('Payroll submitted for approval');
-      loadBatches();
-    } catch (error) {
+      showToast('success', 'Payroll submitted for approval');
+      await loadBatches();
+    } catch (error: any) {
       console.error('Failed to submit payroll:', error);
+      showToast('error', error.message || 'Failed to submit payroll for approval');
     } finally {
       setProcessingBatchId(null);
+      setProcessingAction(null);
     }
   };
 
   const handleLockPayroll = async (batchId: string) => {
     try {
       setProcessingBatchId(batchId);
+      setProcessingAction('lock');
+      showToast('info', 'Locking payroll batch...');
       await payrollAPI.lockPayroll(batchId, user!.id, user!.email);
       console.log('Payroll locked successfully');
-      loadBatches();
-    } catch (error) {
+      showToast('success', 'Payroll batch locked successfully');
+      await loadBatches();
+    } catch (error: any) {
       console.error('Failed to lock payroll:', error);
+      showToast('error', error.message || 'Failed to lock payroll batch');
     } finally {
       setProcessingBatchId(null);
+      setProcessingAction(null);
     }
   };
 
@@ -245,6 +265,7 @@ export function PayrollPage() {
     } catch (error) {
       console.error("Error fetching payroll lines:", error);
       setPayrollLines([]);
+      showToast('error', 'Failed to load payroll lines');
     } finally {
       setLinesLoading(false);
     }
@@ -265,6 +286,7 @@ export function PayrollPage() {
       setTotalLines(Number(meta.total) || lines.length);
     } catch (error) {
       console.error("Error fetching payroll lines:", error);
+      showToast('error', 'Failed to load payroll lines for the selected page');
     } finally {
       setLinesLoading(false);
     }
@@ -287,6 +309,7 @@ export function PayrollPage() {
       setTotalLines(Number(meta.total) || lines.length);
     } catch (error) {
       console.error("Error fetching payroll lines:", error);
+      showToast('error', 'Failed to sort payroll lines');
     } finally {
       setLinesLoading(false);
     }
@@ -352,7 +375,7 @@ export function PayrollPage() {
                   ) : (
                     <RefreshCw className="mr-2 h-4 w-4 text-blue-600" />
                   )}
-                  <span>Generate</span>
+                  <span>{processingBatchId === row.id && processingAction === 'generate' ? 'Generating...' : 'Generate'}</span>
                 </DropdownMenuItem>
               )}
               {row.status === 'draft' && row.total_staff > 0 && !isReadOnlyRole && (
@@ -369,7 +392,7 @@ export function PayrollPage() {
                   ) : (
                     <RefreshCw className="mr-2 h-4 w-4 text-orange-600" />
                   )}
-                  <span>Regenerate</span>
+                  <span>{processingBatchId === row.id && processingAction === 'regenerate' ? 'Regenerating...' : 'Regenerate'}</span>
                 </DropdownMenuItem>
               )}
               {row.status === 'draft' && row.total_staff > 0 && !isReadOnlyRole && (
@@ -385,7 +408,7 @@ export function PayrollPage() {
                   ) : (
                     <CheckCircle className="mr-2 h-4 w-4 text-green-600" />
                   )}
-                  <span>Submit</span>
+                  <span>{processingBatchId === row.id && processingAction === 'submit' ? 'Submitting...' : 'Submit'}</span>
                 </DropdownMenuItem>
               )}
               {(row.status === 'approved' || row.status === 'ready_for_payment' || row.status === 'paid') && canLockPayroll && (
@@ -401,7 +424,7 @@ export function PayrollPage() {
                   ) : (
                     <Lock className="mr-2 h-4 w-4 text-gray-600" />
                   )}
-                  <span>Lock</span>
+                  <span>{processingBatchId === row.id && processingAction === 'lock' ? 'Locking...' : 'Lock'}</span>
                 </DropdownMenuItem>
               )}
               {(row.status === 'locked' || row.status === 'paid' || row.status === 'ready_for_payment') && !row.payment_status && !isReadOnlyRole && (
@@ -705,7 +728,10 @@ export function PayrollPage() {
           size="lg"
         >
           {traceLoading ? (
-            <div className="py-8 text-center text-muted-foreground">Loading payment trace...</div>
+            <div className="flex items-center justify-center gap-2 py-8 text-center text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              <span>Loading payment trace...</span>
+            </div>
           ) : (
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">

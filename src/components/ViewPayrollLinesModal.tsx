@@ -8,6 +8,7 @@ import { payrollAPI } from '../lib/api-client';
 import { getBankByName } from '../constants/banks';
 import { loadPdfMake } from '../utils/loadPdfMake';
 import { exportSpreadsheet } from '../utils/exportSpreadsheet';
+import { useToast } from './Toast';
 
 interface ViewPayrollLinesModalProps {
   isOpen: boolean;
@@ -38,6 +39,7 @@ export function ViewPayrollLinesModal({
   onSortChange,
   sortDirection = 'desc',
 }: ViewPayrollLinesModalProps) {
+  const { showToast } = useToast();
   const [exporting, setExporting] = React.useState<'csv' | 'pdf' | null>(null);
   const [searchTerm, setSearchTerm] = React.useState('');
 
@@ -378,12 +380,13 @@ export function ViewPayrollLinesModal({
   const handleExportExcel = async () => {
     try {
       setExporting('csv');
+      showToast('info', 'Preparing payroll lines Excel export...');
       const response = await payrollAPI.getPayrollLines(batch.id, { limit: 100000, sort: sortDirection });
       const allLinesRaw = Array.isArray(response) ? response : (response.data || []);
       const allLines = [...allLinesRaw].sort((a, b) => compareLines(a, b, sortDirection));
 
       if (allLines.length === 0) {
-        setExporting(null);
+        showToast('warning', 'No payroll lines available to export');
         return;
       }
 
@@ -426,8 +429,10 @@ export function ViewPayrollLinesModal({
         columns: columns.map((c) => ({ key: c.id, label: c.header })),
         rows: [...dataRows, emptyRow, totalsRow],
       });
-    } catch (error) {
+      showToast('success', 'Payroll lines Excel export downloaded');
+    } catch (error: any) {
       console.error('Export failed', error);
+      showToast('error', error.message || 'Failed to export payroll lines to Excel');
     } finally {
       setExporting(null);
     }
@@ -436,12 +441,13 @@ export function ViewPayrollLinesModal({
   const handleExportPDF = async () => {
     try {
       setExporting('pdf');
+      showToast('info', 'Preparing payroll lines PDF export...');
       const response = await payrollAPI.getPayrollLines(batch.id, { limit: 100000, sort: sortDirection });
       const allLinesRaw = Array.isArray(response) ? response : (response.data || []);
       const allLines = [...allLinesRaw].sort((a, b) => compareLines(a, b, sortDirection));
 
       if (allLines.length === 0) {
-        setExporting(null);
+        showToast('warning', 'No payroll lines available to export');
         return;
       }
 
@@ -528,8 +534,10 @@ export function ViewPayrollLinesModal({
       const pdfMake = await loadPdfMake();
       const filename = `payroll_lines_${batch.batch_number}_${new Date().toISOString().split('T')[0]}.pdf`;
       pdfMake.createPdf(docDefinition).download(filename);
-    } catch (error) {
+      showToast('success', 'Payroll lines PDF export downloaded');
+    } catch (error: any) {
       console.error('PDF export failed', error);
+      showToast('error', error.message || 'Failed to export payroll lines to PDF');
     } finally {
       setExporting(null);
     }
