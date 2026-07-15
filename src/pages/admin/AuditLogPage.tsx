@@ -40,6 +40,9 @@ export function AuditLogPage() {
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [resolvedEntity, setResolvedEntity] = useState<ResolvedEntityInfo | null>(null);
   const [resolvingEntity, setResolvingEntity] = useState(false);
+  const [dateRangeMode, setDateRangeMode] = useState<string>('recent');
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
   
   const formatEntity = (value: string) => {
     const clean = String(value || '').replace(/_/g, ' ').toLowerCase();
@@ -1176,7 +1179,37 @@ export function AuditLogPage() {
   const loadLogs = async (currentPage: number = 1) => {
     try {
       setLoading(true);
-      const result = await auditAPI.getAll({ page: currentPage, limit: 50 });
+      
+      let startDate: string | undefined;
+      let endDate: string | undefined;
+
+      const now = new Date();
+      if (dateRangeMode === 'today') {
+        const start = new Date(now.setHours(0, 0, 0, 0));
+        startDate = start.toISOString();
+      } else if (dateRangeMode === 'last7days') {
+        const start = new Date();
+        start.setDate(start.getDate() - 7);
+        startDate = start.toISOString();
+      } else if (dateRangeMode === 'last30days') {
+        const start = new Date();
+        start.setDate(start.getDate() - 30);
+        startDate = start.toISOString();
+      } else if (dateRangeMode === 'custom') {
+        if (customStartDate) {
+          startDate = new Date(customStartDate).toISOString();
+        }
+        if (customEndDate) {
+          endDate = new Date(customEndDate + 'T23:59:59.999Z').toISOString();
+        }
+      }
+
+      const result = await auditAPI.getAll({ 
+        page: currentPage, 
+        limit: 50,
+        startDate,
+        endDate
+      });
       const data = Array.isArray(result) ? result : (result.data || result.items || []);
       setLogs(data);
       if (result && result.meta) {
@@ -1192,7 +1225,8 @@ export function AuditLogPage() {
 
   useEffect(() => {
     loadLogs(page);
-  }, [page]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, dateRangeMode]);
 
   const filteredLogs = useMemo(
     () =>
@@ -1271,7 +1305,7 @@ export function AuditLogPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 mb-4 sm:mb-6">
         <div className="min-w-0 flex-1">
           <h1 className="page-title">System Audit Log</h1>
-          <p className="text-muted-foreground text-sm sm:text-base">Track all system activities and changes</p>
+          <p className="text-muted-foreground text-sm sm:text-base">Track key system activities and changes</p>
         </div>
         <button 
           onClick={() => loadLogs(page)}
@@ -1283,21 +1317,59 @@ export function AuditLogPage() {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-        <div className="p-4 border-b border-gray-200 flex flex-col sm:flex-row gap-4">
+        <div className="p-4 border-b border-gray-200 flex flex-col lg:flex-row gap-4">
           <div className="relative flex-1 max-w-md w-full">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
               placeholder="Search logs..."
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm"
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
             />
           </div>
-          <button className="flex items-center justify-center px-4 py-2 text-gray-700 bg-gray-50 border border-gray-300 rounded-lg hover:bg-gray-100 w-full sm:w-auto">
-            <Filter className="w-4 h-4 mr-2" />
-            Filter
-          </button>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full lg:w-auto">
+            <select
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm w-full sm:w-auto"
+              value={dateRangeMode}
+              onChange={(e) => {
+                setDateRangeMode(e.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="recent">Recent</option>
+              <option value="today">Today</option>
+              <option value="last7days">Last 7 Days</option>
+              <option value="last30days">Last 30 Days</option>
+              <option value="custom">Custom Range</option>
+            </select>
+            {dateRangeMode === 'custom' && (
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <input
+                  type="date"
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm flex-1 sm:flex-none"
+                  value={customStartDate}
+                  onChange={(e) => setCustomStartDate(e.target.value)}
+                />
+                <span className="text-gray-500 text-sm">to</span>
+                <input
+                  type="date"
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm flex-1 sm:flex-none"
+                  value={customEndDate}
+                  onChange={(e) => setCustomEndDate(e.target.value)}
+                />
+                <button 
+                  onClick={() => {
+                    setPage(1);
+                    loadLogs(1);
+                  }} 
+                  className="px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm hover:bg-emerald-700 whitespace-nowrap"
+                >
+                  Apply
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         <DataTable
