@@ -8,9 +8,10 @@ import { ConfirmDialog } from '../components/ConfirmDialog';
 import { useAuth } from '../contexts/AuthContext';
 import { payrollAPI, settingsAPI } from '../lib/api-client';
 import { PayrollBatch, PayrollLine } from '../types/entities';
-import { Plus, Eye, Lock, Loader2, RefreshCw, CreditCard, AlertCircle, CheckCircle } from 'lucide-react';
+import { Plus, Eye, Lock, Loader2, RefreshCw, CreditCard, AlertCircle, CheckCircle, MoreVertical } from 'lucide-react';
 import { PageSkeleton } from '../components/PageLoader';
 import { Button } from '../components/ui/button';
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '../components/ui/dropdown-menu';
 import { formatCurrency } from '../utils/format';
 import { useToast } from '../components/Toast';
 
@@ -321,95 +322,112 @@ export function PayrollPage() {
     {
       header: 'Actions',
       accessor: (row: PayrollBatch) => (
-        <div className="flex items-center gap-2">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handleViewLines(row);
-            }}
-            className="p-1 hover:bg-gray-100 rounded"
-            title="View Lines"
-          >
-            <Eye className="w-4 h-4 text-blue-600" />
-          </button>
-          {row.status === 'draft' && row.total_staff === 0 && !isReadOnlyRole && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleGenerateLines(row.id);
-              }}
-              disabled={processingBatchId === row.id}
-              className="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1"
-            >
-              {processingBatchId === row.id ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-              Generate
-            </button>
-          )}
-          {row.status === 'draft' && row.total_staff > 0 && !isReadOnlyRole && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setBatchToRegenerate(row.id);
-                setShowConfirmDialog(true);
-              }}
-              disabled={processingBatchId === row.id}
-              className="px-2 py-1 bg-orange-600 text-white text-xs rounded hover:bg-orange-700 disabled:opacity-50 flex items-center gap-1"
-              title="Regenerate Lines"
-            >
-              {processingBatchId === row.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-              Regenerate
-            </button>
-          )}
-          {row.status === 'draft' && row.total_staff > 0 && !isReadOnlyRole && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleSubmitForApproval(row.id);
-              }}
-              disabled={processingBatchId === row.id}
-              className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 disabled:opacity-50 flex items-center gap-1"
-            >
-              {processingBatchId === row.id ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-              Submit
-            </button>
-          )}
-          {(row.status === 'approved' || row.status === 'ready_for_payment' || row.status === 'paid') && canLockPayroll && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleLockPayroll(row.id);
-              }}
-              disabled={processingBatchId === row.id}
-              className="px-2 py-1 bg-gray-600 text-white text-xs rounded hover:bg-gray-700 disabled:opacity-50 flex items-center gap-1"
-            >
-              {processingBatchId === row.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Lock className="h-3 w-3" />}
-              Lock
-            </button>
-          )}
-          {(row.status === 'locked' || row.status === 'paid' || row.status === 'ready_for_payment') && !row.payment_status && !isReadOnlyRole && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleOpenPaymentModal(row);
-              }}
-              className="px-2 py-1 bg-purple-600 text-white text-xs rounded hover:bg-purple-700 flex items-center gap-1"
-            >
-              <CreditCard className="h-3 w-3" />
-              Pay
-            </button>
-          )}
-          {(row.status === 'locked' || row.status === 'paid' || row.status === 'ready_for_payment') && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleOpenTrace(row);
-              }}
-              className="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 flex items-center gap-1"
-            >
-              <AlertCircle className="h-3 w-3" />
-              Trace
-            </button>
-          )}
+        <div onClick={(e) => e.stopPropagation()}>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" className="h-8 w-8 p-0">
+                <MoreVertical className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleViewLines(row);
+                }}
+              >
+                <Eye className="mr-2 h-4 w-4 text-blue-600" />
+                <span>View Lines</span>
+              </DropdownMenuItem>
+              {row.status === 'draft' && row.total_staff === 0 && !isReadOnlyRole && (
+                <DropdownMenuItem
+                  disabled={processingBatchId === row.id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleGenerateLines(row.id);
+                  }}
+                >
+                  {processingBatchId === row.id ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin text-blue-600" />
+                  ) : (
+                    <RefreshCw className="mr-2 h-4 w-4 text-blue-600" />
+                  )}
+                  <span>Generate</span>
+                </DropdownMenuItem>
+              )}
+              {row.status === 'draft' && row.total_staff > 0 && !isReadOnlyRole && (
+                <DropdownMenuItem
+                  disabled={processingBatchId === row.id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setBatchToRegenerate(row.id);
+                    setShowConfirmDialog(true);
+                  }}
+                >
+                  {processingBatchId === row.id ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin text-orange-600" />
+                  ) : (
+                    <RefreshCw className="mr-2 h-4 w-4 text-orange-600" />
+                  )}
+                  <span>Regenerate</span>
+                </DropdownMenuItem>
+              )}
+              {row.status === 'draft' && row.total_staff > 0 && !isReadOnlyRole && (
+                <DropdownMenuItem
+                  disabled={processingBatchId === row.id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleSubmitForApproval(row.id);
+                  }}
+                >
+                  {processingBatchId === row.id ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin text-green-600" />
+                  ) : (
+                    <CheckCircle className="mr-2 h-4 w-4 text-green-600" />
+                  )}
+                  <span>Submit</span>
+                </DropdownMenuItem>
+              )}
+              {(row.status === 'approved' || row.status === 'ready_for_payment' || row.status === 'paid') && canLockPayroll && (
+                <DropdownMenuItem
+                  disabled={processingBatchId === row.id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleLockPayroll(row.id);
+                  }}
+                >
+                  {processingBatchId === row.id ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin text-gray-600" />
+                  ) : (
+                    <Lock className="mr-2 h-4 w-4 text-gray-600" />
+                  )}
+                  <span>Lock</span>
+                </DropdownMenuItem>
+              )}
+              {(row.status === 'locked' || row.status === 'paid' || row.status === 'ready_for_payment') && !row.payment_status && !isReadOnlyRole && (
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleOpenPaymentModal(row);
+                  }}
+                >
+                  <CreditCard className="mr-2 h-4 w-4 text-purple-600" />
+                  <span>Pay</span>
+                </DropdownMenuItem>
+              )}
+              {(row.status === 'locked' || row.status === 'paid' || row.status === 'ready_for_payment') && (
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleOpenTrace(row);
+                  }}
+                >
+                  <AlertCircle className="mr-2 h-4 w-4 text-blue-600" />
+                  <span>Trace</span>
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       ),
     },
