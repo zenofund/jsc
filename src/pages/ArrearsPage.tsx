@@ -15,6 +15,70 @@ import { CreateArrearsModal } from '../components/CreateArrearsModal';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../components/ui/dropdown-menu';
 import { MoreVertical } from 'lucide-react';
 
+function formatBreakdownMonth(monthValue: string) {
+  const match = String(monthValue || '').match(/^(\d{4})-(\d{2})$/);
+  if (!match) {
+    return monthValue || 'N/A';
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const monthDate = new Date(Date.UTC(year, month - 1, 1));
+
+  return new Intl.DateTimeFormat('en-GB', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(monthDate);
+}
+
+function getBusinessDateParts(value: string) {
+  const rawValue = String(value || '').trim();
+  const plainDateMatch = rawValue.match(/^(\d{4})-(\d{2})-(\d{2})/);
+
+  if (plainDateMatch) {
+    return {
+      year: Number(plainDateMatch[1]),
+      month: Number(plainDateMatch[2]),
+      day: Number(plainDateMatch[3]),
+    };
+  }
+
+  const parsedDate = new Date(value);
+  if (Number.isNaN(parsedDate.getTime())) {
+    return null;
+  }
+
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Africa/Lagos',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(parsedDate);
+
+  return {
+    year: Number(parts.find((part) => part.type === 'year')?.value || 0),
+    month: Number(parts.find((part) => part.type === 'month')?.value || 0),
+    day: Number(parts.find((part) => part.type === 'day')?.value || 0),
+  };
+}
+
+function getBreakdownMonthLabel(arrearsItem: Arrears, storedMonth: string, index: number) {
+  if (arrearsItem.reason === 'promotion' && arrearsItem.effective_date) {
+    const parts = getBusinessDateParts(arrearsItem.effective_date);
+    if (parts) {
+      const monthDate = new Date(Date.UTC(parts.year, parts.month - 1 + index, 1));
+      return new Intl.DateTimeFormat('en-GB', {
+        month: 'long',
+        year: 'numeric',
+        timeZone: 'UTC',
+      }).format(monthDate);
+    }
+  }
+
+  return formatBreakdownMonth(storedMonth);
+}
+
 export function ArrearsPage() {
   const { user } = useAuth();
   const confirm = useConfirm();
@@ -392,7 +456,7 @@ export function ArrearsPage() {
                   <tbody>
                     {(selectedArrears.details || selectedArrears.arrears_details || []).map((detail: any, index: number) => (
                       <tr key={index} className="border-t border-border">
-                        <td className="px-4 py-2 text-foreground">{detail.month}</td>
+                        <td className="px-4 py-2 text-foreground">{getBreakdownMonthLabel(selectedArrears, detail.month, index)}</td>
                         <td className="px-4 py-2 text-foreground text-right">₦{Number(detail.amount).toLocaleString()}</td>
                       </tr>
                     ))}

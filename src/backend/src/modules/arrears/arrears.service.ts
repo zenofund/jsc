@@ -6,11 +6,73 @@ import { NotificationCategory, NotificationPriority, NotificationType } from '..
 @Injectable()
 export class ArrearsService {
   private readonly logger = new Logger(ArrearsService.name);
+  private readonly businessTimeZone = 'Africa/Lagos';
 
   constructor(
     private readonly databaseService: DatabaseService,
     private readonly notificationsService: NotificationsService,
   ) {}
+
+  private roundCurrency(value: number) {
+    return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+  }
+
+  private getBusinessDateParts(value: any) {
+    const rawValue = String(value || '').trim();
+    const plainDateMatch = rawValue.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+
+    if (plainDateMatch) {
+      return {
+        year: Number(plainDateMatch[1]),
+        month: Number(plainDateMatch[2]),
+        day: Number(plainDateMatch[3]),
+      };
+    }
+
+    const parsedDate = new Date(value);
+    if (Number.isNaN(parsedDate.getTime())) {
+      throw new BadRequestException('Invalid effective date');
+    }
+
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: this.businessTimeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(parsedDate);
+
+    return {
+      year: Number(parts.find((part) => part.type === 'year')?.value || 0),
+      month: Number(parts.find((part) => part.type === 'month')?.value || 0),
+      day: Number(parts.find((part) => part.type === 'day')?.value || 0),
+    };
+  }
+
+  private buildMonthKey(year: number, month: number) {
+    return `${year}-${String(month).padStart(2, '0')}`;
+  }
+
+  private buildMonthlyBreakdown(
+    effectiveDate: any,
+    monthsOwed: number,
+    firstMonthAmount: number,
+    recurringAmount: number,
+  ) {
+    const { year, month } = this.getBusinessDateParts(effectiveDate);
+    const details: Array<{ month: string; amount: number }> = [];
+
+    for (let index = 0; index < monthsOwed; index += 1) {
+      const monthDate = new Date(Date.UTC(year, month - 1 + index, 1));
+      const amount = index === 0 ? firstMonthAmount : recurringAmount;
+
+      details.push({
+        month: this.buildMonthKey(monthDate.getUTCFullYear(), monthDate.getUTCMonth() + 1),
+        amount: this.roundCurrency(amount),
+      });
+    }
+
+    return details;
+  }
 
   /**
    * Create manual arrears/adjustment
@@ -28,15 +90,14 @@ export class ArrearsService {
     }
 
     // Prepare details JSON
-    const effDate = new Date(effectiveDate);
-    const monthStrRaw = String(effDate.getMonth() + 1).padStart(2, '0');
+    const { year, month } = this.getBusinessDateParts(effectiveDate);
     const details = [{
-      month: `${effDate.getFullYear()}-${monthStrRaw}`,
-      amount: parseFloat(amount),
+      month: this.buildMonthKey(year, month),
+      amount: this.roundCurrency(parseFloat(amount)),
       description: description || 'Manual Adjustment'
     }];
 
-    const totalArrears = parseFloat(amount);
+    const totalArrears = this.roundCurrency(parseFloat(amount));
 
     const arrearsRecord = await this.databaseService.queryOne(
       `INSERT INTO arrears (
@@ -193,10 +254,54 @@ export class ArrearsService {
       throw new NotFoundException(`Arrears record with ID ${id} not found`);
     }
 
-    // Mock recalculation logic
-    // In a real scenario, this would re-evaluate the salary difference based on effective date
-    
+    let details = Array.isArray(arrears.details) ? arrears.details : [];
+    let totalArrears = this.roundCurrency(Number(arrears.total_arrears || 0));
+
+    if (arrears.reason === 'promotion') {
+      const monthsOwed = Math.max(0, Number(arrears.months_owed || 0));
+      const { year, month, day } = this.getBusinessDateParts(arrears.effective_date);
+      const daysInEffectiveMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+      const eligibleDays = Math.max(0, daysInEffectiveMonth - (day - 1));
+      const monthlyDifference = this.roundCurrency(
+        Number(arrears.new_salary || 0) - Number(arrears.old_salary || 0),
+      );
+      const dailyDifference = daysInEffectiveMonth > 0 ? monthlyDifference / daysInEffectiveMonth : 0;
+      const firstMonthAmount = this.roundCurrency(dailyDifference * eligibleDays);
+
+      details = this.buildMonthlyBreakdown(
+        arrears.effective_date,
+        monthsOwed,
+        firstMonthAmount,
+        monthlyDifference,
+      );
+      totalArrears = this.roundCurrency(
+        details.reduce((sum, item) => sum + Number(item.amount || 0), 0),
+      );
+    } else if (arrears.effective_date) {
+      const description = Array.isArray(details) && details[0]?.description
+        ? details[0].description
+        : 'Manual Adjustment';
+      const { year, month } = this.getBusinessDateParts(arrears.effective_date);
+      details = [{
+        month: this.buildMonthKey(year, month),
+        amount: totalArrears,
+        description,
+      }];
+    }
+
+    const updatedArrears = await this.databaseService.queryOne(
+      `UPDATE arrears
+       SET total_arrears = $1, details = $2, updated_at = NOW()
+       WHERE id = $3
+       RETURNING *`,
+      [totalArrears, JSON.stringify(details), id],
+    );
+
     this.logger.log(`Arrears ${id} recalculated by user ${userId}`);
-    return { message: 'Arrears recalculated successfully', amount: arrears.amount };
+    return {
+      message: 'Arrears recalculated successfully',
+      amount: totalArrears,
+      arrears: updatedArrears,
+    };
   }
 }

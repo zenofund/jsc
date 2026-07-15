@@ -9,6 +9,7 @@ import { AuditAction } from '@modules/audit/dto/audit.dto';
 @Injectable()
 export class PromotionsService {
   private readonly logger = new Logger(PromotionsService.name);
+  private readonly businessTimeZone = 'Africa/Lagos';
 
   constructor(
     private readonly databaseService: DatabaseService,
@@ -16,6 +17,45 @@ export class PromotionsService {
     private readonly notificationsService: NotificationsService,
     private readonly auditService: AuditService,
   ) {}
+
+  private roundCurrency(value: number) {
+    return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+  }
+
+  private getBusinessDateParts(value: any) {
+    const rawValue = String(value || '').trim();
+    const plainDateMatch = rawValue.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+
+    if (plainDateMatch) {
+      return {
+        year: Number(plainDateMatch[1]),
+        month: Number(plainDateMatch[2]),
+        day: Number(plainDateMatch[3]),
+      };
+    }
+
+    const parsedDate = new Date(value);
+    if (Number.isNaN(parsedDate.getTime())) {
+      throw new BadRequestException('Invalid promotion effective date');
+    }
+
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: this.businessTimeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(parsedDate);
+
+    return {
+      year: Number(parts.find((part) => part.type === 'year')?.value || 0),
+      month: Number(parts.find((part) => part.type === 'month')?.value || 0),
+      day: Number(parts.find((part) => part.type === 'day')?.value || 0),
+    };
+  }
+
+  private buildMonthKey(year: number, month: number) {
+    return `${year}-${String(month).padStart(2, '0')}`;
+  }
 
   /**
    * Reduce a grade level token to a single canonical form so exclusion rules
@@ -492,11 +532,12 @@ export class PromotionsService {
          return;
       }
 
-      const today = new Date();
-      const currentMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-      const effectiveMonth = new Date(effectiveDateObj.getFullYear(), effectiveDateObj.getMonth(), 1);
+      const effectiveParts = this.getBusinessDateParts(promotion.promotion_date);
+      const todayParts = this.getBusinessDateParts(new Date());
+      const currentMonth = new Date(Date.UTC(todayParts.year, todayParts.month - 1, 1));
+      const effectiveMonth = new Date(Date.UTC(effectiveParts.year, effectiveParts.month - 1, 1));
       
-      const monthsDiff = (currentMonth.getFullYear() - effectiveMonth.getFullYear()) * 12 + (currentMonth.getMonth() - effectiveMonth.getMonth());
+      const monthsDiff = (currentMonth.getUTCFullYear() - effectiveMonth.getUTCFullYear()) * 12 + (currentMonth.getUTCMonth() - effectiveMonth.getUTCMonth());
       
       if (monthsDiff > 0) {
         this.logger.log(`Detecting arrears for staff ${staff.id}. Effective: ${promotion.promotion_date}, Months: ${monthsDiff}`);
@@ -528,23 +569,23 @@ export class PromotionsService {
         const monthlyDifference = newNetSalary - oldNetSalary;
         
         if (monthlyDifference > 0) {
-          const daysInEffectiveMonth = new Date(effectiveMonth.getFullYear(), effectiveMonth.getMonth() + 1, 0).getDate();
-          const effectiveDay = effectiveDateObj.getDate();
+          const daysInEffectiveMonth = new Date(Date.UTC(effectiveParts.year, effectiveParts.month, 0)).getUTCDate();
+          const effectiveDay = effectiveParts.day;
           const eligibleDays = Math.max(0, daysInEffectiveMonth - (effectiveDay - 1));
           const dailyDifference = monthlyDifference / daysInEffectiveMonth;
-          const proratedFirstMonth = Math.round((dailyDifference * eligibleDays + Number.EPSILON) * 100) / 100;
+          const proratedFirstMonth = this.roundCurrency(dailyDifference * eligibleDays);
           const fullMonthsAfter = Math.max(0, monthsDiff - 1);
-          const totalArrears = Math.round((proratedFirstMonth + (monthlyDifference * fullMonthsAfter) + Number.EPSILON) * 100) / 100;
+          const roundedMonthlyDifference = this.roundCurrency(monthlyDifference);
+          const totalArrears = this.roundCurrency(proratedFirstMonth + (roundedMonthlyDifference * fullMonthsAfter));
           
           const details = [];
           for (let i = 0; i < monthsDiff; i++) {
-            const monthDate = new Date(effectiveMonth.getFullYear(), effectiveMonth.getMonth() + i, 1);
-            const monthStrRaw = String(monthDate.getMonth() + 1).padStart(2, '0');
-            const monthStr = `${monthDate.getFullYear()}-${monthStrRaw}`;
-            const amount = i === 0 ? proratedFirstMonth : monthlyDifference;
+            const monthDate = new Date(Date.UTC(effectiveParts.year, effectiveParts.month - 1 + i, 1));
+            const monthStr = this.buildMonthKey(monthDate.getUTCFullYear(), monthDate.getUTCMonth() + 1);
+            const amount = i === 0 ? proratedFirstMonth : roundedMonthlyDifference;
             details.push({
               month: monthStr,
-              amount
+              amount: this.roundCurrency(amount)
             });
           }
           
@@ -658,24 +699,24 @@ export class PromotionsService {
     const monthlyDifference = newNetSalary - oldNetSalary;
     
     // Calculate Months Owed
-    const effectiveDateObj = new Date(effectiveDate);
-    const effectiveMonth = new Date(effectiveDateObj.getFullYear(), effectiveDateObj.getMonth(), 1);
-    const today = new Date();
-    const currentMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-    const monthsDiff = (currentMonth.getFullYear() - effectiveMonth.getFullYear()) * 12 + (currentMonth.getMonth() - effectiveMonth.getMonth());
+    const effectiveParts = this.getBusinessDateParts(effectiveDate);
+    const effectiveMonth = new Date(Date.UTC(effectiveParts.year, effectiveParts.month - 1, 1));
+    const todayParts = this.getBusinessDateParts(new Date());
+    const currentMonth = new Date(Date.UTC(todayParts.year, todayParts.month - 1, 1));
+    const monthsDiff = (currentMonth.getUTCFullYear() - effectiveMonth.getUTCFullYear()) * 12 + (currentMonth.getUTCMonth() - effectiveMonth.getUTCMonth());
     
     const safeMonthsDiff = Math.max(0, monthsDiff);
     let totalArrears = 0;
     let proratedFirstMonth = 0;
     let fullMonthsAfter = 0;
     if (monthlyDifference > 0 && safeMonthsDiff > 0) {
-      const daysInEffectiveMonth = new Date(effectiveMonth.getFullYear(), effectiveMonth.getMonth() + 1, 0).getDate();
-      const effectiveDay = effectiveDateObj.getDate();
+      const daysInEffectiveMonth = new Date(Date.UTC(effectiveParts.year, effectiveParts.month, 0)).getUTCDate();
+      const effectiveDay = effectiveParts.day;
       const eligibleDays = Math.max(0, daysInEffectiveMonth - (effectiveDay - 1));
       const dailyDifference = monthlyDifference / daysInEffectiveMonth;
-      proratedFirstMonth = Math.round((dailyDifference * eligibleDays + Number.EPSILON) * 100) / 100;
+      proratedFirstMonth = this.roundCurrency(dailyDifference * eligibleDays);
       fullMonthsAfter = Math.max(0, safeMonthsDiff - 1);
-      totalArrears = Math.round((proratedFirstMonth + (monthlyDifference * fullMonthsAfter) + Number.EPSILON) * 100) / 100;
+      totalArrears = this.roundCurrency(proratedFirstMonth + (this.roundCurrency(monthlyDifference) * fullMonthsAfter));
     }
 
     return {
