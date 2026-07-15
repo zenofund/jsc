@@ -612,10 +612,6 @@ export const arrearsAPI = {
   },
 
   async approveArrears(arrearsId: string, approverId: string, approverEmail: string) {
-    // Note: Backend ArrearsController::approveArrears takes no body in controller definition,
-    // but the service method likely uses req.user.userId.
-    // The controller signature is: approveArrears(@Param('id') id: string, @Request() req)
-    // So sending body is ignored but harmless.
     return makeApiRequest(`/arrears/${arrearsId}/approve`, {
       method: 'POST',
       body: JSON.stringify({ approverId, approverEmail }),
@@ -623,12 +619,30 @@ export const arrearsAPI = {
   },
 
   async rejectArrears(arrearsId: string, rejectorId: string, rejectorEmail: string, reason: string) {
-    // Note: Endpoint `/arrears/:id/reject` is MISSING in ArrearsController.
-    // Only `approve`, `merge`, `recalculate`, and `getPendingArrears` exist.
-    // Assuming we might need to add it or it's not implemented.
     return makeApiRequest(`/arrears/${arrearsId}/reject`, {
       method: 'POST',
       body: JSON.stringify({ rejectorId, rejectorEmail, reason }),
+    });
+  },
+
+  async bulkApproveArrears(arrearsIds: string[]) {
+    return makeApiRequest('/arrears/bulk-approve', {
+      method: 'POST',
+      body: JSON.stringify({ arrearsIds }),
+    });
+  },
+
+  async bulkRejectArrears(arrearsIds: string[], reason?: string) {
+    return makeApiRequest('/arrears/bulk-reject', {
+      method: 'POST',
+      body: JSON.stringify({ arrearsIds, reason }),
+    });
+  },
+
+  async bulkMergeArrearsToPayroll(arrearsIds: string[], payrollBatchId: string, userId: string, userEmail: string) {
+    return makeApiRequest('/arrears/bulk-merge', {
+      method: 'POST',
+      body: JSON.stringify({ arrearsIds, payrollBatchId, userId, userEmail }),
     });
   },
 

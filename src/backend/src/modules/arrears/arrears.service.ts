@@ -74,6 +74,100 @@ export class ArrearsService {
     return details;
   }
 
+  private getArrearsDisplayLabel(arrears: any) {
+    const staffName = String(arrears?.staff_name || '').trim();
+    const staffNumber = String(arrears?.staff_number || '').trim();
+    return staffName || staffNumber || String(arrears?.id || 'Arrears');
+  }
+
+  private async getBulkActionableArrears(
+    arrearsIds: string[],
+    requiredStatus: 'pending' | 'approved' = 'pending',
+  ) {
+    const uniqueIds = Array.from(new Set((arrearsIds || []).filter(Boolean)));
+    if (uniqueIds.length === 0) {
+      throw new BadRequestException('Select at least one arrears record.');
+    }
+
+    const arrearsRecords = await this.databaseService.query(
+      `SELECT a.*, s.first_name || ' ' || s.last_name as staff_name, s.staff_number
+       FROM arrears a
+       JOIN staff s ON a.staff_id = s.id
+       WHERE a.id = ANY($1::uuid[])`,
+      [uniqueIds],
+    );
+
+    const recordMap = new Map(arrearsRecords.map((record: any) => [String(record.id), record]));
+    const actionableArrears: any[] = [];
+    const failures: Array<{ id: string; staff_name?: string; staff_number?: string; reason: string }> = [];
+
+    for (const arrearsId of uniqueIds) {
+      const arrears = recordMap.get(String(arrearsId));
+      if (!arrears) {
+        failures.push({ id: arrearsId, reason: 'Record not found.' });
+        continue;
+      }
+
+      if (arrears.status !== requiredStatus) {
+        failures.push({
+          id: arrearsId,
+          staff_name: arrears.staff_name,
+          staff_number: arrears.staff_number,
+          reason: `Only ${requiredStatus} arrears can be bulk processed. Current status: ${arrears.status}.`,
+        });
+        continue;
+      }
+
+      actionableArrears.push(arrears);
+    }
+
+    return {
+      totalRequested: uniqueIds.length,
+      actionableArrears,
+      failures,
+    };
+  }
+
+  private async processBulkArrearsBatch(
+    arrearsRecords: any[],
+    processor: (arrears: any) => Promise<any>,
+  ) {
+    const successes: Array<{ id: string; staff_name?: string; staff_number?: string }> = [];
+    const failures: Array<{ id: string; staff_name?: string; staff_number?: string; reason: string }> = [];
+
+    const results = await Promise.allSettled(
+      arrearsRecords.map(async (arrears) => {
+        await processor(arrears);
+        return arrears;
+      }),
+    );
+
+    results.forEach((result, index) => {
+      const arrears = arrearsRecords[index];
+      if (result.status === 'fulfilled') {
+        successes.push({
+          id: arrears.id,
+          staff_name: arrears.staff_name,
+          staff_number: arrears.staff_number,
+        });
+        return;
+      }
+
+      const reason =
+        result.reason instanceof Error
+          ? result.reason.message
+          : String(result.reason || 'Unknown error');
+      failures.push({
+        id: arrears.id,
+        staff_name: arrears.staff_name,
+        staff_number: arrears.staff_number,
+        reason,
+      });
+    });
+
+    return { successes, failures };
+  }
+
   /**
    * Create manual arrears/adjustment
    */
@@ -174,7 +268,7 @@ export class ArrearsService {
        LEFT JOIN promotions p ON a.staff_id = p.staff_id 
            AND a.effective_date = p.promotion_date::date 
            AND a.reason = 'promotion'
-       WHERE a.status IN ('pending', 'approved', 'processed')
+       WHERE a.status IN ('pending', 'approved', 'rejected', 'processed')
        ORDER BY a.created_at DESC`
     );
   }
@@ -187,6 +281,10 @@ export class ArrearsService {
     
     if (!arrears) {
       throw new NotFoundException(`Arrears record with ID ${id} not found`);
+    }
+
+    if (arrears.status !== 'pending') {
+      throw new BadRequestException('Only pending arrears can be approved');
     }
 
     await this.databaseService.query(
@@ -218,6 +316,94 @@ export class ArrearsService {
     return { message: 'Arrears approved successfully' };
   }
 
+  async rejectArrears(id: string, userId: string, reason?: string) {
+    const arrears = await this.databaseService.queryOne('SELECT * FROM arrears WHERE id = $1', [id]);
+
+    if (!arrears) {
+      throw new NotFoundException(`Arrears record with ID ${id} not found`);
+    }
+
+    if (arrears.status !== 'pending') {
+      throw new BadRequestException('Only pending arrears can be rejected');
+    }
+
+    const rejectionReason = String(reason || '').trim();
+    await this.databaseService.query(
+      `UPDATE arrears
+       SET status = 'rejected', updated_at = NOW()
+       WHERE id = $1`,
+      [id],
+    );
+
+    if (arrears.created_by) {
+      const staff = await this.databaseService.queryOne('SELECT staff_number, first_name, last_name FROM staff WHERE id = $1', [arrears.staff_id]);
+      const staffName = [staff?.first_name, staff?.last_name].filter(Boolean).join(' ').trim() || staff?.staff_number || 'Staff';
+      await this.notificationsService.create({
+        recipient_id: arrears.created_by,
+        type: NotificationType.ARREARS,
+        category: NotificationCategory.WARNING,
+        title: 'Arrears rejected',
+        message: rejectionReason
+          ? `${staffName} arrears was rejected. Reason: ${rejectionReason}`
+          : `${staffName} arrears was rejected.`,
+        link: '/arrears',
+        entity_type: 'arrears',
+        entity_id: arrears.id,
+        priority: NotificationPriority.MEDIUM,
+        action_label: 'View',
+        action_link: '/arrears',
+        created_by: userId,
+        metadata: { arrears_id: arrears.id, staff_id: arrears.staff_id, reason: rejectionReason || undefined },
+      });
+    }
+
+    this.logger.log(`Arrears ${id} rejected by user ${userId}`);
+    return { message: 'Arrears rejected successfully' };
+  }
+
+  async bulkApproveArrears(arrearsIds: string[], userId: string) {
+    const { actionableArrears, failures: initialFailures, totalRequested } = await this.getBulkActionableArrears(arrearsIds, 'pending');
+    const { successes, failures: processingFailures } = await this.processBulkArrearsBatch(
+      actionableArrears,
+      (arrears) => this.approveArrears(arrears.id, userId),
+    );
+    const failures = [...initialFailures, ...processingFailures];
+
+    return {
+      message:
+        failures.length > 0
+          ? 'Bulk arrears approval completed with some failures.'
+          : 'Bulk arrears approval completed successfully.',
+      totalRequested,
+      successCount: successes.length,
+      failureCount: failures.length,
+      successes,
+      failures,
+    };
+  }
+
+  async bulkRejectArrears(arrearsIds: string[], userId: string, reason?: string) {
+    const { actionableArrears, failures: initialFailures, totalRequested } = await this.getBulkActionableArrears(arrearsIds, 'pending');
+    const rejectionReason = String(reason || '').trim();
+    const { successes, failures: processingFailures } = await this.processBulkArrearsBatch(
+      actionableArrears,
+      (arrears) => this.rejectArrears(arrears.id, userId, rejectionReason),
+    );
+    const failures = [...initialFailures, ...processingFailures];
+
+    return {
+      message:
+        failures.length > 0
+          ? 'Bulk arrears rejection completed with some failures.'
+          : 'Bulk arrears rejection completed successfully.',
+      totalRequested,
+      successCount: successes.length,
+      failureCount: failures.length,
+      successes,
+      failures,
+    };
+  }
+
   /**
    * Merge arrears to payroll
    */
@@ -242,6 +428,35 @@ export class ArrearsService {
 
     this.logger.log(`Arrears ${arrearsId} merged to payroll batch ${payrollBatchId} by user ${userId}`);
     return { message: 'Arrears merged to payroll successfully. Please regenerate payroll lines for this batch to reflect changes.' };
+  }
+
+  async bulkMergeArrearsToPayroll(arrearsIds: string[], payrollBatchId: string, userId: string) {
+    if (!payrollBatchId) {
+      throw new BadRequestException('Please select a payroll batch.');
+    }
+
+    const { actionableArrears, failures: initialFailures, totalRequested } = await this.getBulkActionableArrears(
+      arrearsIds,
+      'approved',
+    );
+
+    const { successes, failures: processingFailures } = await this.processBulkArrearsBatch(
+      actionableArrears,
+      (arrears) => this.mergeArrearsToPayroll(arrears.id, payrollBatchId, userId),
+    );
+    const failures = [...initialFailures, ...processingFailures];
+
+    return {
+      message:
+        failures.length > 0
+          ? 'Bulk arrears merge completed with some failures.'
+          : 'Bulk arrears merge completed successfully.',
+      totalRequested,
+      successCount: successes.length,
+      failureCount: failures.length,
+      successes,
+      failures,
+    };
   }
 
   /**

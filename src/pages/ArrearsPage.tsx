@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { arrearsAPI, payrollAPI } from '../lib/api-client';
 import { Arrears, PayrollBatch } from '../types/entities';
 import { PageSkeleton } from '../components/PageLoader';
-import { AlertCircle, TrendingUp, DollarSign, RefreshCw, Trash2, Plus, Check, Loader2, CheckCircle } from 'lucide-react';
+import { AlertCircle, TrendingUp, DollarSign, RefreshCw, Trash2, Plus, Check, Loader2, CheckCircle, XCircle } from 'lucide-react';
 import { showToast } from '../utils/toast';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { DataTable } from '../components/DataTable';
@@ -87,11 +87,15 @@ export function ArrearsPage() {
   const [payrollBatches, setPayrollBatches] = useState<PayrollBatch[]>([]);
   const [selectedBatchId, setSelectedBatchId] = useState('');
   const [showMergeModal, setShowMergeModal] = useState(false);
+  const [isBulkMergeMode, setIsBulkMergeMode] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [recalculatingId, setRecalculatingId] = useState<string | null>(null);
   const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [bulkActionLoading, setBulkActionLoading] = useState(false);
+  const [selectedArrearsIds, setSelectedArrearsIds] = useState<string[]>([]);
 
   useEffect(() => {
     loadData();
@@ -111,6 +115,35 @@ export function ArrearsPage() {
     }
   };
 
+  const canReviewArrears = ['admin', 'payroll_officer'].includes(user?.role || '');
+  const canMergeArrears = ['admin', 'payroll_officer', 'payroll_manager', 'hr_manager'].includes(user?.role || '');
+  const canBulkSelectArrears = canReviewArrears || canMergeArrears;
+
+  const isSelectableArrears = (item: Arrears) =>
+    (item.status === 'pending' && canReviewArrears) || (item.status === 'approved' && canMergeArrears);
+
+  const selectableArrearsIds = useMemo(
+    () => arrears.filter((item) => isSelectableArrears(item)).map((item) => item.id),
+    [arrears, canReviewArrears, canMergeArrears],
+  );
+
+  const selectedPendingArrears = useMemo(
+    () => arrears.filter((item) => selectedArrearsIds.includes(item.id) && item.status === 'pending'),
+    [arrears, selectedArrearsIds],
+  );
+
+  const selectedApprovedArrears = useMemo(
+    () => arrears.filter((item) => selectedArrearsIds.includes(item.id) && item.status === 'approved'),
+    [arrears, selectedArrearsIds],
+  );
+
+  useEffect(() => {
+    setSelectedArrearsIds((currentSelection) => {
+      const allowedIds = new Set(arrears.filter((item) => isSelectableArrears(item)).map((item) => item.id));
+      return currentSelection.filter((id) => allowedIds.has(id));
+    });
+  }, [arrears, canReviewArrears, canMergeArrears]);
+
   if (loading) {
     return <PageSkeleton mode="table" />;
   }
@@ -120,7 +153,7 @@ export function ArrearsPage() {
       setApprovingId(arrearsId);
       await arrearsAPI.approveArrears(arrearsId, user!.id, user!.email);
       showToast.success('Arrears approved successfully');
-      loadData();
+      await loadData();
     } catch (error: any) {
       console.error('Failed to approve arrears:', error);
       showToast.error('Failed to approve arrears', error.message || 'An error occurred');
@@ -129,20 +162,48 @@ export function ArrearsPage() {
     }
   };
 
+  const handleRejectArrears = async (arrearsId: string) => {
+    const confirmed = await confirm({
+      title: 'Reject Arrears?',
+      message: 'This arrears record will be marked as rejected.',
+    });
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setRejectingId(arrearsId);
+      await arrearsAPI.rejectArrears(arrearsId, user!.id, user!.email, '');
+      showToast.success('Arrears rejected successfully');
+      await loadData();
+    } catch (error: any) {
+      showToast.error('Failed to reject arrears', error.message || 'An error occurred');
+    } finally {
+      setRejectingId(null);
+    }
+  };
+
   const handleMergeToPayroll = async () => {
-    if (!selectedArrears || !selectedBatchId) {
+    const bulkMergeIds = selectedApprovedArrears.map((item) => item.id);
+    if ((!selectedArrears && !isBulkMergeMode) || !selectedBatchId) {
       console.error('Please select a payroll batch');
       return;
     }
 
     try {
       setIsSubmitting(true);
-      const response = await arrearsAPI.mergeArrearsToPayroll(selectedArrears.id, selectedBatchId, user!.id, user!.email);
+      const response = isBulkMergeMode
+        ? await arrearsAPI.bulkMergeArrearsToPayroll(bulkMergeIds, selectedBatchId, user!.id, user!.email)
+        : await arrearsAPI.mergeArrearsToPayroll(selectedArrears!.id, selectedBatchId, user!.id, user!.email);
       showToast.success(response.message || 'Arrears merged successfully');
       setShowMergeModal(false);
+      setIsBulkMergeMode(false);
       setSelectedArrears(null);
       setSelectedBatchId('');
-      loadData();
+      if (isBulkMergeMode) {
+        setSelectedArrearsIds((currentSelection) => currentSelection.filter((id) => !bulkMergeIds.includes(id)));
+      }
+      await loadData();
     } catch (error: any) {
       console.error('Failed to merge arrears:', error);
       showToast.error('Failed to merge arrears', error.message || 'An error occurred');
@@ -162,9 +223,9 @@ export function ArrearsPage() {
 
     try {
       setRecalculatingId(arrearsId);
-      const updated = await arrearsAPI.recalculateArrears(arrearsId, user!.id, user!.email);
+      await arrearsAPI.recalculateArrears(arrearsId, user!.id, user!.email);
       showToast.success('Arrears recalculated successfully');
-      loadData();
+      await loadData();
     } catch (error: any) {
       showToast.error('Failed to recalculate arrears', error.message || 'An error occurred');
     } finally {
@@ -176,7 +237,7 @@ export function ArrearsPage() {
     try {
       await arrearsAPI.createArrears(data);
       showToast.success('Adjustment created successfully');
-      loadData();
+      await loadData();
     } catch (error: any) {
       showToast.error('Failed to create adjustment', error.message || 'An error occurred');
       throw error;
@@ -188,13 +249,132 @@ export function ArrearsPage() {
     try {
       await arrearsAPI.deleteArrears(id);
       showToast.success('Arrears deleted successfully');
-      loadData();
+      await loadData();
     } catch (error: any) {
       showToast.error('Failed to delete arrears', error.message || 'An error occurred');
     }
   };
 
+  const toggleArrearsSelection = (arrearsId: string) => {
+    setSelectedArrearsIds((currentSelection) =>
+      currentSelection.includes(arrearsId)
+        ? currentSelection.filter((id) => id !== arrearsId)
+        : [...currentSelection, arrearsId],
+    );
+  };
+
+  const toggleSelectAllPending = () => {
+    if (selectableArrearsIds.length === 0) {
+      setSelectedArrearsIds([]);
+      return;
+    }
+
+    const allSelected = selectableArrearsIds.every((id) => selectedArrearsIds.includes(id));
+    setSelectedArrearsIds((currentSelection) => {
+      const nonSelectable = currentSelection.filter((id) => !selectableArrearsIds.includes(id));
+      return allSelected ? nonSelectable : [...nonSelectable, ...selectableArrearsIds];
+    });
+  };
+
+  const openBulkMergeModal = () => {
+    if (selectedApprovedArrears.length === 0) {
+      return;
+    }
+
+    setSelectedArrears(null);
+    setSelectedBatchId('');
+    setIsBulkMergeMode(true);
+    setShowMergeModal(true);
+  };
+
+  const handleBulkArrearsAction = async (action: 'approve' | 'reject') => {
+    if (!canReviewArrears || selectedPendingArrears.length === 0) {
+      return;
+    }
+
+    const actionLabel = action === 'approve' ? 'approve' : 'reject';
+    const confirmed = await confirm({
+      title: action === 'approve' ? 'Bulk Approve Arrears?' : 'Bulk Reject Arrears?',
+      message: `${selectedPendingArrears.length} pending arrears record${selectedPendingArrears.length === 1 ? '' : 's'} will be ${actionLabel}d. Continue?`,
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
+    setBulkActionLoading(true);
+    try {
+      const result =
+        action === 'approve'
+          ? await arrearsAPI.bulkApproveArrears(selectedPendingArrears.map((item) => item.id))
+          : await arrearsAPI.bulkRejectArrears(selectedPendingArrears.map((item) => item.id));
+
+      const successfulIds = Array.isArray(result?.successes)
+        ? result.successes.map((item: any) => item.id).filter(Boolean)
+        : [];
+      const failedArrears = Array.isArray(result?.failures) ? result.failures : [];
+
+      setSelectedArrearsIds((currentSelection) => currentSelection.filter((id) => !successfulIds.includes(id)));
+      await loadData();
+
+      if (successfulIds.length > 0) {
+        showToast.success(
+          `${action === 'approve' ? 'Approved' : 'Rejected'} ${successfulIds.length} arrears record${successfulIds.length === 1 ? '' : 's'} successfully.`,
+        );
+      }
+
+      if (failedArrears.length > 0) {
+        const failedSummary = failedArrears
+          .slice(0, 3)
+          .map((item: any) => [item.staff_number, item.staff_name].filter(Boolean).join(' ') || item.id)
+          .join(', ');
+        if (successfulIds.length > 0) {
+          showToast.warning(
+            `${failedArrears.length} arrears record${failedArrears.length === 1 ? '' : 's'} failed${failedSummary ? `: ${failedSummary}` : ''}${failedArrears.length > 3 ? '...' : ''}`,
+          );
+        } else {
+          showToast.error(
+            'Bulk arrears action failed',
+            `${failedArrears.length} arrears record${failedArrears.length === 1 ? '' : 's'} failed${failedSummary ? `: ${failedSummary}` : ''}${failedArrears.length > 3 ? '...' : ''}`,
+          );
+        }
+      }
+    } catch (error: any) {
+      showToast.error(`Failed to ${actionLabel} arrears`, error?.message || 'An error occurred');
+    } finally {
+      setBulkActionLoading(false);
+    }
+  };
+
   const columns = [
+    ...(canBulkSelectArrears
+      ? [
+          {
+            header: (
+              <input
+                type="checkbox"
+                checked={selectableArrearsIds.length > 0 && selectableArrearsIds.every((id) => selectedArrearsIds.includes(id))}
+                onChange={toggleSelectAllPending}
+                disabled={selectableArrearsIds.length === 0 || bulkActionLoading}
+                aria-label="Select all eligible arrears"
+                className="h-4 w-4 rounded border-border"
+              />
+            ),
+            accessor: (row: Arrears) =>
+              isSelectableArrears(row) ? (
+                <input
+                  type="checkbox"
+                  checked={selectedArrearsIds.includes(row.id)}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={() => toggleArrearsSelection(row.id)}
+                  disabled={bulkActionLoading}
+                  aria-label={`Select arrears for ${row.staff_name}`}
+                  className="h-4 w-4 rounded border-border"
+                />
+              ) : null,
+          },
+        ]
+      : []),
     {
       header: 'Staff Number',
       accessor: 'staff_number' as keyof Arrears,
@@ -240,7 +420,8 @@ export function ArrearsPage() {
           return <span className="text-muted-foreground text-xs italic">View Only</span>;
         }
 
-        const isProcessing = approvingId === row.id || recalculatingId === row.id;
+        const isProcessing =
+          approvingId === row.id || rejectingId === row.id || recalculatingId === row.id || bulkActionLoading;
 
         return (
           <DropdownMenu>
@@ -266,10 +447,21 @@ export function ArrearsPage() {
                   Approve Arrears
                 </DropdownMenuItem>
               )}
-              {row.status === 'approved' && (
+              {row.status === 'pending' && canReviewArrears && (
+                <DropdownMenuItem
+                  onClick={() => handleRejectArrears(row.id)}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <XCircle className="w-4 h-4 mr-2 text-red-600" />
+                  Reject Arrears
+                </DropdownMenuItem>
+              )}
+              {row.status === 'approved' && canMergeArrears && (
                 <DropdownMenuItem
                   onClick={() => {
                     setSelectedArrears(row);
+                    setIsBulkMergeMode(false);
+                    setSelectedBatchId('');
                     setShowMergeModal(true);
                   }}
                 >
@@ -304,6 +496,7 @@ export function ArrearsPage() {
     total: arrears.length,
     pending: arrears.filter(a => a.status === 'pending').length,
     approved: arrears.filter(a => a.status === 'approved').length,
+    rejected: arrears.filter(a => a.status === 'rejected').length,
     processed: arrears.filter(a => a.status === 'processed').length,
     totalAmount: arrears.reduce((sum, a) => sum + Number(a.total_arrears), 0),
   };
@@ -329,7 +522,7 @@ export function ArrearsPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6 justify-items-center md:justify-items-stretch max-w-sm md:max-w-none mx-auto">
+      <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mb-6 justify-items-center md:justify-items-stretch max-w-sm md:max-w-none mx-auto">
         <div className="bg-card border border-border rounded-lg p-6 w-full">
           <div className="flex items-center justify-between mb-2">
             <AlertCircle className="w-8 h-8 text-gray-600 dark:text-gray-500" />
@@ -352,6 +545,14 @@ export function ArrearsPage() {
           </div>
           <div className="text-2xl font-semibold text-foreground">{stats.approved}</div>
           <div className="text-sm text-muted-foreground">Approved</div>
+        </div>
+
+        <div className="bg-card border border-border rounded-lg p-6 w-full">
+          <div className="flex items-center justify-between mb-2">
+            <XCircle className="w-8 h-8 text-red-600 dark:text-red-500" />
+          </div>
+          <div className="text-2xl font-semibold text-foreground">{stats.rejected}</div>
+          <div className="text-sm text-muted-foreground">Rejected</div>
         </div>
 
         <div className="bg-card border border-border rounded-lg p-6 w-full">
@@ -381,6 +582,64 @@ export function ArrearsPage() {
           being merged into payroll.
         </p>
       </div>
+
+      {canBulkSelectArrears && (
+        <div className="mb-6 p-4 border border-border rounded-lg bg-card">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <div className="font-medium text-foreground">
+                {selectedArrearsIds.length} eligible arrears record{selectedArrearsIds.length === 1 ? '' : 's'} selected
+              </div>
+              <div className="text-sm text-muted-foreground">
+                {selectedPendingArrears.length} pending ready for approve/reject. {selectedApprovedArrears.length} approved ready for merge.
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedArrearsIds([])}
+                disabled={selectedArrearsIds.length === 0 || bulkActionLoading}
+                className="px-3 py-2 text-sm border border-border rounded-md hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Clear Selection
+              </button>
+              {canReviewArrears && (
+                <button
+                  type="button"
+                  onClick={() => handleBulkArrearsAction('approve')}
+                  disabled={selectedPendingArrears.length === 0 || bulkActionLoading}
+                  className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {bulkActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                  Bulk Approve
+                </button>
+              )}
+              {canReviewArrears && (
+                <button
+                  type="button"
+                  onClick={() => handleBulkArrearsAction('reject')}
+                  disabled={selectedPendingArrears.length === 0 || bulkActionLoading}
+                  className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {bulkActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
+                  Bulk Reject
+                </button>
+              )}
+              {canMergeArrears && (
+                <button
+                  type="button"
+                  onClick={openBulkMergeModal}
+                  disabled={selectedApprovedArrears.length === 0 || bulkActionLoading}
+                  className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <TrendingUp className="w-4 h-4" />
+                  Bulk Merge
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <DataTable
         data={arrears}
@@ -486,11 +745,13 @@ export function ArrearsPage() {
         isOpen={showMergeModal}
         onClose={() => {
           setShowMergeModal(false);
+          setIsBulkMergeMode(false);
           setSelectedArrears(null);
           setSelectedBatchId('');
         }}
-        title="Merge Arrears to Payroll Batch"
+        title={isBulkMergeMode ? 'Bulk Merge Arrears to Payroll Batch' : 'Merge Arrears to Payroll Batch'}
         arrears={selectedArrears}
+        arrearsList={isBulkMergeMode ? selectedApprovedArrears : []}
         payrollBatches={payrollBatches}
         selectedBatchId={selectedBatchId}
         onBatchChange={setSelectedBatchId}

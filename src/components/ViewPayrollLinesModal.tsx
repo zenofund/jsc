@@ -124,15 +124,15 @@ export function ViewPayrollLinesModal({
 
   const round2 = (value: number) => Math.round(value * 100) / 100;
 
-  const formatExcelText = (value: unknown) => {
+  const formatExportText = (value: unknown) => {
     const text = String(value ?? '').trim();
     if (!text) return '';
-    return `="${text.replace(/"/g, '""')}"`;
+    return text;
   };
 
   const formatExportAccountNumber = (value: unknown) => {
     const acc = String(value ?? '').trim();
-    return formatExcelText(acc);
+    return formatExportText(acc);
   };
 
   const isCooperativeDeduction = (item: any) => {
@@ -341,7 +341,7 @@ export function ViewPayrollLinesModal({
       }),
       { id: 'total_deductions', header: 'Tot. Ded.', isMoney: true, get: (line) => toCsvMoney(line.total_deductions) },
       { id: 'net_pay', header: 'Net Pay', isMoney: true, get: (line) => toCsvMoney(line.net_pay) },
-      { id: 'bank_code', header: 'Bank Code', isMoney: false, get: (line) => formatExcelText(getBankCode((line as any).bank_name)) },
+      { id: 'bank_code', header: 'Bank Code', isMoney: false, get: (line) => formatExportText(getBankCode((line as any).bank_name)) },
       { id: 'account_number', header: 'Account Number', isMoney: false, get: (line) => formatExportAccountNumber((line as any).account_number) },
     ];
 

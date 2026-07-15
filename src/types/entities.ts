@@ -349,7 +349,7 @@ export interface Arrears {
   effective_date: string;
   months_owed: number;
   total_arrears: number;
-  status: 'pending' | 'approved' | 'processed' | 'paid';
+  status: 'pending' | 'approved' | 'rejected' | 'processed' | 'paid';
   approved_by?: string;
   approved_at?: string;
   payroll_batch_id?: string;

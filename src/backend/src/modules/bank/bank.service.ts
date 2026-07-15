@@ -77,10 +77,10 @@ export class BankService {
 
   constructor(private databaseService: DatabaseService) {}
 
-  private formatExcelText(value: unknown): string {
+  private formatExportText(value: unknown): string {
     const text = String(value ?? '').trim();
     if (!text) return '';
-    return `="${text.replace(/"/g, '""')}"`;
+    return text.replace(/"/g, '""');
   }
   
   async onModuleInit() {
@@ -491,7 +491,7 @@ export class BankService {
       let serial = 1;
       for (const txn of transactions) {
         const bankCode = this.BANK_SORT_CODES[txn.bank_name?.toLowerCase()] || '';
-        content += `${serial++},${this.formatExcelText(txn.account_number)},${this.formatExcelText(bankCode)},${txn.amount},"${txn.staff_name}","Salary Payment ${batch.batch_number}"\n`;
+        content += `${serial++},${this.formatExportText(txn.account_number)},${this.formatExportText(bankCode)},${txn.amount},"${txn.staff_name}","Salary Payment ${batch.batch_number}"\n`;
       }
       filename = `NIBSS_${batch.batch_number.replace(/\//g, '-')}.csv`;
     } else if (batch.file_format === 'remita') {
@@ -499,7 +499,7 @@ export class BankService {
       content = 'BeneficiaryName,BeneficiaryAccount,BankCode,BeneficiaryAmount,Narration\n';
       for (const txn of transactions) {
         const bankCode = this.BANK_SORT_CODES[txn.bank_name?.toLowerCase()] || '';
-        content += `"${txn.staff_name}",${this.formatExcelText(txn.account_number)},${this.formatExcelText(bankCode)},${txn.amount},"Salary Payment ${batch.batch_number}"\n`;
+        content += `"${txn.staff_name}",${this.formatExportText(txn.account_number)},${this.formatExportText(bankCode)},${txn.amount},"Salary Payment ${batch.batch_number}"\n`;
       }
       filename = `REMITA_${batch.batch_number.replace(/\//g, '-')}.csv`;
     } else if (batch.file_format === 'custom_csv') {
@@ -507,13 +507,13 @@ export class BankService {
       for (const txn of transactions) {
         const bankName = String(txn.bank_name || '').toLowerCase();
         const bankCode = bankName.includes('zenith') ? '' : (this.BANK_SORT_CODES[bankName] || '');
-        content += `"${batch.batch_number}","${txn.staff_name}",${txn.amount},${paymentDate},${txn.staff_number || ''},${this.formatExcelText(txn.account_number)},${this.formatExcelText(bankCode)},${this.formatExcelText(debitAccountNumber)}\n`;
+        content += `"${batch.batch_number}","${txn.staff_name}",${txn.amount},${paymentDate},${txn.staff_number || ''},${this.formatExportText(txn.account_number)},${this.formatExportText(bankCode)},${this.formatExportText(debitAccountNumber)}\n`;
       }
       filename = `CUSTOM_${batch.batch_number.replace(/\//g, '-')}.csv`;
     } else if (batch.file_format === 'csv') {
       content = 'Account Number,Account Name,Bank Name,Amount,Narration\n';
       for (const txn of transactions) {
-        content += `${this.formatExcelText(txn.account_number)},"${txn.staff_name}","${txn.bank_name}",${txn.amount},"Salary Payment ${batch.batch_number}"\n`;
+        content += `${this.formatExportText(txn.account_number)},"${txn.staff_name}","${txn.bank_name}",${txn.amount},"Salary Payment ${batch.batch_number}"\n`;
       }
       filename = `${batch.batch_number.replace(/\//g, '-')}.csv`;
     } else if (batch.file_format === 'excel') {

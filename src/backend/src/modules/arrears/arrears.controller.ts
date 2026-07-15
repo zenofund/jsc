@@ -39,6 +39,41 @@ export class ArrearsController {
     return this.arrearsService.approveArrears(id, req.user.userId);
   }
 
+  @Post(':id/reject')
+  @Roles('admin', 'payroll_officer')
+  @ApiOperation({ summary: 'Reject arrears' })
+  rejectArrears(@Param('id') id: string, @Body() body: { reason?: string }, @Request() req) {
+    return this.arrearsService.rejectArrears(id, req.user.userId, body?.reason);
+  }
+
+  @Post('bulk-approve')
+  @Roles('admin', 'payroll_officer')
+  @ApiOperation({ summary: 'Bulk approve arrears' })
+  bulkApproveArrears(@Body() body: { arrearsIds?: string[] }, @Request() req) {
+    return this.arrearsService.bulkApproveArrears(body?.arrearsIds || [], req.user.userId);
+  }
+
+  @Post('bulk-reject')
+  @Roles('admin', 'payroll_officer')
+  @ApiOperation({ summary: 'Bulk reject arrears' })
+  bulkRejectArrears(@Body() body: { arrearsIds?: string[]; reason?: string }, @Request() req) {
+    return this.arrearsService.bulkRejectArrears(body?.arrearsIds || [], req.user.userId, body?.reason);
+  }
+
+  @Post('bulk-merge')
+  @Roles('admin', 'payroll_officer', 'payroll_manager', 'hr_manager')
+  @ApiOperation({ summary: 'Bulk merge arrears to payroll batch' })
+  bulkMergeArrears(
+    @Body() body: { arrearsIds?: string[]; payrollBatchId: string },
+    @Request() req,
+  ) {
+    return this.arrearsService.bulkMergeArrearsToPayroll(
+      body?.arrearsIds || [],
+      body?.payrollBatchId,
+      req.user.userId,
+    );
+  }
+
   @Post(':id/merge')
   @Roles('admin', 'payroll_officer', 'payroll_manager', 'hr_manager')
   @ApiOperation({ summary: 'Merge arrears to payroll batch' })
