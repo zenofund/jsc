@@ -28,8 +28,10 @@ export class ArrearsService {
     }
 
     // Prepare details JSON
+    const effDate = new Date(effectiveDate);
+    const monthStrRaw = String(effDate.getMonth() + 1).padStart(2, '0');
     const details = [{
-      month: new Date(effectiveDate).toISOString().substring(0, 7),
+      month: `${effDate.getFullYear()}-${monthStrRaw}`,
       amount: parseFloat(amount),
       description: description || 'Manual Adjustment'
     }];

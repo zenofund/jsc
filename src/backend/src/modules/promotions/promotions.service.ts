@@ -539,7 +539,8 @@ export class PromotionsService {
           const details = [];
           for (let i = 0; i < monthsDiff; i++) {
             const monthDate = new Date(effectiveMonth.getFullYear(), effectiveMonth.getMonth() + i, 1);
-            const monthStr = monthDate.toISOString().substring(0, 7);
+            const monthStrRaw = String(monthDate.getMonth() + 1).padStart(2, '0');
+            const monthStr = `${monthDate.getFullYear()}-${monthStrRaw}`;
             const amount = i === 0 ? proratedFirstMonth : monthlyDifference;
             details.push({
               month: monthStr,
