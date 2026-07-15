@@ -19,6 +19,7 @@ import { UpdateStaffDto } from './dto/update-staff.dto';
 import { QueryStaffDto } from './dto/query-staff.dto';
 import { RolesGuard } from '@common/guards/roles.guard';
 import { Roles } from '@common/decorators/roles.decorator';
+import { SkipAudit } from '../../common/decorators/skip-audit.decorator';
 
 @ApiTags('Staff')
 @ApiBearerAuth()
@@ -33,7 +34,8 @@ export class StaffController {
 
   @Post()
   @Roles('admin', 'hr_manager')
-  @ApiOperation({ summary: 'Create new staff member' })
+  @SkipAudit()
+  @ApiOperation({ summary: 'Create a new staff member' })
   @ApiResponse({ status: 201, description: 'Staff created successfully' })
   @ApiResponse({ status: 400, description: 'Bad request' })
   create(@Body() createStaffDto: CreateStaffDto, @Request() req) {
@@ -157,6 +159,7 @@ export class StaffController {
 
   @Patch(':id')
   @Roles('admin', 'hr_manager')
+  @SkipAudit()
   @ApiOperation({ summary: 'Update staff information' })
   @ApiResponse({ status: 200, description: 'Staff updated successfully' })
   update(@Param('id') id: string, @Body() updateStaffDto: UpdateStaffDto, @Request() req) {
@@ -165,6 +168,7 @@ export class StaffController {
 
   @Delete(':id')
   @Roles('admin')
+  @SkipAudit()
   @ApiOperation({ summary: 'Delete staff (soft delete)' })
   @ApiResponse({ status: 200, description: 'Staff deleted successfully' })
   remove(@Param('id') id: string, @Request() req) {

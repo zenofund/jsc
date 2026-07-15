@@ -1,14 +1,28 @@
 import { Injectable, NestInterceptor, ExecutionContext, CallHandler } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { AuditService } from '@modules/audit/audit.service';
 import { AuditAction } from '@modules/audit/dto/audit.dto';
+import { SKIP_AUDIT_KEY } from '../decorators/skip-audit.decorator';
 
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
-  constructor(private readonly auditService: AuditService) {}
+  constructor(
+    private readonly auditService: AuditService,
+    private readonly reflector: Reflector
+  ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
+    const skipAudit = this.reflector.getAllAndOverride<boolean>(SKIP_AUDIT_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+
+    if (skipAudit) {
+      return next.handle();
+    }
+
     const req = context.switchToHttp().getRequest();
     const method = (req?.method || '').toUpperCase();
     if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
@@ -16,13 +30,7 @@ export class AuditInterceptor implements NestInterceptor {
     }
     const url: string = req?.originalUrl || req?.url || '';
     const lowerUrl = (url || '').toLowerCase();
-    if (
-      method === 'POST' &&
-      lowerUrl.includes('/payroll/batches/') &&
-      (lowerUrl.endsWith('/approve') || lowerUrl.endsWith('/submit'))
-    ) {
-      return next.handle();
-    }
+
     const parts = url.replace(/^\/+/, '').split('/');
     let entity = parts[0] || '';
     if (entity === 'api' && parts[1] && parts[2]) {
@@ -54,9 +62,16 @@ export class AuditInterceptor implements NestInterceptor {
         let oldValues: Record<string, any> | undefined = undefined;
         let newValues: Record<string, any> | undefined = undefined;
         if (action === AuditAction.CREATE) {
-          newValues = typeof response === 'object' ? response : undefined;
+          if (typeof body === 'object' && body) {
+            newValues = {
+              ...body,
+              ...(typeof response === 'object' && response ? response : {}),
+            };
+          } else {
+            newValues = typeof response === 'object' ? response : undefined;
+          }
         } else if (action === AuditAction.UPDATE) {
-          oldValues = typeof body === 'object' ? body : undefined;
+          oldValues = undefined; // We cannot reliably know old values in a generic interceptor
           newValues = typeof response === 'object' ? response : undefined;
         } else if (action === AuditAction.DELETE) {
           oldValues = entityId ? { id: entityId } : undefined;

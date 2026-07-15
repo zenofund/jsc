@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Breadcrumb } from '../../components/Breadcrumb';
 import { DataTable } from '../../components/DataTable';
-import { auditAPI, departmentAPI, payrollAPI, staffAPI, userAPI } from '../../lib/api-client';
+import { auditAPI, departmentAPI, payrollAPI, promotionAPI, staffAPI, userAPI } from '../../lib/api-client';
 import { cooperativeAPI, loanApplicationAPI, loanTypeAPI } from '../../lib/loanAPI';
 import { PageSkeleton } from '../../components/PageLoader';
 import { Search, Filter, RefreshCw, Clock } from 'lucide-react';
@@ -47,11 +47,20 @@ export function AuditLogPage() {
   const truncateId = (id?: string) => (id ? id.slice(0, 8) + '…' : '');
 
   const toDisplayCase = (value?: string) => {
-    const raw = String(value || '').replace(/[_-]+/g, ' ').trim();
+    const raw = String(value || '')
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/[_-]+/g, ' ')
+      .trim();
     if (!raw) return '';
     return raw
       .split(/\s+/)
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+      .map((part) => {
+        const lower = part.toLowerCase();
+        if (lower === 'id') return 'ID';
+        if (lower === 'api') return 'API';
+        if (lower === 'hr') return 'HR';
+        return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+      })
       .join(' ');
   };
 
@@ -81,6 +90,255 @@ export function AuditLogPage() {
     if (!text) return '';
     if (isUuidLike(text)) return truncateId(text);
     return text;
+  };
+
+  const inferEntityKind = (log: AuditLog) => {
+    const entity = String(log.entity || '').trim().toLowerCase();
+    const description = String(log.description || '').trim().toLowerCase();
+    const snapshot = getEntitySnapshot(log);
+    const snapshotKeys = Object.keys(snapshot).map((key) => key.toLowerCase());
+
+    if (description.includes('/cooperatives/members/')) return 'cooperative_member';
+    if (description.includes('/cooperatives/contributions')) return 'cooperative_contribution';
+    if (description.includes('/cooperatives/')) return 'cooperative';
+    if (description.includes('/promotions/')) return 'promotion';
+    if (description.includes('/loans/applications/')) return 'loan_application';
+    if (description.includes('/loans/types/')) return 'loan_type';
+    if (description.includes('/staff/')) return 'staff';
+    if (description.includes('/departments/')) return 'department';
+    if (description.includes('/users/')) return 'user';
+    if (description.includes('/payroll/batches/')) return 'payroll';
+
+    if (snapshotKeys.includes('member_number') || snapshotKeys.includes('monthly_contribution')) {
+      return 'cooperative_member';
+    }
+    if (
+      snapshotKeys.includes('staff_id') &&
+      (snapshotKeys.includes('cooperative_id') ||
+        entity === 'cooperatives' ||
+        entity === 'cooperative') &&
+      (snapshotKeys.includes('join_date') ||
+        snapshotKeys.includes('shares_owned') ||
+        snapshotKeys.includes('registration_fee_amount') ||
+        snapshotKeys.includes('annual_subscription_amount'))
+    ) {
+      return 'cooperative_member';
+    }
+    if (snapshotKeys.includes('contribution_month') || snapshotKeys.includes('contribution_type')) {
+      return 'cooperative_contribution';
+    }
+    if (
+      snapshotKeys.includes('new_grade_level') ||
+      snapshotKeys.includes('new_step') ||
+      snapshotKeys.includes('promotion_type') ||
+      snapshotKeys.includes('effective_date') ||
+      snapshotKeys.includes('promotion_date')
+    ) {
+      return 'promotion';
+    }
+
+    if (entity === 'cooperatives' || entity === 'cooperative') return 'cooperative';
+    if (entity === 'promotions' || entity === 'promotion') return 'promotion';
+    if (entity === 'departments' || entity === 'department') return 'department';
+    if (entity === 'staff' || entity === 'staffs' || entity === 'employees') return 'staff';
+    if (entity === 'users' || entity === 'user') return 'user';
+    if (entity === 'payroll' || entity === 'payroll_batch' || entity === 'payroll_batches') return 'payroll';
+    if (entity === 'loan_application' || entity === 'loan_applications') return 'loan_application';
+    if (entity === 'loan_type' || entity === 'loan_types') return 'loan_type';
+    if (entity === 'cooperative_member' || entity === 'cooperative_members' || entity === 'member' || entity === 'members') {
+      return 'cooperative_member';
+    }
+
+    return entity || 'record';
+  };
+
+  const getRecordTypeLabel = (log: AuditLog) => {
+    const kind = inferEntityKind(log);
+    if (kind === 'promotion') return 'Promotion';
+    if (kind === 'cooperative_member') return 'Cooperative Membership';
+    if (kind === 'cooperative_contribution') return 'Cooperative Contribution';
+    if (kind === 'loan_application') return 'Loan Application';
+    if (kind === 'loan_type') return 'Loan Type';
+    if (kind === 'payroll') return 'Payroll Batch';
+    if (kind === 'user') return 'User Account';
+    if (kind === 'staff') return 'Staff Record';
+    if (kind === 'department') return 'Department';
+    if (kind === 'cooperative') return 'Cooperative';
+    return formatEntity(kind);
+  };
+
+  const normalizeFieldKey = (field: string) =>
+    String(field || '')
+      .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+      .replace(/[\s-]+/g, '_')
+      .replace(/__+/g, '_')
+      .trim()
+      .toLowerCase();
+
+  const FIELD_ALIASES: Record<string, string> = {
+    cooperativeid: 'cooperative_id',
+    cooperative_id: 'cooperative_id',
+    cooperativename: 'cooperative_name',
+    cooperative_name: 'cooperative_name',
+    monthlycontribution: 'monthly_contribution',
+    monthly_contribution: 'monthly_contribution',
+    registrationfeeamount: 'registration_fee_amount',
+    registration_fee_amount: 'registration_fee_amount',
+    annualsubscriptionamount: 'annual_subscription_amount',
+    annual_subscription_amount: 'annual_subscription_amount',
+    sharesowned: 'shares_owned',
+    shares_owned: 'shares_owned',
+    totalcontributions: 'total_contributions',
+    total_contributions: 'total_contributions',
+    totalsharecapital: 'total_share_capital',
+    total_share_capital: 'total_share_capital',
+    totalloanstaken: 'total_loans_taken',
+    total_loans_taken: 'total_loans_taken',
+    totalloansrepaid: 'total_loans_repaid',
+    total_loans_repaid: 'total_loans_repaid',
+    outstandingloanbalance: 'outstanding_loan_balance',
+    outstanding_loan_balance: 'outstanding_loan_balance',
+    dividendearned: 'dividend_earned',
+    dividend_earned: 'dividend_earned',
+    staffid: 'staff_id',
+    staff_id: 'staff_id',
+    staffname: 'staff_name',
+    staff_name: 'staff_name',
+    staffnumber: 'staff_number',
+    staff_number: 'staff_number',
+    membernumber: 'member_number',
+    member_number: 'member_number',
+    joindate: 'join_date',
+    join_date: 'join_date',
+    exitdate: 'exit_date',
+    exit_date: 'exit_date',
+    createdby: 'created_by',
+    created_by: 'created_by',
+    updatedby: 'updated_by',
+    updated_by: 'updated_by',
+    departmentid: 'department_id',
+    department_id: 'department_id',
+    loantypeid: 'loan_type_id',
+    loan_type_id: 'loan_type_id',
+    loanapplicationid: 'loan_application_id',
+    loan_application_id: 'loan_application_id',
+    payrollbatchid: 'payroll_batch_id',
+    payroll_batch_id: 'payroll_batch_id',
+  };
+
+  const getCanonicalFieldName = (field: string) => {
+    const normalized = normalizeFieldKey(field);
+    const compact = normalized.replace(/_/g, '');
+    return FIELD_ALIASES[normalized] || FIELD_ALIASES[compact] || normalized;
+  };
+
+  const getCanonicalObject = (value: any) => {
+    const source = normalizeAuditObject(value);
+    const canonical: Record<string, any> = {};
+    Object.entries(source).forEach(([rawKey, rawValue]) => {
+      const key = getCanonicalFieldName(rawKey);
+      if (!(key in canonical)) {
+        canonical[key] = rawValue;
+      }
+    });
+    return canonical;
+  };
+
+  const isBlankValue = (value: any) => {
+    if (value === null || value === undefined) return true;
+    if (typeof value === 'string') return value.trim() === '';
+    if (Array.isArray(value)) return value.length === 0;
+    return false;
+  };
+
+  const getComparableValue = (field: string, value: any): any => {
+    if (isBlankValue(value)) return null;
+
+    if (typeof value === 'number') return Number(value);
+    if (typeof value === 'boolean') return value;
+
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) return null;
+
+      if (!Number.isNaN(Number(trimmed)) && (isMoneyField(field) || /^-?\d+(\.\d+)?$/.test(trimmed))) {
+        return Number(trimmed);
+      }
+
+      if (/^\d{4}-\d{2}-\d{2}(T.*)?$/.test(trimmed)) {
+        const date = new Date(trimmed);
+        if (!Number.isNaN(date.getTime())) return date.getTime();
+      }
+
+      return trimmed.toLowerCase();
+    }
+
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  };
+
+  const areEquivalentValues = (field: string, before: any, after: any) =>
+    getComparableValue(field, before) === getComparableValue(field, after);
+
+  const hiddenChangeFields = new Set([
+    'id',
+    'created_by',
+    'updated_by',
+    'approved_by',
+    'rejected_by',
+    'created_at',
+    'updated_at',
+    'approval_date',
+    'approval_remarks',
+    'ip_address',
+    'password',
+    'password_hash',
+    'staff_number',
+    'member_number',
+    'department',
+    'staff_name',
+    'cooperative_name',
+    'dividend_earned',
+    'total_loans_taken',
+    'total_loans_repaid',
+    'outstanding_loan_balance',
+    'total_contributions',
+    'total_share_capital',
+  ]);
+
+  const getBusinessNote = (log: AuditLog, resolved?: ResolvedEntityInfo | null) => {
+    const action = String(log.action || '').trim().toLowerCase();
+    const target = getTargetDisplayName(log, resolved);
+    const recordType = getRecordTypeLabel(log).toLowerCase();
+
+    if (inferEntityKind(log) === 'promotion') {
+      const source = resolved?.data || getEntitySnapshot(log);
+      const staffName = String(source?.staff_name || getPersonName(source) || '').trim();
+      const nextLevel = formatGradeStep(source?.new_grade_level, source?.new_step);
+      const effectiveDate = source?.effective_date || source?.promotion_date;
+      const effectiveLabel = effectiveDate ? formatTimestampWAT(String(effectiveDate)).date : '';
+      const detailParts = [nextLevel, effectiveLabel && effectiveLabel !== '-' ? `effective ${effectiveLabel}` : ''].filter(Boolean);
+
+      if (action === 'create') return `${staffName || 'A staff member'} was submitted for promotion${detailParts.length ? ` ${detailParts.join(', ')}` : ''}.`;
+      if (action === 'approve') return `${staffName || 'The staff member'}'s promotion was approved${detailParts.length ? ` ${detailParts.join(', ')}` : ''}.`;
+      if (action === 'reject') return `${staffName || 'The staff member'}'s promotion was rejected.`;
+    }
+
+    if (action === 'create') return `${target} was created.`;
+    if (action === 'update') return `${target} was updated.`;
+    if (action === 'delete') return `${target} was removed.`;
+    if (action === 'approve') return `${target} was approved.`;
+    if (action === 'reject') return `${target} was rejected.`;
+    return `${toDisplayCase(action) || 'This'} action was recorded for this ${recordType}.`;
+  };
+
+  const getRawSystemNote = (log: AuditLog) => {
+    const raw = String(log.description || '').trim();
+    if (!raw) return 'No technical note was recorded.';
+    return raw;
   };
 
   const normalizeAuditObject = (val: any) => {
@@ -151,6 +409,9 @@ export function AuditLogPage() {
     const direct = String(record.full_name || record.name || record.staff_name || '').trim();
     if (direct) return direct;
 
+    const flat = [record.first_name, record.middle_name, record.last_name].filter(Boolean).join(' ').trim();
+    if (flat) return flat;
+
     const bio = record.bio_data;
     if (bio && typeof bio === 'object') {
       return [bio.first_name, bio.middle_name, bio.last_name].filter(Boolean).join(' ').trim();
@@ -160,14 +421,14 @@ export function AuditLogPage() {
   };
 
   const getEntitySnapshot = (log: AuditLog) => {
-    const newObj = normalizeAuditObject(log.new_values);
-    const oldObj = normalizeAuditObject(log.old_values);
+    const newObj = getCanonicalObject(log.new_values);
+    const oldObj = getCanonicalObject(log.old_values);
     return Object.keys(newObj).length > 0 ? newObj : oldObj;
   };
 
   const getSnapshotLabel = (log: AuditLog) => {
     const snapshot = getEntitySnapshot(log);
-    const entity = String(log.entity || '').trim().toLowerCase();
+    const entity = inferEntityKind(log);
 
     const directCandidates = [
       snapshot.name,
@@ -187,33 +448,38 @@ export function AuditLogPage() {
       if (staffName) return staffName;
     }
 
-    if (entity === 'department' || entity === 'departments') {
+    if (entity === 'department') {
       const name = getRawFriendlyLabel(snapshot.name);
       if (name) {
         return /department$/i.test(name) ? name : `${name} Department`;
       }
     }
 
-    if (entity === 'payroll' || entity === 'payroll_batch' || entity === 'payroll_batches') {
+    if (entity === 'payroll') {
       const batchNumber = getRawFriendlyLabel(snapshot.batch_number);
       if (batchNumber) return `Payroll Batch ${batchNumber}`;
       const month = getRawFriendlyLabel(snapshot.month);
       if (month) return `Payroll for ${month}`;
     }
 
-    if (
-      entity === 'cooperative_member' ||
-      entity === 'cooperative_members' ||
-      entity === 'member' ||
-      entity === 'members'
-    ) {
+    if (entity === 'cooperative_member') {
       const staffName = getRawFriendlyLabel(snapshot.staff_name) || getPersonName(snapshot);
       const cooperativeName = getRawFriendlyLabel(snapshot.cooperative_name);
       if (staffName && cooperativeName) return `${staffName} in ${cooperativeName}`;
       if (staffName) return `${staffName}'s membership`;
     }
 
-    if (entity === 'loan_application' || entity === 'loan_applications') {
+    if (entity === 'cooperative') {
+      const cooperativeName = getRawFriendlyLabel(snapshot.name || snapshot.cooperative_name);
+      if (cooperativeName) return cooperativeName;
+    }
+
+    if (entity === 'promotion') {
+      const staffName = getRawFriendlyLabel(snapshot.staff_name);
+      if (staffName) return `Promotion for ${staffName}`;
+    }
+
+    if (entity === 'loan_application') {
       const reference = getRawFriendlyLabel(snapshot.reference_number);
       if (reference) return `Loan Application ${reference}`;
       const staffName = getRawFriendlyLabel(snapshot.staff_name);
@@ -225,6 +491,7 @@ export function AuditLogPage() {
   };
 
   const getFieldLabel = (field: string) => {
+    const canonical = getCanonicalFieldName(field);
     const map: Record<string, string> = {
       id: 'Record ID',
       status: 'Status',
@@ -273,35 +540,166 @@ export function AuditLogPage() {
       reference_number: 'Reference Number',
       batch_number: 'Batch Number',
       must_change_password: 'Force Password Change',
+      old_allowances: 'Previous Allowances',
+      new_allowances: 'Updated Allowances',
+      old_deductions: 'Previous Deductions',
+      new_deductions: 'Updated Deductions',
+      old_grade_level: 'Previous Grade Level',
+      old_step: 'Previous Step',
+      old_basic_salary: 'Previous Basic Salary',
+      new_grade_level: 'New Grade Level',
+      new_step: 'New Step',
+      new_basic_salary: 'New Basic Salary',
+      effective_date: 'Effective Date',
+      promotion_date: 'Promotion Date',
+      promotion_type: 'Promotion Type',
+      rejection_reason: 'Rejection Reason',
     };
-    return map[field] || toDisplayCase(field);
+    return map[canonical] || toDisplayCase(canonical);
   };
 
   const isMoneyField = (field: string) =>
     /(amount|salary|gross|net|balance|fee|contribution|deduction|payment)/i.test(field);
 
+  const isAdjustmentCollection = (value: any) =>
+    Boolean(
+      value &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      Array.isArray((value as any).items),
+    );
+
+  const summarizeAdjustmentCollection = (value: any) => {
+    const items = Array.isArray(value?.items) ? value.items : [];
+    const total =
+      typeof value?.total === 'number'
+        ? value.total
+        : items.reduce((sum: number, item: any) => sum + Number(item?.amount || 0), 0);
+
+    if (items.length === 0) {
+      return `No items, total ${formatMoney(Number(total || 0))}`;
+    }
+
+    const preview = items
+      .slice(0, 3)
+      .map((item: any) => {
+        const name = String(item?.name || item?.code || 'Item').trim();
+        const amount = Number(item?.amount || 0);
+        return `${name} ${formatMoney(amount)}`;
+      })
+      .join('; ');
+
+    const moreCount = items.length - 3;
+    const suffix = moreCount > 0 ? `; plus ${moreCount} more` : '';
+    return `${items.length} item${items.length === 1 ? '' : 's'}, total ${formatMoney(Number(total || 0))}: ${preview}${suffix}`;
+  };
+
+  const formatGradeStep = (gradeLevel: any, step: any) => {
+    const grade = String(gradeLevel ?? '').trim();
+    const stepText = String(step ?? '').trim();
+    if (grade && stepText) return `GL ${grade} Step ${stepText}`;
+    if (grade) return `GL ${grade}`;
+    if (stepText) return `Step ${stepText}`;
+    return '';
+  };
+
+  const describePromotionTarget = (record: any) => {
+    const staffName = String(record?.staff_name || '').trim();
+    const nextLevel = formatGradeStep(record?.new_grade_level, record?.new_step);
+    const effectiveDate = record?.effective_date || record?.promotion_date;
+    const effectiveLabel = effectiveDate ? formatTimestampWAT(String(effectiveDate)).date : '';
+
+    const parts = [
+      staffName ? `for ${staffName}` : '',
+      nextLevel ? `to ${nextLevel}` : '',
+      effectiveLabel && effectiveLabel !== '-' ? `effective ${effectiveLabel}` : '',
+    ].filter(Boolean);
+
+    return parts.length > 0 ? `Promotion ${parts.join(' ')}` : 'Promotion';
+  };
+
+  const buildPromotionNarrative = (log: AuditLog, resolved?: ResolvedEntityInfo | null) => {
+    const source = resolved?.data || getEntitySnapshot(log);
+    const actor = String(log.user_name || log.user_email || log.user_id || 'A user').trim() || 'A user';
+    const action = String(log.action || '').trim().toLowerCase();
+    const staffName = String(source?.staff_name || getPersonName(source) || '').trim() || 'a staff member';
+    const previousLevel = formatGradeStep(source?.old_grade_level, source?.old_step);
+    const nextLevel = formatGradeStep(source?.new_grade_level, source?.new_step);
+    const effectiveDate = source?.effective_date || source?.promotion_date;
+    const effectiveLabel = effectiveDate ? formatTimestampWAT(String(effectiveDate)).date : '';
+    const promotionType = String(source?.promotion_type || '').trim();
+    const time = formatTimestampWAT(log.created_at).time;
+
+    const details = [
+      nextLevel ? `to ${nextLevel}` : '',
+      effectiveLabel && effectiveLabel !== '-' ? `effective ${effectiveLabel}` : '',
+      promotionType ? `as a ${toDisplayCase(promotionType)} promotion` : '',
+    ].filter(Boolean).join(' ');
+
+    if (action === 'create') {
+      return `${actor} created a promotion request for ${staffName}${details ? ` ${details}` : ''} at ${time}.`;
+    }
+    if (action === 'approve') {
+      return `${actor} approved ${staffName}'s promotion${details ? ` ${details}` : ''} at ${time}.`;
+    }
+    if (action === 'reject') {
+      return `${actor} rejected ${staffName}'s promotion${details ? ` ${details}` : ''} at ${time}.`;
+    }
+    if (action === 'update') {
+      const changeText =
+        previousLevel && nextLevel
+          ? ` from ${previousLevel} to ${nextLevel}`
+          : nextLevel
+            ? ` to ${nextLevel}`
+            : '';
+      return `${actor} updated ${staffName}'s promotion${changeText}${effectiveLabel && effectiveLabel !== '-' ? ` effective ${effectiveLabel}` : ''} at ${time}.`;
+    }
+    return `${actor} recorded a promotion for ${staffName}${details ? ` ${details}` : ''} at ${time}.`;
+  };
+
   const getFriendlyReferenceValue = (field: string, value: any, resolved?: ResolvedEntityInfo | null) => {
-    if (field === 'department_id' && resolved?.kind === 'department') return resolved.label;
-    if (field === 'cooperative_id' && resolved?.kind === 'cooperative') return resolved.label;
-    if (field === 'member_id' && resolved?.kind === 'cooperative_member') return resolved.label;
-    if (field === 'loan_application_id' && resolved?.kind === 'loan_application') return resolved.label;
-    if (field === 'loan_type_id' && resolved?.kind === 'loan_type') return resolved.label;
-    if ((field === 'staff_id' || field === 'user_id') && (resolved?.kind === 'staff' || resolved?.kind === 'user')) {
+    const canonical = getCanonicalFieldName(field);
+    if (canonical === 'department_id' && resolved?.kind === 'department') return resolved.label;
+    if (canonical === 'cooperative_id' && resolved?.kind === 'cooperative') return resolved.label;
+    if (canonical === 'cooperative_id' && resolved?.kind === 'cooperative_member') {
+      return String(resolved.data?.cooperative_name || resolved.label || '').trim();
+    }
+    if (canonical === 'member_id' && resolved?.kind === 'cooperative_member') return resolved.label;
+    if (canonical === 'loan_application_id' && resolved?.kind === 'loan_application') return resolved.label;
+    if (canonical === 'loan_type_id' && resolved?.kind === 'loan_type') return resolved.label;
+    if (canonical === 'staff_id' && resolved?.kind === 'cooperative_member') {
+      return String(resolved.data?.staff_name || '').trim();
+    }
+    if ((canonical === 'staff_id' || canonical === 'user_id') && (resolved?.kind === 'staff' || resolved?.kind === 'user')) {
       return resolved.label;
+    }
+    if (canonical === 'staff_name' && resolved?.kind === 'cooperative_member') {
+      return String(resolved.data?.staff_name || '').trim();
     }
     return '';
   };
 
   const formatFriendlyValue = (field: string, value: any, resolved?: ResolvedEntityInfo | null): string => {
+    const canonical = getCanonicalFieldName(field);
     if (value === null || value === undefined || value === '') return 'Not set';
 
-    const referenced = getFriendlyReferenceValue(field, value, resolved);
+    const referenced = getFriendlyReferenceValue(canonical, value, resolved);
     if (referenced) return referenced;
+
+    if (
+      canonical === 'old_allowances' ||
+      canonical === 'new_allowances' ||
+      canonical === 'old_deductions' ||
+      canonical === 'new_deductions' ||
+      isAdjustmentCollection(value)
+    ) {
+      return summarizeAdjustmentCollection(value);
+    }
 
     if (typeof value === 'boolean') return value ? 'Yes' : 'No';
 
     if (typeof value === 'number') {
-      if (isMoneyField(field)) return formatMoney(value);
+      if (isMoneyField(canonical)) return formatMoney(value);
       return Number.isInteger(value) ? value.toLocaleString('en-NG') : String(value);
     }
 
@@ -314,15 +712,15 @@ export function AuditLogPage() {
         return stamp.full !== '-' ? stamp.full : trimmed;
       }
 
-      if (field === 'status' || field === 'payment_status' || field === 'role' || field === 'payment_method') {
-        return field === 'role' ? formatRole(trimmed) : toDisplayCase(trimmed);
+      if (canonical === 'status' || canonical === 'payment_status' || canonical === 'role' || canonical === 'payment_method') {
+        return canonical === 'role' ? formatRole(trimmed) : toDisplayCase(trimmed);
       }
 
-      if (isMoneyField(field) && !Number.isNaN(Number(trimmed))) {
+      if (isMoneyField(canonical) && !Number.isNaN(Number(trimmed))) {
         return formatMoney(Number(trimmed));
       }
 
-      if (field.endsWith('_id')) {
+      if (canonical.endsWith('_id')) {
         return isUuidLike(trimmed) ? truncateId(trimmed) : trimmed;
       }
 
@@ -330,7 +728,7 @@ export function AuditLogPage() {
     }
 
     if (Array.isArray(value)) {
-      const items: string[] = value.map((item) => formatFriendlyValue(field, item, resolved));
+      const items: string[] = value.map((item) => formatFriendlyValue(canonical, item, resolved));
       return items.length > 0 ? items.join(', ') : 'None';
     }
 
@@ -362,19 +760,8 @@ export function AuditLogPage() {
     }
   };
 
-  const getSystemNote = (log: AuditLog) => {
-    const raw = String(log.description || '').trim();
-    if (!raw) return 'No additional system note was recorded.';
-    const cleaned = raw
-      .split('|')
-      .map((part) => part.trim())
-      .filter(Boolean)
-      .join(' | ');
-    return cleaned || 'No additional system note was recorded.';
-  };
-
   const getTargetDisplayName = (log: AuditLog, resolved: any) => {
-    const entity = String(log.entity || '').trim().toLowerCase();
+    const entity = inferEntityKind(log);
     if (resolved?.label) {
       return resolved.label;
     }
@@ -385,13 +772,17 @@ export function AuditLogPage() {
     }
 
     if (entity) {
-      if (log.entity_id) return `${formatEntity(entity)} ${truncateId(log.entity_id)}`;
-      return formatEntity(entity);
+      if (entity === 'cooperative_member' && log.entity_id) return `Membership ${truncateId(log.entity_id)}`;
+      if (log.entity_id) return `${getRecordTypeLabel(log)} ${truncateId(log.entity_id)}`;
+      return getRecordTypeLabel(log);
     }
     return 'the record';
   };
 
   const getLaymanSummary = (log: AuditLog, resolved: any) => {
+    if (inferEntityKind(log) === 'promotion') {
+      return buildPromotionNarrative(log, resolved);
+    }
     const actor = String(log.user_name || log.user_email || log.user_id || 'A user').trim() || 'A user';
     const action = String(log.action || '').trim().toLowerCase();
     const target = getTargetDisplayName(log, resolved);
@@ -426,36 +817,33 @@ export function AuditLogPage() {
       const first = desc.split('|')[0]?.trim();
       return first || formatEntity(log.action);
     }
+    const kind = inferEntityKind(log);
+    if (kind === 'cooperative_member' && String(log.action || '').trim().toLowerCase() === 'update') {
+      return 'Membership Updated';
+    }
+    if (kind === 'cooperative_member' && String(log.action || '').trim().toLowerCase() === 'create') {
+      return 'Membership Created';
+    }
     return formatEntity(log.action);
   };
 
   const getChangeRows = (oldVal?: any, newVal?: any, resolved?: ResolvedEntityInfo | null) => {
-    const oldObj = normalizeAuditObject(oldVal);
-    const newObj = normalizeAuditObject(newVal);
-    const exclude = new Set([
-      'created_at',
-      'updated_at',
-      'approval_date',
-      'approval_remarks',
-      'ip_address',
-      'password',
-      'password_hash',
-    ]);
+    const oldObj = getCanonicalObject(oldVal);
+    const newObj = getCanonicalObject(newVal);
     const allKeys = Array.from(new Set([...Object.keys(oldObj), ...Object.keys(newObj)])).filter(
-      (k) => !exclude.has(k),
+      (k) => !hiddenChangeFields.has(k),
     );
     return allKeys
       .map((k) => {
         const before = (oldObj as any)[k];
         const after = (newObj as any)[k];
-        if (before === after) return null;
+        if (areEquivalentValues(k, before, after)) return null;
+        if (isBlankValue(before) && isBlankValue(after)) return null;
         return {
           field: k,
           label: getFieldLabel(k),
           before: formatFriendlyValue(k, before, resolved),
           after: formatFriendlyValue(k, after, resolved),
-          technicalBefore: formatTechnicalValue(before),
-          technicalAfter: formatTechnicalValue(after),
         };
       })
       .filter(Boolean) as Array<{
@@ -463,8 +851,6 @@ export function AuditLogPage() {
         label: string;
         before: string;
         after: string;
-        technicalBefore: string;
-        technicalAfter: string;
       }>;
   };
   
@@ -479,16 +865,18 @@ export function AuditLogPage() {
   const getActivityPreview = (log: AuditLog) => {
     const summary = formatChanges(log.old_values, log.new_values);
     if (summary !== 'No changes') return summary;
-    const description = getSystemNote(log);
-    return description === 'No additional system note was recorded.' ? 'No detailed change note was recorded.' : description;
+    return getBusinessNote(log, null);
   };
 
   const buildResolvedEntity = async (log: AuditLog): Promise<ResolvedEntityInfo | null> => {
-    const entity = String(log.entity || '').trim().toLowerCase();
+    const entity = inferEntityKind(log);
     const entityId = String(log.entity_id || '').trim();
-    if (!entityId) return null;
+    const snapshot = getEntitySnapshot(log);
+    const snapshotStaffId = String(snapshot.staff_id || '').trim();
+    const snapshotCooperativeId = String(snapshot.cooperative_id || entityId || '').trim();
+    if (!entityId && !snapshotStaffId && !snapshotCooperativeId) return null;
 
-    if (entity === 'departments' || entity === 'department') {
+    if (entity === 'department') {
       const dept = await departmentAPI.getDepartment(entityId);
       const name = String(dept?.name || '').trim();
       const label = name ? (/department$/i.test(name) ? name : `${name} Department`) : 'Department';
@@ -504,7 +892,7 @@ export function AuditLogPage() {
       };
     }
 
-    if (entity === 'staff' || entity === 'staffs' || entity === 'employees') {
+    if (entity === 'staff') {
       const staff = await staffAPI.getStaff(entityId);
       const label = getPersonName(staff) || `Staff ${truncateId(entityId)}`;
       return {
@@ -520,7 +908,7 @@ export function AuditLogPage() {
       };
     }
 
-    if (entity === 'users' || entity === 'user') {
+    if (entity === 'user') {
       const result = await userAPI.getAllUsers();
       const users = Array.isArray(result) ? result : result?.data || result?.items || [];
       const user = users.find((item: any) => String(item?.id || '') === entityId);
@@ -539,7 +927,7 @@ export function AuditLogPage() {
       };
     }
 
-    if (entity === 'payroll' || entity === 'payroll_batch' || entity === 'payroll_batches') {
+    if (entity === 'payroll') {
       const batch = await payrollAPI.getPayrollBatch(entityId);
       const label = String(batch?.batch_number || '').trim()
         ? `Payroll Batch ${batch.batch_number}`
@@ -562,7 +950,7 @@ export function AuditLogPage() {
       };
     }
 
-    if (entity === 'cooperatives' || entity === 'cooperative') {
+    if (entity === 'cooperative') {
       const cooperative = await cooperativeAPI.getById(entityId);
       const label = String(cooperative?.name || `Cooperative ${truncateId(entityId)}`).trim();
       return {
@@ -578,20 +966,47 @@ export function AuditLogPage() {
       };
     }
 
-    if (
-      entity === 'cooperative_member' ||
-      entity === 'cooperative_members' ||
-      entity === 'member' ||
-      entity === 'members'
-    ) {
-      const member = await cooperativeAPI.getMemberById(entityId);
+    if (entity === 'cooperative_member') {
+      let member: any = null;
+
+      if (entityId) {
+        try {
+          member = await cooperativeAPI.getMemberById(entityId);
+        } catch {
+          member = null;
+        }
+      }
+
+      if (!member) {
+        const [staff, cooperative] = await Promise.all([
+          snapshotStaffId ? staffAPI.getStaff(snapshotStaffId).catch(() => null) : Promise.resolve(null),
+          snapshotCooperativeId ? cooperativeAPI.getById(snapshotCooperativeId).catch(() => null) : Promise.resolve(null),
+        ]);
+
+        member = {
+          ...snapshot,
+          id: entityId || snapshot.id || null,
+          staff_id: snapshotStaffId || snapshot.staff_id || null,
+          cooperative_id: snapshotCooperativeId || snapshot.cooperative_id || null,
+          staff_name: String(snapshot.staff_name || getPersonName(staff) || '').trim(),
+          staff_number: String(snapshot.staff_number || staff?.staff_number || '').trim(),
+          cooperative_name: String(snapshot.cooperative_name || cooperative?.name || '').trim(),
+          department: String(snapshot.department || staff?.appointment?.department || '').trim(),
+          member_number: String(snapshot.member_number || snapshot.staff_number || staff?.staff_number || '').trim(),
+        };
+      }
+
       const staffName = String(member?.staff_name || '').trim();
       const cooperativeName = String(member?.cooperative_name || '').trim();
       const label = staffName && cooperativeName
         ? `${staffName} in ${cooperativeName}`
         : staffName
           ? `${staffName}'s membership`
-          : `Membership ${truncateId(entityId)}`;
+          : cooperativeName
+            ? `Membership in ${cooperativeName}`
+            : entityId
+              ? `Membership ${truncateId(entityId)}`
+              : 'Membership';
       return {
         kind: 'cooperative_member',
         label,
@@ -607,11 +1022,54 @@ export function AuditLogPage() {
                 ? formatMoney(member.monthly_contribution)
                 : String(member?.monthly_contribution || '-'),
           },
+          { label: 'Member Number', value: String(member?.member_number || '-') },
+          { label: 'Department', value: String(member?.department || '-') },
         ],
       };
     }
 
-    if (entity === 'loan_application' || entity === 'loan_applications') {
+    if (entity === 'promotion') {
+      let promotion: any = null;
+      if (entityId) {
+        const result = await promotionAPI.getAll().catch(() => null);
+        const promotions = Array.isArray(result) ? result : result?.data || result?.items || [];
+        promotion = promotions.find((item: any) => String(item?.id || '') === entityId) || null;
+      }
+
+      const snapshotPromotion = getEntitySnapshot(log);
+      const source = promotion || snapshotPromotion;
+      const staffId = String(source?.staff_id || snapshotPromotion?.staff_id || '').trim();
+      const staff = staffId ? await staffAPI.getStaff(staffId).catch(() => null) : null;
+      const staffName = String(source?.staff_name || getPersonName(source) || getPersonName(staff) || '').trim();
+      const label = staffName ? describePromotionTarget({ ...source, staff_name: staffName }) : 'Promotion';
+
+      return {
+        kind: 'promotion',
+        label,
+        data: {
+          ...source,
+          staff_name: staffName,
+          staff_number: source?.staff_number || staff?.staff_number || null,
+        },
+        details: [
+          { label: 'Promotion', value: label },
+          { label: 'Staff Member', value: staffName || '-' },
+          { label: 'Staff Number', value: String(source?.staff_number || staff?.staff_number || '-') },
+          { label: 'From', value: formatGradeStep(source?.old_grade_level, source?.old_step) || '-' },
+          { label: 'To', value: formatGradeStep(source?.new_grade_level, source?.new_step) || '-' },
+          {
+            label: 'Effective Date',
+            value: source?.effective_date || source?.promotion_date
+              ? formatTimestampWAT(String(source?.effective_date || source?.promotion_date)).date
+              : '-',
+          },
+          { label: 'Type', value: toDisplayCase(source?.promotion_type) || '-' },
+          { label: 'Status', value: toDisplayCase(source?.status) || '-' },
+        ],
+      };
+    }
+
+    if (entity === 'loan_application') {
       const application = await loanApplicationAPI.getById(entityId);
       const reference = String(application?.reference_number || '').trim();
       const staffName = String(application?.staff_name || '').trim();
@@ -639,7 +1097,7 @@ export function AuditLogPage() {
       };
     }
 
-    if (entity === 'loan_type' || entity === 'loan_types') {
+    if (entity === 'loan_type') {
       const loanType = await loanTypeAPI.getById(entityId);
       const label = String(loanType?.name || `Loan Type ${truncateId(entityId)}`).trim();
       return {
@@ -657,6 +1115,34 @@ export function AuditLogPage() {
                 : String(loanType?.max_amount || '-'),
           },
           { label: 'Status', value: toDisplayCase(loanType?.status) || '-' },
+        ],
+      };
+    }
+
+    if (entity === 'cooperative_contribution') {
+      const snapshot = getEntitySnapshot(log);
+      const staffName = String(snapshot.staff_name || '').trim();
+      const cooperativeName = String(snapshot.cooperative_name || '').trim();
+      const label = staffName && cooperativeName
+        ? `${staffName} contribution in ${cooperativeName}`
+        : staffName
+          ? `${staffName} contribution`
+          : `Contribution ${truncateId(entityId)}`;
+      return {
+        kind: 'cooperative_contribution',
+        label,
+        data: snapshot,
+        details: [
+          { label: 'Contribution', value: label },
+          { label: 'Staff Member', value: staffName || '-' },
+          { label: 'Cooperative', value: cooperativeName || '-' },
+          {
+            label: 'Amount',
+            value:
+              typeof snapshot.amount === 'number' || (!Number.isNaN(Number(snapshot.amount)) && snapshot.amount !== '')
+                ? formatMoney(Number(snapshot.amount))
+                : String(snapshot.amount || '-'),
+          },
         ],
       };
     }
@@ -857,15 +1343,15 @@ export function AuditLogPage() {
                 </div>
                 <div className="flex justify-between gap-3">
                   <span className="text-muted-foreground">Record Type</span>
-                  <span className="text-foreground font-medium">{formatEntity(selectedLog.entity)}</span>
+                  <span className="text-foreground font-medium">{getRecordTypeLabel(selectedLog)}</span>
                 </div>
                 <div className="flex justify-between gap-3">
                   <span className="text-muted-foreground">Affected Record</span>
                   <span className="text-foreground font-medium">{getTargetDisplayName(selectedLog, resolvedEntity)}</span>
                 </div>
                 <div className="flex justify-between gap-3 md:col-span-2">
-                  <span className="text-muted-foreground">System Note</span>
-                  <span className="text-foreground font-medium">{getSystemNote(selectedLog)}</span>
+                  <span className="text-muted-foreground">What Happened</span>
+                  <span className="text-foreground font-medium">{getBusinessNote(selectedLog, resolvedEntity)}</span>
                 </div>
               </div>
             </div>
@@ -906,13 +1392,12 @@ export function AuditLogPage() {
               ) : (
                 <div className="rounded-lg border border-border overflow-hidden">
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[900px]">
+                    <table className="w-full min-w-[720px]">
                       <thead className="bg-muted/50 border-b border-border">
                         <tr>
                           <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Field</th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Before</th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">After</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Technical Value</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border">
@@ -921,9 +1406,6 @@ export function AuditLogPage() {
                             <td className="px-4 py-3 text-xs sm:text-sm text-foreground font-medium">{row.label}</td>
                             <td className="px-4 py-3 text-xs sm:text-sm text-muted-foreground">{row.before}</td>
                             <td className="px-4 py-3 text-xs sm:text-sm text-foreground">{row.after}</td>
-                            <td className="px-4 py-3 text-xs text-muted-foreground">
-                              {row.technicalBefore}{' -> '}{row.technicalAfter}
-                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -955,6 +1437,10 @@ export function AuditLogPage() {
                 <div className="flex justify-between gap-3 md:col-span-2">
                   <span className="text-muted-foreground">IP Address</span>
                   <span className="text-foreground font-medium">{formatIpAddress(selectedLog.ip_address)}</span>
+                </div>
+                <div className="flex justify-between gap-3 md:col-span-2">
+                  <span className="text-muted-foreground">Raw System Note</span>
+                  <span className="text-foreground font-medium break-all">{getRawSystemNote(selectedLog)}</span>
                 </div>
               </div>
             </div>

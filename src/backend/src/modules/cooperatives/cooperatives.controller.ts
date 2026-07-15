@@ -5,6 +5,7 @@ import { CreateCooperativeDto } from './dto/create-cooperative.dto';
 import { AddCooperativeMemberDto } from './dto/add-member.dto';
 import { RecordContributionDto } from './dto/record-contribution.dto';
 import { CooperativeMigrationImportDto } from './dto/migration-import.dto';
+import { SkipAudit } from '../../common/decorators/skip-audit.decorator';
 
 @ApiTags('Cooperatives')
 @ApiBearerAuth()
@@ -15,6 +16,7 @@ export class CooperativesController {
   // ==================== COOPERATIVES ====================
 
   @Post()
+  @SkipAudit()
   @ApiOperation({ summary: 'Create a new cooperative' })
   createCooperative(@Body() dto: CreateCooperativeDto, @Request() req) {
     return this.cooperativesService.createCooperative(dto, req.user.userId);
@@ -67,6 +69,7 @@ export class CooperativesController {
   }
 
   @Put(':id')
+  @SkipAudit()
   @ApiOperation({ summary: 'Update cooperative' })
   updateCooperative(@Param('id') id: string, @Body() dto: Partial<CreateCooperativeDto>, @Request() req) {
     return this.cooperativesService.updateCooperative(id, dto, req.user.userId);
@@ -81,6 +84,7 @@ export class CooperativesController {
   // ==================== MEMBERS ====================
 
   @Post('members')
+  @SkipAudit()
   @ApiOperation({ summary: 'Add member to cooperative' })
   addMember(@Body() dto: AddCooperativeMemberDto, @Request() req) {
     return this.cooperativesService.addMember(dto, req.user.userId);
@@ -96,6 +100,7 @@ export class CooperativesController {
   }
 
   @Delete(':cooperativeId/members/:staffId')
+  @SkipAudit()
   @ApiOperation({ summary: 'Remove member from cooperative' })
   removeMember(
     @Param('cooperativeId') cooperativeId: string,
@@ -175,6 +180,7 @@ export class CooperativesController {
   }
 
   @Put('members/:id')
+  @SkipAudit()
   @ApiOperation({ summary: 'Update member details' })
   updateMember(
     @Param('id') id: string,

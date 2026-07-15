@@ -1,4 +1,4 @@
-import { NestFactory } from '@nestjs/core';
+import { NestFactory, Reflector } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
@@ -70,7 +70,8 @@ async function bootstrap() {
   const port = configService.get<number>('PORT', 3000);
   // Listen on all interfaces (IPv4 and IPv6)
   const auditService = app.get(AuditService);
-  app.useGlobalInterceptors(new AuditInterceptor(auditService));
+  const reflector = app.get(Reflector);
+  app.useGlobalInterceptors(new AuditInterceptor(auditService, reflector));
   await app.listen(port);
 
   console.log(`

@@ -3,6 +3,8 @@ import { DatabaseService } from '@common/database/database.service';
 import { SalaryLookupService } from '../salary-structures/salary-lookup.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationCategory, NotificationPriority, NotificationType } from '../notifications/dto/notification.dto';
+import { AuditService } from '@modules/audit/audit.service';
+import { AuditAction } from '@modules/audit/dto/audit.dto';
 
 @Injectable()
 export class PromotionsService {
@@ -12,6 +14,7 @@ export class PromotionsService {
     private readonly databaseService: DatabaseService,
     private readonly salaryLookupService: SalaryLookupService,
     private readonly notificationsService: NotificationsService,
+    private readonly auditService: AuditService,
   ) {}
 
   /**
@@ -141,8 +144,18 @@ export class PromotionsService {
 
     this.logger.log(`Promotion request created for staff ${staff.staff_number}`);
 
+    const staffName = [staff.first_name, staff.last_name].filter(Boolean).join(' ').trim() || staff.staff_number;
+
+    await this.auditService.log({
+      userId,
+      action: AuditAction.CREATE,
+      entity: 'promotions',
+      entityId: result.id,
+      description: `Created promotion request for ${staffName} to Grade ${newGradeLevel} Step ${newStep}`,
+      newValues: result,
+    });
+
     if (status === 'pending') {
-      const staffName = [staff.first_name, staff.last_name].filter(Boolean).join(' ').trim() || staff.staff_number;
       await Promise.all(
         ['admin', 'hr_manager'].map((role) =>
           this.notificationsService.createRoleNotification({
@@ -191,11 +204,24 @@ export class PromotionsService {
       [userId, id]
     );
 
+    const updatedPromotion = await this.databaseService.queryOne('SELECT * FROM promotions WHERE id = $1', [id]);
+
+    const staff = await this.databaseService.queryOne('SELECT staff_number, first_name, last_name FROM staff WHERE id = $1', [promotion.staff_id]);
+    const staffName = [staff?.first_name, staff?.last_name].filter(Boolean).join(' ').trim() || staff?.staff_number || 'Staff';
+    
+    await this.auditService.log({
+      userId,
+      action: AuditAction.UPDATE,
+      entity: 'promotions',
+      entityId: promotion.id,
+      description: `Approved promotion for ${staffName}`,
+      oldValues: promotion,
+      newValues: updatedPromotion,
+    });
+
     await this.processPromotionApproval(id, userId);
 
     if (promotion.created_by) {
-      const staff = await this.databaseService.queryOne('SELECT staff_number, first_name, last_name FROM staff WHERE id = $1', [promotion.staff_id]);
-      const staffName = [staff?.first_name, staff?.last_name].filter(Boolean).join(' ').trim() || staff?.staff_number || 'Staff';
       await this.notificationsService.create({
         recipient_id: promotion.created_by,
         type: NotificationType.PROMOTION,
@@ -235,9 +261,22 @@ export class PromotionsService {
       [reason, id]
     );
 
+    const updatedPromotion = await this.databaseService.queryOne('SELECT * FROM promotions WHERE id = $1', [id]);
+
+    const staff = await this.databaseService.queryOne('SELECT staff_number, first_name, last_name FROM staff WHERE id = $1', [promotion.staff_id]);
+    const staffName = [staff?.first_name, staff?.last_name].filter(Boolean).join(' ').trim() || staff?.staff_number || 'Staff';
+    
+    await this.auditService.log({
+      userId,
+      action: AuditAction.UPDATE,
+      entity: 'promotions',
+      entityId: promotion.id,
+      description: `Rejected promotion for ${staffName}`,
+      oldValues: promotion,
+      newValues: updatedPromotion,
+    });
+
     if (promotion.created_by) {
-      const staff = await this.databaseService.queryOne('SELECT staff_number, first_name, last_name FROM staff WHERE id = $1', [promotion.staff_id]);
-      const staffName = [staff?.first_name, staff?.last_name].filter(Boolean).join(' ').trim() || staff?.staff_number || 'Staff';
       await this.notificationsService.create({
         recipient_id: promotion.created_by,
         type: NotificationType.PROMOTION,

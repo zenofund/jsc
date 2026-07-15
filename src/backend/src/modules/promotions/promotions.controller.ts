@@ -3,9 +3,11 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagg
 import { PromotionsService } from './promotions.service';
 import { RolesGuard } from '@common/guards/roles.guard';
 import { Roles } from '@common/decorators/roles.decorator';
+import { SkipAudit } from '../../common/decorators/skip-audit.decorator';
 
 @ApiTags('Promotions')
 @ApiBearerAuth()
+@SkipAudit()
 @Controller('promotions')
 @UseGuards(RolesGuard)
 export class PromotionsController {

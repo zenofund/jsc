@@ -17,6 +17,7 @@ import { CreatePayrollBatchDto } from './dto/create-payroll-batch.dto';
 import { ApprovePayrollDto } from './dto/approve-payroll.dto';
 import { RolesGuard } from '@common/guards/roles.guard';
 import { Roles } from '@common/decorators/roles.decorator';
+import { SkipAudit } from '../../common/decorators/skip-audit.decorator';
 
 @ApiTags('Payroll')
 @ApiBearerAuth()
@@ -43,6 +44,7 @@ export class PayrollController {
 
   @Post('batches/:id/submit')
   @Roles('admin', 'payroll_officer', 'payroll_loader')
+  @SkipAudit()
   @ApiOperation({ summary: 'Submit batch for approval workflow' })
   @ApiResponse({ status: 200, description: 'Batch submitted successfully' })
   submitForApproval(@Param('id') id: string, @Request() req) {
@@ -54,6 +56,7 @@ export class PayrollController {
 
   @Post('batches/:id/approve')
   @Roles('admin', 'payroll_officer', 'cpo', 'checking', 'auditor', 'hr_manager', 'payroll_loader')
+  @SkipAudit()
   @ApiOperation({ summary: 'Approve or reject payroll batch' })
   @ApiResponse({ status: 200, description: 'Batch approval action completed' })
   approveOrReject(@Param('id') id: string, @Body() approveDto: ApprovePayrollDto, @Request() req) {
@@ -78,6 +81,7 @@ export class PayrollController {
 
   @Post('batches/:id/execute-payment')
   @Roles('admin', 'cashier')
+  @SkipAudit()
   @ApiOperation({ summary: 'Execute payment for a payroll batch' })
   @ApiResponse({ status: 200, description: 'Payment executed successfully' })
   executePayment(@Param('id') id: string, @Body() body: any, @Request() req) {

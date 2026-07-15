@@ -1,5 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { DatabaseService } from '@common/database/database.service';
+import { AuditService } from '@modules/audit/audit.service';
+import { AuditAction } from '@modules/audit/dto/audit.dto';
 import { CooperativeType, CreateCooperativeDto } from './dto/create-cooperative.dto';
 import { AddCooperativeMemberDto } from './dto/add-member.dto';
 import { RecordContributionDto } from './dto/record-contribution.dto';
@@ -19,7 +21,10 @@ END), 0)`;
 export class CooperativesService {
   private readonly logger = new Logger(CooperativesService.name);
 
-  constructor(private databaseService: DatabaseService) {}
+  constructor(
+    private databaseService: DatabaseService,
+    private auditService: AuditService
+  ) {}
 
   // ==================== COOPERATIVES ====================
 
@@ -78,6 +83,15 @@ export class CooperativesService {
     );
 
     this.logger.log(`Cooperative ${dto.code} created by user ${userId}`);
+    
+    await this.auditService.log({
+      userId,
+      action: AuditAction.CREATE,
+      entity: 'cooperatives',
+      entityId: cooperative.id,
+      description: `Created cooperative ${cooperative.name || cooperative.code}`,
+      newValues: cooperative,
+    });
     
     // Transform result to match camelCase API expectations if needed or return as is (database returns snake_case)
     // For consistency with other endpoints, we might want to map it, but NestJS/ClassSerializer usually handles this if configured.
@@ -290,6 +304,16 @@ export class CooperativesService {
       values,
     );
 
+    await this.auditService.log({
+      userId,
+      action: AuditAction.UPDATE,
+      entity: 'cooperatives',
+      entityId: id,
+      description: `Updated cooperative ${cooperative.name || cooperative.code}`,
+      oldValues: existing,
+      newValues: cooperative,
+    });
+
     this.logger.log(`Cooperative ${id} updated by user ${userId}`);
     return cooperative;
   }
@@ -388,6 +412,17 @@ export class CooperativesService {
       );
 
       this.logger.log(`Staff ${staff.staff_number} reactivated in cooperative ${dto.cooperativeId}`);
+      
+      await this.auditService.log({
+        userId,
+        action: AuditAction.UPDATE,
+        entity: 'cooperative_members',
+        entityId: member.id,
+        description: `Reactivated membership for ${staff.first_name} ${staff.last_name} in ${cooperative.name}`,
+        oldValues: existingMember,
+        newValues: member,
+      });
+      
       return member;
     }
 
@@ -410,6 +445,16 @@ export class CooperativesService {
     );
 
     this.logger.log(`Staff ${staff.staff_number} added to cooperative ${dto.cooperativeId}`);
+    
+    await this.auditService.log({
+      userId,
+      action: AuditAction.CREATE,
+      entity: 'cooperative_members',
+      entityId: member.id,
+      description: `Created membership for ${staff.first_name} ${staff.last_name} in ${cooperative.name}`,
+      newValues: member,
+    });
+    
     return member;
   }
 
@@ -491,6 +536,17 @@ export class CooperativesService {
     );
 
     this.logger.log(`Staff ${staffId} removed from cooperative ${cooperativeId}`);
+    
+    await this.auditService.log({
+      userId,
+      action: AuditAction.UPDATE,
+      entity: 'cooperative_members',
+      entityId: member.id,
+      description: `Removed staff ${staffId} from cooperative ${cooperativeId}`,
+      oldValues: member,
+      newValues: updated,
+    });
+    
     return updated;
   }
 
@@ -1054,7 +1110,19 @@ export class CooperativesService {
       RETURNING *
     `;
 
-    return this.databaseService.queryOne(query, values);
+    const updated = await this.databaseService.queryOne(query, values);
+
+    await this.auditService.log({
+      userId,
+      action: AuditAction.UPDATE,
+      entity: 'cooperative_members',
+      entityId: id,
+      description: `Updated membership for ${member.staff_name || 'staff'} in ${member.cooperative_name || 'cooperative'}`,
+      oldValues: member,
+      newValues: updated,
+    });
+
+    return updated;
   }
 
   async deleteMember(id: string) {
