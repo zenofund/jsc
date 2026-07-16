@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger, OnModuleInit } from '@nestjs/common';
 import { DatabaseService } from '@common/database/database.service';
 import { EmailService } from '@modules/email/email.service';
 import { NotificationsService } from '@modules/notifications/notifications.service';
@@ -25,7 +25,7 @@ import {
 } from './dto/migration-import.dto';
 
 @Injectable()
-export class LoansService {
+export class LoansService implements OnModuleInit {
   private readonly logger = new Logger(LoansService.name);
 
   constructor(
@@ -34,6 +34,22 @@ export class LoansService {
     private notificationsService: NotificationsService,
     private auditService: AuditService,
   ) {}
+
+  async onModuleInit() {
+    await this.ensureLoanRepaymentConstraints();
+  }
+
+  private async ensureLoanRepaymentConstraints() {
+    try {
+      await this.databaseService.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_loan_repayments_disbursement_month_unique
+        ON loan_repayments(disbursement_id, month)
+        WHERE month IS NOT NULL
+      `);
+    } catch (error: any) {
+      this.logger.warn(`Failed to ensure loan repayment uniqueness constraint: ${error?.message}`);
+    }
+  }
 
   private calculateLoanTerms(
     principalAmount: number,
@@ -1459,16 +1475,23 @@ export class LoansService {
     payrollBatchId: string, 
     deductions: Array<{
       staffId: string;
+      staffName?: string;
       amount: number;
       month: string;
       disbursementId?: string;
       months?: string[];
       monthlyAmount?: number;
     }>, 
-    userId: string
+    userId: string,
+    existingClient?: any,
   ) {
-    return this.databaseService.transaction(async (client) => {
-      const results: { success: number; failed: number; errors: Array<{ staffId: string; error: string }> } = { success: 0, failed: 0, errors: [] };
+    const processor = async (client: any) => {
+      const results: {
+        success: number;
+        failed: number;
+        skipped: number;
+        errors: Array<{ staffId: string; staffName?: string; error: string }>;
+      } = { success: 0, failed: 0, skipped: 0, errors: [] };
 
       for (const deduction of deductions) {
         try {
@@ -1489,7 +1512,11 @@ export class LoansService {
           const disbursement = disbursementRes.rows?.[0];
           if (!disbursement) {
             results.failed++;
-            results.errors.push({ staffId: deduction.staffId, error: 'No active loan disbursement found' });
+            results.errors.push({
+              staffId: deduction.staffId,
+              staffName: deduction.staffName,
+              error: 'No active loan disbursement found',
+            });
             continue;
           }
 
@@ -1497,7 +1524,11 @@ export class LoansService {
           let remainingAmount = Math.min(Number(deduction.amount || 0), outstanding);
           if (remainingAmount <= 0) {
             results.failed++;
-            results.errors.push({ staffId: deduction.staffId, error: 'Invalid amount or no outstanding balance' });
+            results.errors.push({
+              staffId: deduction.staffId,
+              staffName: deduction.staffName,
+              error: 'Invalid amount or no outstanding balance',
+            });
             continue;
           }
 
@@ -1506,6 +1537,7 @@ export class LoansService {
             : [deduction.month].filter(Boolean);
           const monthlyAmount = Math.max(0, Number(deduction.monthlyAmount || deduction.amount || 0));
           let processedCount = 0;
+          let skippedMonths = 0;
 
           for (const repaymentMonth of repaymentMonths) {
             if (outstanding <= 0 || remainingAmount <= 0) {
@@ -1518,6 +1550,8 @@ export class LoansService {
               [disbursement.id, repaymentMonth],
             );
             if (existingRes.rows?.length > 0) {
+              skippedMonths += 1;
+              results.skipped += 1;
               continue;
             }
 
@@ -1532,20 +1566,29 @@ export class LoansService {
               break;
             }
 
-            await client.query(
-              `INSERT INTO loan_repayments (
-                disbursement_id, staff_id, amount, repayment_date, 
-                month, payroll_batch_id, recorded_by
-              ) VALUES ($1, $2, $3, NOW(), $4, $5, $6)`,
-              [
-                disbursement.id,
-                deduction.staffId,
-                installmentAmount,
-                repaymentMonth,
-                payrollBatchId,
-                userId,
-              ],
-            );
+            try {
+              await client.query(
+                `INSERT INTO loan_repayments (
+                  disbursement_id, staff_id, amount, repayment_date, 
+                  month, payroll_batch_id, recorded_by
+                ) VALUES ($1, $2, $3, NOW(), $4, $5, $6)`,
+                [
+                  disbursement.id,
+                  deduction.staffId,
+                  installmentAmount,
+                  repaymentMonth,
+                  payrollBatchId,
+                  userId,
+                ],
+              );
+            } catch (insertError: any) {
+              if (insertError?.code === '23505') {
+                skippedMonths += 1;
+                results.skipped += 1;
+                continue;
+              }
+              throw insertError;
+            }
 
             remainingAmount -= installmentAmount;
             outstanding -= installmentAmount;
@@ -1554,8 +1597,16 @@ export class LoansService {
           }
 
           if (processedCount === 0) {
+            if (skippedMonths > 0) {
+              continue;
+            }
+
             results.failed++;
-            results.errors.push({ staffId: deduction.staffId, error: 'No eligible repayment month was available to process' });
+            results.errors.push({
+              staffId: deduction.staffId,
+              staffName: deduction.staffName,
+              error: 'No eligible repayment month was available to process',
+            });
             continue;
           }
 
@@ -1580,12 +1631,22 @@ export class LoansService {
           );
         } catch (err: any) {
           results.failed++;
-          results.errors.push({ staffId: deduction.staffId, error: err?.message || 'Unknown error' });
+          results.errors.push({
+            staffId: deduction.staffId,
+            staffName: deduction.staffName,
+            error: err?.message || 'Unknown error',
+          });
         }
       }
 
       return results;
-    });
+    };
+
+    if (existingClient) {
+      return processor(existingClient);
+    }
+
+    return this.databaseService.transaction(processor);
   }
 
   // ==================== STATS ====================

@@ -1540,12 +1540,27 @@ export class PayrollService {
       throw new BadRequestException('Only approved, ready for payment, or paid batches can be locked');
     }
 
-    await this.databaseService.query(
-      `UPDATE payroll_batches 
-       SET status = 'locked', locked_by = $1, locked_at = NOW(), updated_at = NOW()
-       WHERE id = $2`,
-      [userId, batchId],
-    );
+    const loanPostingResult = await this.databaseService.transaction(async (client) => {
+      const loanResults = await this.processLoanDeductions(batchId, userId, client, batch.payroll_month);
+      if (loanResults.failed > 0) {
+        const failureSummary = loanResults.errors
+          .slice(0, 3)
+          .map((entry) => String(entry.staffName || '').trim() || 'a staff loan')
+          .join(', ');
+        throw new BadRequestException(
+          `Loan repayment posting failed for ${loanResults.failed} item${loanResults.failed === 1 ? '' : 's'}${failureSummary ? `: ${failureSummary}` : ''}. Batch was not locked.`,
+        );
+      }
+
+      await client.query(
+        `UPDATE payroll_batches 
+         SET status = 'locked', locked_by = $1, locked_at = NOW(), updated_at = NOW()
+         WHERE id = $2`,
+        [userId, batchId],
+      );
+
+      return loanResults;
+    });
 
     this.logger.log(`Batch ${batchId} locked by user ${userId}`);
 
@@ -1560,57 +1575,68 @@ export class PayrollService {
 
     // Process Cooperative Deductions
     this.processCooperativeDeductions(batchId, userId);
-    
-    // Process Loan Deductions
-    this.processLoanDeductions(batchId, userId);
 
-    return { message: 'Batch locked successfully' };
+    return {
+      message: 'Batch locked successfully',
+      loanRepaymentsPosted: loanPostingResult.success,
+      loanRepaymentsSkipped: loanPostingResult.skipped,
+    };
   }
 
   /**
    * Process loan deductions from locked batch
    */
-  private async processLoanDeductions(batchId: string, userId: string) {
-    try {
-      const batch = await this.findOne(batchId);
-      const payrollLines = await this.databaseService.query(
-        'SELECT staff_id, deductions FROM payroll_lines WHERE payroll_batch_id = $1',
-        [batchId]
-      );
+  private async processLoanDeductions(batchId: string, userId: string, client?: any, payrollMonth?: string) {
+    const batch =
+      payrollMonth
+        ? { payroll_month: payrollMonth }
+        : await this.findOne(batchId);
+    const payrollLines = client
+      ? (await client.query(
+          'SELECT staff_id, staff_name, deductions FROM payroll_lines WHERE payroll_batch_id = $1',
+          [batchId],
+        )).rows
+      : await this.databaseService.query(
+          'SELECT staff_id, staff_name, deductions FROM payroll_lines WHERE payroll_batch_id = $1',
+          [batchId],
+        );
 
-      const deductions = [];
+    const deductions = [];
 
-      for (const line of payrollLines) {
-        let lineDeductions = [];
-        try {
-          lineDeductions = typeof line.deductions === 'string' ? JSON.parse(line.deductions) : line.deductions;
-        } catch (e) {
-          continue;
-        }
-
-        if (!Array.isArray(lineDeductions)) continue;
-
-        for (const deduction of lineDeductions) {
-          if (deduction.code === 'LOAN') {
-            deductions.push({
-              staffId: line.staff_id,
-              amount: Number(deduction.amount),
-              month: batch.payroll_month,
-              disbursementId: deduction.loan_disbursement_id,
-              months: Array.isArray(deduction.loan_months) ? deduction.loan_months : [batch.payroll_month],
-              monthlyAmount: Number(deduction.loan_monthly_installment || deduction.amount || 0),
-            });
-          }
-        }
+    for (const line of payrollLines) {
+      let lineDeductions = [];
+      try {
+        lineDeductions = typeof line.deductions === 'string' ? JSON.parse(line.deductions) : line.deductions;
+      } catch (e) {
+        continue;
       }
 
-      if (deductions.length > 0) {
-        const results = await this.loansService.processPayrollDeductions(batchId, deductions, userId);
-        this.logger.log(`Processed ${results.success} loan repayments, ${results.failed} failed for batch ${batchId}`);
+      if (!Array.isArray(lineDeductions)) continue;
+
+      for (const deduction of lineDeductions) {
+        if (deduction.code === 'LOAN') {
+          deductions.push({
+            staffId: line.staff_id,
+            staffName: line.staff_name,
+            amount: Number(deduction.amount),
+            month: batch.payroll_month,
+            disbursementId: deduction.loan_disbursement_id,
+            months: Array.isArray(deduction.loan_months) ? deduction.loan_months : [batch.payroll_month],
+            monthlyAmount: Number(deduction.loan_monthly_installment || deduction.amount || 0),
+          });
+        }
       }
-    } catch (error: any) {
-      this.logger.error(`Failed to process loan deductions: ${error.message}`);
     }
+
+    if (deductions.length === 0) {
+      return { success: 0, failed: 0, skipped: 0, errors: [] as Array<{ staffId: string; staffName?: string; error: string }> };
+    }
+
+    const results = await this.loansService.processPayrollDeductions(batchId, deductions, userId, client);
+    this.logger.log(
+      `Processed ${results.success} loan repayments, ${results.skipped} skipped, ${results.failed} failed for batch ${batchId}`,
+    );
+    return results;
   }
 
   /**
