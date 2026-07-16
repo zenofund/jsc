@@ -122,6 +122,9 @@ export function ArrearsPage() {
   const isSelectableArrears = (item: Arrears) =>
     (item.status === 'pending' && canReviewArrears) || (item.status === 'approved' && canMergeArrears);
 
+  const isPromotionApprovalBlocked = (item: Arrears) =>
+    item.reason === 'promotion' && Boolean(item.staff_status) && item.staff_status !== 'active';
+
   const selectableArrearsIds = useMemo(
     () => arrears.filter((item) => isSelectableArrears(item)).map((item) => item.id),
     [arrears, canReviewArrears, canMergeArrears],
@@ -130,6 +133,11 @@ export function ArrearsPage() {
   const selectedPendingArrears = useMemo(
     () => arrears.filter((item) => selectedArrearsIds.includes(item.id) && item.status === 'pending'),
     [arrears, selectedArrearsIds],
+  );
+
+  const blockedPendingApprovalCount = useMemo(
+    () => selectedPendingArrears.filter((item) => isPromotionApprovalBlocked(item)).length,
+    [selectedPendingArrears],
   );
 
   const selectedApprovedArrears = useMemo(
@@ -149,6 +157,12 @@ export function ArrearsPage() {
   }
 
   const handleApproveArrears = async (arrearsId: string) => {
+    const arrearsItem = arrears.find((item) => item.id === arrearsId);
+    if (arrearsItem && isPromotionApprovalBlocked(arrearsItem)) {
+      showToast.warning(`Cannot approve promotion: Staff is ${arrearsItem.staff_status}.`);
+      return;
+    }
+
     try {
       setApprovingId(arrearsId);
       await arrearsAPI.approveArrears(arrearsId, user!.id, user!.email);
@@ -292,10 +306,22 @@ export function ArrearsPage() {
       return;
     }
 
+    const blockedForApproval = action === 'approve' ? selectedPendingArrears.filter(isPromotionApprovalBlocked) : [];
+    const actionablePendingArrears =
+      action === 'approve' ? selectedPendingArrears.filter((item) => !isPromotionApprovalBlocked(item)) : selectedPendingArrears;
+
+    if (action === 'approve' && blockedForApproval.length > 0) {
+      showToast.warning(`Skipping ${blockedForApproval.length} promotion arrears: staff not active.`);
+    }
+
+    if (action === 'approve' && actionablePendingArrears.length === 0) {
+      return;
+    }
+
     const actionLabel = action === 'approve' ? 'approve' : 'reject';
     const confirmed = await confirm({
       title: action === 'approve' ? 'Bulk Approve Arrears?' : 'Bulk Reject Arrears?',
-      message: `${selectedPendingArrears.length} pending arrears record${selectedPendingArrears.length === 1 ? '' : 's'} will be ${actionLabel}d. Continue?`,
+      message: `${actionablePendingArrears.length} pending arrears record${actionablePendingArrears.length === 1 ? '' : 's'} will be ${actionLabel}d. Continue?`,
     });
 
     if (!confirmed) {
@@ -306,8 +332,8 @@ export function ArrearsPage() {
     try {
       const result =
         action === 'approve'
-          ? await arrearsAPI.bulkApproveArrears(selectedPendingArrears.map((item) => item.id))
-          : await arrearsAPI.bulkRejectArrears(selectedPendingArrears.map((item) => item.id));
+          ? await arrearsAPI.bulkApproveArrears(actionablePendingArrears.map((item) => item.id))
+          : await arrearsAPI.bulkRejectArrears(actionablePendingArrears.map((item) => item.id));
 
       const successfulIds = Array.isArray(result?.successes)
         ? result.successes.map((item: any) => item.id).filter(Boolean)
@@ -326,7 +352,7 @@ export function ArrearsPage() {
       if (failedArrears.length > 0) {
         const failedSummary = failedArrears
           .slice(0, 3)
-          .map((item: any) => [item.staff_number, item.staff_name].filter(Boolean).join(' ') || item.id)
+          .map((item: any) => String(item.staff_name || '').trim() || item.id)
           .join(', ');
         if (successfulIds.length > 0) {
           showToast.warning(
@@ -422,6 +448,7 @@ export function ArrearsPage() {
 
         const isProcessing =
           approvingId === row.id || rejectingId === row.id || recalculatingId === row.id || bulkActionLoading;
+        const isApprovalBlocked = isPromotionApprovalBlocked(row);
 
         return (
           <DropdownMenu>
@@ -442,9 +469,12 @@ export function ArrearsPage() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               {row.status === 'pending' && (
-                <DropdownMenuItem onClick={() => handleApproveArrears(row.id)}>
+                <DropdownMenuItem
+                  onClick={() => handleApproveArrears(row.id)}
+                  disabled={isApprovalBlocked}
+                >
                   <Check className="w-4 h-4 mr-2 text-green-600" />
-                  Approve Arrears
+                  {isApprovalBlocked ? `Approve Arrears (Staff ${row.staff_status})` : 'Approve Arrears'}
                 </DropdownMenuItem>
               )}
               {row.status === 'pending' && canReviewArrears && (
@@ -591,7 +621,7 @@ export function ArrearsPage() {
                 {selectedArrearsIds.length} eligible arrears record{selectedArrearsIds.length === 1 ? '' : 's'} selected
               </div>
               <div className="text-sm text-muted-foreground">
-                {selectedPendingArrears.length} pending ready for approve/reject. {selectedApprovedArrears.length} approved ready for merge.
+                {selectedPendingArrears.length} pending selected{blockedPendingApprovalCount > 0 ? ` (${blockedPendingApprovalCount} blocked from approval)` : ''}. {selectedApprovedArrears.length} approved ready for merge.
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">

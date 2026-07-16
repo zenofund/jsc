@@ -121,8 +121,8 @@ export function DashboardPage() {
       <Breadcrumb items={[{ label: 'Dashboard' }]} />
       
       <div className="mb-4 sm:mb-6">
-        <h1 className="page-title">Welcome back, {user?.full_name}</h1>
-        <p className="text-muted-foreground text-sm sm:text-base">Here's what's happening with your payroll system today.</p>
+        <h1 className="text-foreground mb-1 sm:mb-2 text-base sm:text-lg font-semibold">Hello, {user?.full_name}!</h1>
+        <p className="text-muted-foreground text-xs sm:text-sm">Here is your Payroll Snapshot, today!</p>
       </div>
 
       {/* Stats Grid */}

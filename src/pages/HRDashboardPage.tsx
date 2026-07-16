@@ -163,8 +163,8 @@ export function HRDashboardPage() {
       <Breadcrumb items={[{ label: 'HR Dashboard' }]} />
       
       <div className="mb-4 sm:mb-6">
-        <h1 className="page-title">Welcome back, {user?.full_name}</h1>
-        <p className="text-muted-foreground text-sm sm:text-base">Here's your HR management overview for today.</p>
+        <h1 className="text-foreground mb-1 sm:mb-2 text-base sm:text-lg font-semibold">Welcome back, {user?.full_name}</h1>
+        <p className="text-muted-foreground text-xs sm:text-sm">Here's your HR management overview for today.</p>
       </div>
 
       {/* Stats Grid */}

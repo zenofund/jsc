@@ -94,7 +94,7 @@ export class ArrearsService {
     }
 
     const arrearsRecords = await this.databaseService.query(
-      `SELECT a.*, s.first_name || ' ' || s.last_name as staff_name, s.staff_number
+      `SELECT a.*, s.first_name || ' ' || s.last_name as staff_name, s.staff_number, s.status as staff_status
        FROM arrears a
        JOIN staff s ON a.staff_id = s.id
        WHERE a.id = ANY($1::uuid[])`,
@@ -266,7 +266,7 @@ export class ArrearsService {
    */
   async getPendingArrears() {
     return this.databaseService.query(
-      `SELECT a.*, s.first_name || ' ' || s.last_name as staff_name, s.staff_number,
+      `SELECT a.*, s.first_name || ' ' || s.last_name as staff_name, s.staff_number, s.status as staff_status,
               s.grade_level as current_grade, s.step as current_step,
               p.old_grade_level as old_grade, p.new_grade_level as new_grade,
               p.old_step as old_step, p.new_step as new_step
@@ -292,6 +292,14 @@ export class ArrearsService {
 
     if (arrears.status !== 'pending') {
       throw new BadRequestException('Only pending arrears can be approved');
+    }
+
+    if (arrears.reason === 'promotion') {
+      const staff = await this.databaseService.queryOne('SELECT status FROM staff WHERE id = $1', [arrears.staff_id]);
+      const staffStatus = String(staff?.status || '').trim();
+      if (staffStatus !== 'active') {
+        throw new BadRequestException(`Cannot approve promotion: Staff is ${staffStatus || 'unknown'}.`);
+      }
     }
 
     await this.databaseService.query(

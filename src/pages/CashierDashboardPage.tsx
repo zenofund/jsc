@@ -154,8 +154,8 @@ export function CashierDashboardPage() {
       <Breadcrumb items={[{ label: 'Cashier Dashboard' }]} />
       
       <div className="mb-4 sm:mb-6">
-        <h1 className="text-foreground mb-1 sm:mb-2 text-lg sm:text-2xl">Welcome back, {user?.full_name}</h1>
-        <p className="text-muted-foreground text-sm sm:text-base">Execute payments for approved payroll batches.</p>
+        <h1 className="text-foreground mb-1 sm:mb-2 text-base sm:text-lg font-semibold">Welcome back, {user?.full_name}</h1>
+        <p className="text-muted-foreground text-xs sm:text-sm">Execute payments for approved payroll batches.</p>
       </div>
 
       {/* Stats Grid */}

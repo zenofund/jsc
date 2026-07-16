@@ -336,6 +336,7 @@ export interface Arrears {
   staff_id: string;
   staff_number: string;
   staff_name: string;
+  staff_status?: Staff['status'];
   reason: 'promotion' | 'salary_adjustment' | 'increment' | 'other';
   old_salary: number;
   new_salary: number;
