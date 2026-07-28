@@ -741,15 +741,17 @@ export function StaffPortalPage() {
                   <span className="text-sm font-medium text-card-foreground">New Request</span>
                 </button>
 
-                <button
-                  onClick={() => setActiveTab('loans')}
-                  className="flex flex-col items-center justify-center p-6 bg-card hover:bg-purple-50 dark:hover:bg-purple-900/10 border border-border hover:border-purple-200 dark:hover:border-purple-800 rounded-xl shadow-sm hover:shadow-md transition-all group"
-                >
-                  <div className="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-full mb-3 group-hover:scale-110 transition-transform">
-                    <Wallet className="h-6 w-6 text-purple-600 dark:text-purple-400" />
-                  </div>
-                  <span className="text-sm font-medium text-card-foreground">Loans</span>
-                </button>
+                {loanManagementEnabled && (
+                  <button
+                    onClick={() => setActiveTab('loans')}
+                    className="flex flex-col items-center justify-center p-6 bg-card hover:bg-purple-50 dark:hover:bg-purple-900/10 border border-border hover:border-purple-200 dark:hover:border-purple-800 rounded-xl shadow-sm hover:shadow-md transition-all group"
+                  >
+                    <div className="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-full mb-3 group-hover:scale-110 transition-transform">
+                      <Wallet className="h-6 w-6 text-purple-600 dark:text-purple-400" />
+                    </div>
+                    <span className="text-sm font-medium text-card-foreground">Loans</span>
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -2282,8 +2284,8 @@ export function StaffPortalPage() {
         {activeTab === 'payslips' && renderPayslips()}
         {activeTab === 'promotions' && renderPromotions()}
         {activeTab === 'leave' && renderLeave()}
-        {activeTab === 'loans' && renderLoans()}
-        {activeTab === 'cooperatives' && renderCooperatives()}
+        {activeTab === 'loans' && loanManagementEnabled && renderLoans()}
+        {activeTab === 'cooperatives' && cooperativeManagementEnabled && renderCooperatives()}
         {activeTab === 'requests' && renderRequests()}
         {activeTab === 'documents' && renderDocuments()}
         {activeTab === 'settings' && renderSettings()}

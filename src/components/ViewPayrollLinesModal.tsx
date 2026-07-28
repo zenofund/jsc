@@ -9,6 +9,7 @@ import { getBankByName } from '../constants/banks';
 import { loadPdfMake } from '../utils/loadPdfMake';
 import { exportSpreadsheet } from '../utils/exportSpreadsheet';
 import { useToast } from './Toast';
+import { useSystemSettings } from '../contexts/SystemSettingsContext';
 
 interface ViewPayrollLinesModalProps {
   isOpen: boolean;
@@ -40,6 +41,7 @@ export function ViewPayrollLinesModal({
   sortDirection = 'desc',
 }: ViewPayrollLinesModalProps) {
   const { showToast } = useToast();
+  const { loanManagementEnabled, cooperativeManagementEnabled } = useSystemSettings();
   const [exporting, setExporting] = React.useState<'csv' | 'pdf' | null>(null);
   const [searchTerm, setSearchTerm] = React.useState('');
 
@@ -142,6 +144,21 @@ export function ViewPayrollLinesModal({
     return /coop|cooperative|co-op/.test(label);
   };
 
+  const isLoanDeduction = (item: any) => {
+    const label = String(item?.name ?? item?.code ?? '').toLowerCase();
+    return /\bloan\b/.test(label);
+  };
+
+  const includeDeductionInExport = (item: any) => {
+    if (!cooperativeManagementEnabled && isCooperativeDeduction(item)) {
+      return false;
+    }
+    if (!loanManagementEnabled && isLoanDeduction(item)) {
+      return false;
+    }
+    return true;
+  };
+
   const getCooperativeGroupKey = (item: any) => {
     const raw = String(item?.name ?? item?.code ?? '').trim();
     const cleaned = raw
@@ -236,7 +253,9 @@ export function ViewPayrollLinesModal({
 
     // Separate cooperative from non-cooperative deductions
     for (const line of allLines) {
-      const deductions = Array.isArray((line as any).deductions) ? (line as any).deductions : [];
+      const deductions = Array.isArray((line as any).deductions)
+        ? (line as any).deductions.filter(includeDeductionInExport)
+        : [];
       for (const d of deductions) {
         if (isCooperativeDeduction(d)) {
           coopDeductionItems.push({ ...d, _line_id: line.id });
@@ -283,11 +302,12 @@ export function ViewPayrollLinesModal({
     const getItemAmount = (items: any[], key: string) => {
       if (!Array.isArray(items)) return 0;
       let sum = 0;
+      const exportItems = items.filter(includeDeductionInExport);
       
       // Check if this key is an aggregated cooperative key
       if (key.startsWith('coop:')) {
         const coopName = key.replace(/^coop:/, '').trim();
-        for (const i of items) {
+        for (const i of exportItems) {
           const iCoopName = isCooperativeDeduction(i) ? getCooperativeGroupKey(i).replace(/^coop:/, '').trim() : null;
           if (iCoopName === coopName) {
             sum += toNumber(i?.amount);
@@ -295,7 +315,7 @@ export function ViewPayrollLinesModal({
         }
       } else {
         // Non-cooperative deduction
-        for (const i of items) {
+        for (const i of exportItems) {
           if (!isCooperativeDeduction(i) && itemKey(i) === key) {
             sum += toNumber(i?.amount);
           }
