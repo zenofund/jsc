@@ -274,8 +274,9 @@ export function AdminPage() {
         const settingsData = await settingsAPI.getSettings();
         const normalizedSettings = normalizeSettings(settingsData);
         setSettings(normalizedSettings);
-        if (Array.isArray(normalizedSettings?.allowed_grades)) {
-          setAllowedGradesInput(normalizedSettings.allowed_grades.join(', '));
+        const allowedGrades = normalizedSettings?.allowed_grades;
+        if (Array.isArray(allowedGrades)) {
+          setAllowedGradesInput(allowedGrades.join(', '));
         }
       }
     } catch (error) {
@@ -433,8 +434,9 @@ export function AdminPage() {
       const saved = normalizeSettings(await settingsAPI.updateSettings(updated, user!.id, user!.email));
       await refreshSystemSettings();
       setSettings(saved);
-      if (Array.isArray(saved?.allowed_grades)) {
-        setAllowedGradesInput(saved.allowed_grades.join(', '));
+      const allowedGradesSaved = saved?.allowed_grades;
+      if (Array.isArray(allowedGradesSaved)) {
+        setAllowedGradesInput(allowedGradesSaved.join(', '));
       }
       showToast.success('Settings updated successfully');
     } catch (error) {
