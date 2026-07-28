@@ -314,7 +314,7 @@ export class LeaveService {
     page?: number;
     limit?: number;
   }) {
-    const { page = 1, limit = 20, staffId, leaveTypeId, status } = query;
+    const { page = 1, limit = 100, staffId, leaveTypeId, status } = query;
     const offset = (page - 1) * limit;
 
     const whereConditions = [];

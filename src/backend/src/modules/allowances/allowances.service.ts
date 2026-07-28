@@ -187,7 +187,7 @@ export class AllowancesService {
   }
 
   async findAllGlobalAllowances(query: any) {
-    const { page = 1, limit = 20, status } = query;
+    const { page = 1, limit = 100, status } = query;
     const offset = (page - 1) * limit;
 
     let whereClause = '';
@@ -377,7 +377,7 @@ export class AllowancesService {
   }
 
   async findAllStaffAllowances(query: any) {
-    const { page = 1, limit = 50, status } = query;
+    const { page = 1, limit = 100, status } = query;
     const offset = (page - 1) * limit;
     const params = [];
     let whereClause = '';

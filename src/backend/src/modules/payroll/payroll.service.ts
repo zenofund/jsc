@@ -1925,7 +1925,7 @@ export class PayrollService {
    * Get all payroll batches
    */
   async findAll(query: any) {
-    const { page = 1, limit = 20, status, payrollMonth, year, month } = query;
+    const { page = 1, limit = 100, status, payrollMonth, year, month } = query;
     const offset = (page - 1) * limit;
 
     const whereConditions = [];
@@ -2003,7 +2003,7 @@ export class PayrollService {
    * Get payroll lines for a batch
    */
   async getPayrollLines(batchId: string, query: any) {
-    const { page = 1, limit = 50, search, sort = 'desc' } = query;
+    const { page = 1, limit = 100, search, sort = 'desc' } = query;
     const offset = (page - 1) * limit;
 
     let whereClause = 'WHERE payroll_batch_id = $1';

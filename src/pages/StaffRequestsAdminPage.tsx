@@ -23,7 +23,7 @@ export default function StaffRequestsAdminPage() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const res = await staffRequestsAPI.getAll({ status: activeFilter, limit: 50 });
+      const res = await staffRequestsAPI.getAll({ status: activeFilter, limit: 100 });
       setRequests(res.data || []);
     } catch {
       showToast('error', 'Failed to load staff requests');

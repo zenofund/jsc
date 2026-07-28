@@ -34,11 +34,11 @@ export class ReportsService {
   private readonly allowedJoinTypes = new Set(['INNER', 'LEFT', 'RIGHT']);
   private readonly allowedSortDirections = new Set(['ASC', 'DESC']);
   private readonly maxReportLimit = 1000;
-  private readonly defaultResultPageSize = 25;
+  private readonly defaultResultPageSize = 100;
   private readonly maxResultPageSize = 100;
-  private readonly defaultTemplatePageSize = 24;
+  private readonly defaultTemplatePageSize = 100;
   private readonly maxTemplatePageSize = 100;
-  private readonly defaultHistoryPageSize = 20;
+  private readonly defaultHistoryPageSize = 100;
   private readonly maxHistoryPageSize = 100;
   private readonly maxAsyncExportRows = 10000;
   private readonly executionTimeoutMs = 15000;

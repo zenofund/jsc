@@ -52,7 +52,7 @@ export class AuditService {
     page?: number;
     limit?: number;
   }) {
-    const { page = 1, limit = 50, userId, action, entity, entityId, startDate, endDate } = query;
+    const { page = 1, limit = 100, userId, action, entity, entityId, startDate, endDate } = query;
     const offset = (page - 1) * limit;
 
     const whereConditions = [];
@@ -143,7 +143,7 @@ export class AuditService {
   /**
    * Get user activity
    */
-  async getUserActivity(userId: string, limit: number = 50) {
+  async getUserActivity(userId: string, limit: number = 100) {
     return this.databaseService.query(
       `SELECT * FROM audit_trail 
       WHERE user_id = $1 

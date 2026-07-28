@@ -68,7 +68,7 @@ export class LeaveController {
       leaveTypeId,
       status,
       page: page ? parseInt(String(page)) : 1,
-      limit: limit ? parseInt(String(limit)) : 20,
+      limit: limit ? parseInt(String(limit)) : 100,
     });
   }
 
@@ -82,7 +82,7 @@ export class LeaveController {
     return this.leaveService.findAllLeaveRequests({
       staffId,
       page: page ? parseInt(String(page)) : 1,
-      limit: limit ? parseInt(String(limit)) : 20,
+      limit: limit ? parseInt(String(limit)) : 100,
     });
   }
 

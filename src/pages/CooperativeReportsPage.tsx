@@ -702,7 +702,7 @@ function ContributionsReport({
   const [summary, setSummary] = useState<any>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
-  const itemsPerPage = 25;
+  const itemsPerPage = 100;
 
   useEffect(() => {
     loadContributions();
@@ -912,7 +912,7 @@ function LoansReport({
   const [summary, setSummary] = useState<any>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
-  const itemsPerPage = 25;
+  const itemsPerPage = 100;
 
   useEffect(() => {
     loadLoans();
@@ -1146,7 +1146,7 @@ function MembersReport({ cooperatives, selectedCooperativeId }: { cooperatives: 
   const [members, setMembers] = useState<CooperativeMember[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
-  const membersPerPage = 25;
+  const membersPerPage = 100;
 
   useEffect(() => {
     loadMembers();
@@ -1330,7 +1330,7 @@ function CrossCooperativeReport({ cooperatives }: { cooperatives: Cooperative[] 
   const [staffMemberships, setStaffMemberships] = useState<Map<string, CooperativeMember[]>>(new Map());
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
-  const itemsPerPage = 25;
+  const itemsPerPage = 100;
 
   useEffect(() => {
     loadCrossCooperativeData();

@@ -1242,7 +1242,7 @@ export function AuditLogPage() {
 
       const result = await auditAPI.getAll({ 
         page: currentPage, 
-        limit: 50,
+        limit: 100,
         startDate,
         endDate
       });

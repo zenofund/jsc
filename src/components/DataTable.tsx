@@ -50,7 +50,7 @@ export function DataTable<T extends Record<string, any>>({
   searchPlaceholder = 'Search...',
   onEdit,
   searchControls,
-  itemsPerPage = 10,
+  itemsPerPage = 100,
   serverSidePagination,
 }: DataTableProps<T>) {
   const [internalCurrentPage, setInternalCurrentPage] = useState(1);

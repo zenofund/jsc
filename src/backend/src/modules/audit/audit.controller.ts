@@ -35,7 +35,7 @@ export class AuditController {
       startDate,
       endDate,
       page: page ? parseInt(String(page)) : 1,
-      limit: limit ? parseInt(String(limit)) : 50,
+      limit: limit ? parseInt(String(limit)) : 100,
     });
   }
 
@@ -48,7 +48,7 @@ export class AuditController {
   @Get('user/:userId/activity')
   @ApiOperation({ summary: 'Get user activity' })
   getUserActivity(@Param('userId') userId: string, @Query('limit') limit?: number) {
-    return this.auditService.getUserActivity(userId, limit ? parseInt(String(limit)) : 50);
+    return this.auditService.getUserActivity(userId, limit ? parseInt(String(limit)) : 100);
   }
 
   @Get('statistics')

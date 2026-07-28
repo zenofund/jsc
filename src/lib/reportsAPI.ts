@@ -247,7 +247,7 @@ export const reportsAPI = {
   /**
    * Get all report templates
    */
-  async getTemplates(category?: string, page: number = 1, pageSize: number = 24): Promise<PaginatedResponse<ReportTemplate>> {
+  async getTemplates(category?: string, page: number = 1, pageSize: number = 100): Promise<PaginatedResponse<ReportTemplate>> {
     const searchParams = new URLSearchParams();
     if (category) searchParams.set('category', category);
     searchParams.set('page', String(page));
@@ -329,7 +329,7 @@ export const reportsAPI = {
   /**
    * Get execution history for a report
    */
-  async getExecutionHistory(templateId: string, page: number = 1, pageSize: number = 20): Promise<PaginatedResponse<ReportExecution>> {
+  async getExecutionHistory(templateId: string, page: number = 1, pageSize: number = 100): Promise<PaginatedResponse<ReportExecution>> {
     const params = `?page=${page}&pageSize=${pageSize}`;
     return apiRequest<PaginatedResponse<ReportExecution>>(`/reports/executions/${templateId}${params}`);
   },

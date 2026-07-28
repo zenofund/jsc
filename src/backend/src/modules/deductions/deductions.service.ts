@@ -178,7 +178,7 @@ export class DeductionsService {
   }
 
   async findAllGlobalDeductions(query: any) {
-    const { page = 1, limit = 20, status } = query;
+    const { page = 1, limit = 100, status } = query;
     const offset = (page - 1) * limit;
 
     let whereClause = '';
@@ -360,7 +360,7 @@ export class DeductionsService {
   }
 
   async findAllStaffDeductions(query: any) {
-    const { page = 1, limit = 50, status } = query;
+    const { page = 1, limit = 100, status } = query;
     const offset = (page - 1) * limit;
     const params = [];
     let whereClause = '';

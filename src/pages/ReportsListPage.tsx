@@ -108,8 +108,8 @@ const ReportsListPage: React.FC = () => {
   const [executing, setExecuting] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [templatePage, setTemplatePage] = useState(1);
-  const [templatePageSize] = useState(12);
-  const [templateMeta, setTemplateMeta] = useState({ total: 0, page: 1, pageSize: 12, totalPages: 1, hasNextPage: false });
+  const [templatePageSize] = useState(100);
+  const [templateMeta, setTemplateMeta] = useState({ total: 0, page: 1, pageSize: 100, totalPages: 1, hasNextPage: false });
 
   // Delete confirmation
   const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; template: ReportTemplate | null }>({
@@ -129,7 +129,7 @@ const ReportsListPage: React.FC = () => {
     result: null,
     template: null,
     page: 1,
-    pageSize: 25,
+    pageSize: 100,
   });
   const [sharing, setSharing] = useState(false);
   const [scheduling, setScheduling] = useState(false);
@@ -871,7 +871,7 @@ const ReportsListPage: React.FC = () => {
       {/* Results Dialog */}
       <Dialog 
         open={resultsDialog.open} 
-        onOpenChange={(open: boolean) => setResultsDialog({ open, result: null, template: null, page: 1, pageSize: 25 })}
+        onOpenChange={(open: boolean) => setResultsDialog({ open, result: null, template: null, page: 1, pageSize: 100 })}
       >
         <DialogContent className="max-w-6xl max-h-[80vh] overflow-auto">
           <DialogHeader>

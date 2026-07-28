@@ -35,7 +35,7 @@ const StaffAdjustmentApprovalPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<AdjustmentItem[]>([]);
   const [page, setPage] = useState(1);
-  const [limit] = useState(10);
+  const [limit] = useState(100);
   const [totalItems, setTotalItems] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('pending'); // Default to pending items

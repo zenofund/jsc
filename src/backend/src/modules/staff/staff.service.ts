@@ -398,7 +398,7 @@ export class StaffService implements OnModuleInit {
    * Get all staff with pagination and filtering
    */
   async findAll(query: QueryStaffDto) {
-    const { page = 1, limit = 20, search, status, departmentId, employmentType } = query;
+    const { page = 1, limit = 100, search, status, departmentId, employmentType } = query;
     const offset = (page - 1) * limit;
 
     const whereConditions = [];
@@ -758,7 +758,7 @@ export class StaffService implements OnModuleInit {
   async findAllStaffRequests(query: { status?: string; page?: number; limit?: number }) {
     const status = query.status || 'pending';
     const page = Number(query.page) || 1;
-    const limit = Number(query.limit) || 20;
+    const limit = Number(query.limit) || 100;
     const offset = (page - 1) * limit;
 
     const countResult = await this.databaseService.queryOne<{ total: string }>(
