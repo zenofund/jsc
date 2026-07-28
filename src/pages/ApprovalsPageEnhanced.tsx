@@ -5,9 +5,11 @@ import { StatusBadge } from '../components/StatusBadge';
 import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
+import { useSystemSettings } from '../contexts/SystemSettingsContext';
 import { PageSkeleton } from '../components/PageLoader';
 import { formatCurrency } from '../utils/format';
 import { formatStaffName } from '../lib/name-utils';
+import { isFeatureDisabledError } from '../lib/feature-toggle-errors';
 import { 
   payrollAPI, 
   loanApplicationAPI, 
@@ -64,6 +66,7 @@ interface ApprovalItem {
 export function ApprovalsPageEnhanced() {
   const { user } = useAuth();
   const { showToast } = useToast();
+  const { loanManagementEnabled } = useSystemSettings();
   const [activeTab, setActiveTab] = useState<TabType>('all');
   const [loading, setLoading] = useState(true);
   const [approvalItems, setApprovalItems] = useState<ApprovalItem[]>([]);
@@ -89,7 +92,7 @@ export function ApprovalsPageEnhanced() {
   useEffect(() => {
     if (!user) return;
     loadAllApprovals();
-  }, [user]);
+  }, [user, loanManagementEnabled]);
 
   const normalizeRole = (role: any) => {
     const r = String(role || '').trim().toLowerCase();
@@ -106,6 +109,12 @@ export function ApprovalsPageEnhanced() {
       setActiveTab('all');
     }
   }, [activeTab, isPayrollOnlyApproverRole]);
+
+  useEffect(() => {
+    if (activeTab === 'loan' && !loanManagementEnabled) {
+      setActiveTab('all');
+    }
+  }, [activeTab, loanManagementEnabled]);
 
   const loadAllApprovals = async () => {
     try {
@@ -159,23 +168,31 @@ export function ApprovalsPageEnhanced() {
 
       if (!isPayrollOnlyApproverRole) {
         // Load Loan Approvals
-        const loansResult = await loanApplicationAPI.getAll();
-        const loans = Array.isArray(loansResult) ? loansResult : (loansResult.data || []);
-        const pendingLoans = loans.filter((l: any) => l.status === 'pending');
-        
-        pendingLoans.forEach((l: any) => {
-          items.push({
-            id: l.id,
-            type: 'loan',
-            title: `Loan Application`,
-            subtitle: `${l.staff_name} - ${l.loan_type_name}`,
-            amount: l.approved_amount || l.requested_amount,
-            status: l.status,
-            created_at: l.created_at,
-            urgency: calculateUrgency(l.created_at),
-            data: l,
-          });
-        });
+        if (loanManagementEnabled) {
+          try {
+            const loansResult = await loanApplicationAPI.getAll();
+            const loans = Array.isArray(loansResult) ? loansResult : (loansResult.data || []);
+            const pendingLoans = loans.filter((l: any) => l.status === 'pending');
+
+            pendingLoans.forEach((l: any) => {
+              items.push({
+                id: l.id,
+                type: 'loan',
+                title: `Loan Application`,
+                subtitle: `${l.staff_name} - ${l.loan_type_name}`,
+                amount: l.approved_amount || l.requested_amount,
+                status: l.status,
+                created_at: l.created_at,
+                urgency: calculateUrgency(l.created_at),
+                data: l,
+              });
+            });
+          } catch (error) {
+            if (!isFeatureDisabledError(error, 'loan')) {
+              throw error;
+            }
+          }
+        }
 
         // Load Leave Approvals
         const leavesResult = await staffPortalAPI.getAllLeaveRequests();
@@ -552,7 +569,7 @@ export function ApprovalsPageEnhanced() {
         ? ([
             { id: 'all', label: 'All Approvals', count: stats.total },
             { id: 'payroll', label: 'Payroll', count: stats.payroll },
-            { id: 'loan', label: 'Loans', count: stats.loans },
+            ...(loanManagementEnabled ? [{ id: 'loan', label: 'Loans', count: stats.loans } as const] : []),
             { id: 'payment', label: 'Payments', count: stats.payments },
             { id: 'arrear', label: 'Arrears', count: stats.arrears },
             { id: 'adjustment', label: 'Adjustments', count: stats.adjustments },
@@ -561,7 +578,7 @@ export function ApprovalsPageEnhanced() {
         : ([
             { id: 'all', label: 'All Approvals', count: stats.total },
             { id: 'payroll', label: 'Payroll', count: stats.payroll },
-            { id: 'loan', label: 'Loans', count: stats.loans },
+            ...(loanManagementEnabled ? [{ id: 'loan', label: 'Loans', count: stats.loans } as const] : []),
             { id: 'leave', label: 'Leaves', count: stats.leaves },
             { id: 'payment', label: 'Payments', count: stats.payments },
             { id: 'arrear', label: 'Arrears', count: stats.arrears },

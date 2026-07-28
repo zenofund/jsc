@@ -4,7 +4,9 @@ import { DataTable } from '../../components/DataTable';
 import { Modal } from '../../components/Modal';
 import { useToast } from '../../components/Toast';
 import { useAuth } from '../../contexts/AuthContext';
+import { useSystemSettings } from '../../contexts/SystemSettingsContext';
 import { PageSkeleton } from '../../components/PageLoader';
+import { isFeatureDisabledError } from '../../lib/feature-toggle-errors';
 import { 
   payrollAPI, 
   loanApplicationAPI, 
@@ -45,6 +47,7 @@ interface ApprovalItem {
 export function ApprovalsPage() {
   const { user } = useAuth();
   const { showToast } = useToast();
+  const { loanManagementEnabled } = useSystemSettings();
   const [activeTab, setActiveTab] = useState<TabType>('all');
   const [loading, setLoading] = useState(true);
   const [approvalItems, setApprovalItems] = useState<ApprovalItem[]>([]);
@@ -67,7 +70,13 @@ export function ApprovalsPage() {
 
   useEffect(() => {
     loadAllApprovals();
-  }, []);
+  }, [loanManagementEnabled]);
+
+  useEffect(() => {
+    if (activeTab === 'loan' && !loanManagementEnabled) {
+      setActiveTab('all');
+    }
+  }, [activeTab, loanManagementEnabled]);
 
   const loadAllApprovals = async () => {
     try {
@@ -98,25 +107,31 @@ export function ApprovalsPage() {
       } catch (e) { console.error('Error loading payrolls', e); }
 
       // Load Loan Approvals
-      try {
-        const loansResponse = await loanApplicationAPI.getAll();
-        const loans = Array.isArray(loansResponse) ? loansResponse : (loansResponse?.data || []);
-        const pendingLoans = (Array.isArray(loans) ? loans : []).filter(l => l.status === 'pending');
-        
-        pendingLoans.forEach(l => {
-          items.push({
-            id: l.id,
-            type: 'loan',
-            title: `Loan Application`,
-            subtitle: `${l.staff_name} - ${l.loan_type_name}`,
-            amount: l.approved_amount || l.requested_amount,
-            status: l.status,
-            created_at: l.created_at,
-            urgency: calculateUrgency(l.created_at),
-            data: l,
+      if (loanManagementEnabled) {
+        try {
+          const loansResponse = await loanApplicationAPI.getAll();
+          const loans = Array.isArray(loansResponse) ? loansResponse : (loansResponse?.data || []);
+          const pendingLoans = (Array.isArray(loans) ? loans : []).filter(l => l.status === 'pending');
+
+          pendingLoans.forEach(l => {
+            items.push({
+              id: l.id,
+              type: 'loan',
+              title: `Loan Application`,
+              subtitle: `${l.staff_name} - ${l.loan_type_name}`,
+              amount: l.approved_amount || l.requested_amount,
+              status: l.status,
+              created_at: l.created_at,
+              urgency: calculateUrgency(l.created_at),
+              data: l,
+            });
           });
-        });
-      } catch (e) { console.error('Error loading loans', e); }
+        } catch (e) {
+          if (!isFeatureDisabledError(e, 'loan')) {
+            console.error('Error loading loans', e);
+          }
+        }
+      }
 
       // Load Leave Approvals
       try {
@@ -467,7 +482,7 @@ export function ApprovalsPage() {
   const tabs = [
     { id: 'all', label: 'All Approvals', count: stats.total },
     { id: 'payroll', label: 'Payroll', count: stats.payroll },
-    { id: 'loan', label: 'Loans', count: stats.loans },
+    ...(loanManagementEnabled ? [{ id: 'loan', label: 'Loans', count: stats.loans } as const] : []),
     { id: 'leave', label: 'Leaves', count: stats.leaves },
     { id: 'payment', label: 'Payments', count: stats.payments },
     { id: 'arrear', label: 'Arrears', count: stats.arrears },

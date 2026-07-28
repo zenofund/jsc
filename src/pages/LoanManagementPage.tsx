@@ -6,6 +6,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useConfirm } from '../contexts/ConfirmContext';
+import { useSystemSettings } from '../contexts/SystemSettingsContext';
+import { isFeatureDisabledError } from '../lib/feature-toggle-errors';
 import { loanApplicationAPI, loanTypeAPI, disbursementAPI, loanStatsAPI, cooperativeAPI, repaymentAPI } from '../lib/loanAPI';
 import { staffAPI } from '../lib/api-client';
 import type { LoanType, LoanApplication, LoanDisbursement, Cooperative, Staff } from '../types/entities';
@@ -96,6 +98,7 @@ function calculateLoanEditPreview(
 export function LoanManagementPage() {
   const { user } = useAuth();
   const confirm = useConfirm();
+  const { cooperativeManagementEnabled } = useSystemSettings();
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -145,7 +148,9 @@ export function LoanManagementPage() {
         <div className="min-w-0 flex-1">
           <h1 className="page-title">Loan & Cooperative Management</h1>
           <p className="text-muted-foreground text-sm sm:text-base">
-            Manage staff loans, guarantors, disbursements, and cooperative society
+            {cooperativeManagementEnabled
+              ? 'Manage staff loans, guarantors, disbursements, and cooperative-linked products'
+              : 'Manage staff loans, guarantors, disbursements, and repayment reporting'}
           </p>
         </div>
         <button
@@ -184,7 +189,7 @@ export function LoanManagementPage() {
       </div>
 
       {/* Tab Content */}
-      {activeTab === 'overview' && <OverviewTab stats={stats} />}
+      {activeTab === 'overview' && <OverviewTab stats={stats} cooperativeManagementEnabled={cooperativeManagementEnabled} />}
       {activeTab === 'applications' && (
         <ApplicationsTab
           applications={loanApplications}
@@ -195,7 +200,11 @@ export function LoanManagementPage() {
         />
       )}
       {activeTab === 'loan-types' && (
-        <LoanTypesTab loanTypes={loanTypes} onRefresh={loadData} />
+        <LoanTypesTab
+          loanTypes={loanTypes}
+          onRefresh={loadData}
+          cooperativeManagementEnabled={cooperativeManagementEnabled}
+        />
       )}
       {activeTab === 'disbursements' && (
         <DisbursementsTab
@@ -205,13 +214,13 @@ export function LoanManagementPage() {
           onRefresh={loadData}
         />
       )}
-      {activeTab === 'reports' && <ReportsTab />}
+      {activeTab === 'reports' && <ReportsTab cooperativeManagementEnabled={cooperativeManagementEnabled} />}
     </div>
   );
 }
 
 // Overview Tab
-function OverviewTab({ stats }: { stats: any }) {
+function OverviewTab({ stats, cooperativeManagementEnabled }: { stats: any; cooperativeManagementEnabled: boolean }) {
   if (!stats) return <div className="text-center py-12 text-muted-foreground">Loading statistics...</div>;
 
   const statCards = [
@@ -221,8 +230,12 @@ function OverviewTab({ stats }: { stats: any }) {
     { title: 'Total Disbursed', value: formatCompactCurrency(stats.total_disbursed), icon: DollarSign, color: 'text-purple-500', isCurrency: true },
     { title: 'Outstanding Balance', value: formatCompactCurrency(stats.total_outstanding), icon: Wallet, color: 'text-red-500', isCurrency: true },
     { title: 'Total Repaid', value: formatCompactCurrency(stats.total_repaid), icon: CheckCircle, color: 'text-green-500', isCurrency: true },
-    { title: 'Cooperative Members', value: stats.cooperative_members, icon: Users, color: 'text-indigo-500' },
-    { title: 'Total Contributions', value: formatCompactCurrency(stats.total_contributions), icon: Building2, color: 'text-teal-500', isCurrency: true },
+    ...(cooperativeManagementEnabled
+      ? [
+          { title: 'Cooperative Members', value: stats.cooperative_members, icon: Users, color: 'text-indigo-500' },
+          { title: 'Total Contributions', value: formatCompactCurrency(stats.total_contributions), icon: Building2, color: 'text-teal-500', isCurrency: true },
+        ]
+      : []),
   ];
 
   return (
@@ -1209,9 +1222,11 @@ function ApplicationsTab({
 function LoanTypesTab({
   loanTypes,
   onRefresh,
+  cooperativeManagementEnabled,
 }: {
   loanTypes: LoanType[];
   onRefresh: () => void;
+  cooperativeManagementEnabled: boolean;
 }) {
   const [showModal, setShowModal] = useState(false);
   const [editingType, setEditingType] = useState<LoanType | null>(null);
@@ -1220,14 +1235,22 @@ function LoanTypesTab({
   const [cooperatives, setCooperatives] = useState<any[]>([]);
 
   useEffect(() => {
+    if (!cooperativeManagementEnabled) {
+      setCooperatives([]);
+      return;
+    }
     loadCooperatives();
-  }, []);
+  }, [cooperativeManagementEnabled]);
 
   const loadCooperatives = async () => {
     try {
       const coops = await cooperativeAPI.getAll();
       setCooperatives(coops.filter((c: any) => c.status === 'active'));
     } catch (error) {
+      if (isFeatureDisabledError(error, 'cooperative')) {
+        setCooperatives([]);
+        return;
+      }
       console.error('Error loading cooperatives:', error);
     }
   };
@@ -1310,7 +1333,7 @@ function LoanTypesTab({
         minGuarantors: formData.min_guarantors,
         eligibilityCriteria: formData.eligibility_criteria,
         status: formData.status,
-        cooperativeId: formData.cooperative_id,
+        cooperativeId: cooperativeManagementEnabled ? formData.cooperative_id : undefined,
         interestCalculationMethod: formData.interest_calculation_method,
       };
 
@@ -1399,7 +1422,7 @@ function LoanTypesTab({
               </div>
             </div>
             <p className="text-sm mb-4 text-muted-foreground">{loanType.description}</p>
-            {loanType.cooperative_id && (
+            {cooperativeManagementEnabled && loanType.cooperative_id && (
               <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/10 border border-primary/20">
                 <Building2 className="w-4 h-4 text-primary" />
                 <span className="text-sm text-primary">
@@ -1552,24 +1575,26 @@ function LoanTypesTab({
                   </select>
                 </div>
               </div>
-              <div>
-                <label className="block text-sm mb-1 text-card-foreground">Linked Cooperative (Optional)</label>
-                <select
-                  value={formData.cooperative_id || ''}
-                  onChange={(e) => setFormData({ ...formData, cooperative_id: e.target.value || undefined })}
-                  className="w-full px-3 py-2 rounded border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                >
-                  <option value="">None - General Loan</option>
-                  {cooperatives.map((coop) => (
-                    <option key={coop.id} value={coop.id}>
-                      {coop.name} ({coop.code})
-                    </option>
-                  ))}
-                </select>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Link this loan type to a specific cooperative. Only cooperative members can apply.
-                </p>
-              </div>
+              {cooperativeManagementEnabled && (
+                <div>
+                  <label className="block text-sm mb-1 text-card-foreground">Linked Cooperative (Optional)</label>
+                  <select
+                    value={formData.cooperative_id || ''}
+                    onChange={(e) => setFormData({ ...formData, cooperative_id: e.target.value || undefined })}
+                    className="w-full px-3 py-2 rounded border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  >
+                    <option value="">None - General Loan</option>
+                    {cooperatives.map((coop) => (
+                      <option key={coop.id} value={coop.id}>
+                        {coop.name} ({coop.code})
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Link this loan type to a specific cooperative. Only cooperative members can apply.
+                  </p>
+                </div>
+              )}
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
@@ -2246,7 +2271,7 @@ function DisbursementsTab({
 }
 
 // Reports Tab
-function ReportsTab() {
+function ReportsTab({ cooperativeManagementEnabled }: { cooperativeManagementEnabled: boolean }) {
   type LoanReportKey =
     | 'applications'
     | 'disbursements'
@@ -2279,7 +2304,9 @@ function ReportsTab() {
     { key: 'applications', name: 'Loan Applications Report', description: 'All loan applications with status' },
     { key: 'disbursements', name: 'Disbursement Report', description: 'All loan disbursements by period' },
     { key: 'repayment-schedule', name: 'Repayment Schedule', description: 'Upcoming and overdue repayments' },
-    { key: 'cooperative-statement', name: 'Cooperative Statement', description: 'Loans summary by cooperative' },
+    ...(cooperativeManagementEnabled
+      ? [{ key: 'cooperative-statement', name: 'Cooperative Statement', description: 'Loans summary by cooperative' } as const]
+      : []),
     { key: 'loan-aging', name: 'Loan Aging Report', description: 'Outstanding loans by age' },
     { key: 'defaulters', name: 'Defaulters Report', description: 'Staff with overdue repayments' },
   ];
@@ -2363,7 +2390,8 @@ function ReportsTab() {
     const rangeStartMonth = dateFrom.slice(0, 7);
     const rangeEndMonth = dateTo.slice(0, 7);
     const { start, end } = getDateRange();
-    const matchesCooperative = (coopId?: string) => cooperativeFilter === 'all' || coopId === cooperativeFilter;
+    const matchesCooperative = (coopId?: string) =>
+      !cooperativeManagementEnabled || cooperativeFilter === 'all' || coopId === cooperativeFilter;
     
     // Helper to safely convert value to number
     const toNumber = (val: any): number => {
@@ -2537,6 +2565,9 @@ function ReportsTab() {
     }
 
     if (key === 'cooperative-statement') {
+      if (!cooperativeManagementEnabled) {
+        return { rows: [], columns: [], summary: [], breakdown: [] };
+      }
       const coopNameById = coops.reduce((acc: Record<string, string>, coop) => {
         acc[coop.id] = coop.name;
         return acc;
@@ -2695,11 +2726,12 @@ function ReportsTab() {
       let apps = applications;
       let disb = disbursements;
       let coops = cooperatives;
-      if (force || applications.length === 0 || disbursements.length === 0 || cooperatives.length === 0) {
+      const shouldLoadCoops = cooperativeManagementEnabled && (force || cooperatives.length === 0);
+      if (force || applications.length === 0 || disbursements.length === 0 || shouldLoadCoops) {
         const [appsRaw, disbRaw, coopsRaw] = await Promise.all([
           loanApplicationAPI.getAll(),
           disbursementAPI.getAll(),
-          cooperativeAPI.getAll(),
+          cooperativeManagementEnabled ? cooperativeAPI.getAll() : Promise.resolve([]),
         ]);
 
         const normalizeArray = (v: any) => {
@@ -2713,7 +2745,7 @@ function ReportsTab() {
 
         const appsData = normalizeArray(appsRaw);
         const disbData = normalizeArray(disbRaw);
-        const coopsData = normalizeArray(coopsRaw);
+        const coopsData = cooperativeManagementEnabled ? normalizeArray(coopsRaw) : [];
 
         apps = appsData;
         disb = disbData;
@@ -2728,6 +2760,13 @@ function ReportsTab() {
       setReportSummary(report.summary);
       setReportBreakdown(report.breakdown);
     } catch (error: any) {
+      if (isFeatureDisabledError(error, 'cooperative')) {
+        setCooperatives([]);
+        if (selectedReport === 'cooperative-statement') {
+          setSelectedReport(null);
+        }
+        return;
+      }
       showToast.error('Failed to generate report', error?.message || 'Please try again');
     } finally {
       setLoading(false);
@@ -2735,20 +2774,26 @@ function ReportsTab() {
   };
 
   useEffect(() => {
+    if (!cooperativeManagementEnabled && selectedReport === 'cooperative-statement') {
+      setSelectedReport(null);
+      return;
+    }
     if (!selectedReport) return;
     updateReport(selectedReport);
-  }, [selectedReport, dateFrom, dateTo, statusFilter, cooperativeFilter]);
+  }, [selectedReport, dateFrom, dateTo, statusFilter, cooperativeFilter, cooperativeManagementEnabled]);
 
   useEffect(() => {
     if (!selectedReport) return;
     setStatusFilter('all');
-    setCooperativeFilter('all');
+    if (!cooperativeManagementEnabled || selectedReport === 'cooperative-statement') {
+      setCooperativeFilter('all');
+    }
     if (selectedReport === 'repayment-schedule') {
       const year = new Date().getFullYear();
       setDateFrom(`${year}-01-01`);
       setDateTo(`${year}-12-31`);
     }
-  }, [selectedReport]);
+  }, [selectedReport, cooperativeManagementEnabled]);
 
   const statusOptions = selectedReport === 'applications'
     ? applicationStatuses
@@ -2759,7 +2804,7 @@ function ReportsTab() {
         : [];
 
   const showStatusFilter = selectedReport === 'applications' || selectedReport === 'disbursements' || selectedReport === 'repayment-schedule';
-  const showCooperativeFilter = selectedReport !== null;
+  const showCooperativeFilter = cooperativeManagementEnabled && selectedReport !== null;
 
   return (
     <div className="space-y-6">

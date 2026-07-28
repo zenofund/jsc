@@ -3,6 +3,7 @@ import { Breadcrumb } from '../../components/Breadcrumb';
 import { DataTable } from '../../components/DataTable';
 import { auditAPI, departmentAPI, payrollAPI, promotionAPI, staffAPI, userAPI } from '../../lib/api-client';
 import { cooperativeAPI, loanApplicationAPI, loanTypeAPI } from '../../lib/loanAPI';
+import { isFeatureDisabledError } from '../../lib/feature-toggle-errors';
 import { PageSkeleton } from '../../components/PageLoader';
 import { Search, Filter, RefreshCw, Clock } from 'lucide-react';
 import { Modal } from '../../components/Modal';
@@ -964,17 +965,26 @@ export function AuditLogPage() {
     }
 
     if (entity === 'cooperative') {
-      const cooperative = await cooperativeAPI.getById(entityId);
-      const label = String(cooperative?.name || `Cooperative ${truncateId(entityId)}`).trim();
+      const snapshot = getEntitySnapshot(log);
+      let cooperative: any = null;
+      try {
+        cooperative = await cooperativeAPI.getById(entityId);
+      } catch (error) {
+        if (!isFeatureDisabledError(error, 'cooperative')) {
+          throw error;
+        }
+      }
+      const source = cooperative || snapshot;
+      const label = String(source?.name || source?.cooperative_name || `Cooperative ${truncateId(entityId)}`).trim();
       return {
         kind: 'cooperative',
         label,
-        data: cooperative,
+        data: source,
         details: [
           { label: 'Cooperative', value: label },
-          { label: 'Code', value: String(cooperative?.code || '-') },
-          { label: 'Type', value: toDisplayCase(cooperative?.cooperative_type) || '-' },
-          { label: 'Status', value: toDisplayCase(cooperative?.status) || '-' },
+          { label: 'Code', value: String(source?.code || '-') },
+          { label: 'Type', value: toDisplayCase(source?.cooperative_type) || '-' },
+          { label: 'Status', value: toDisplayCase(source?.status) || '-' },
         ],
       };
     }
@@ -1083,9 +1093,18 @@ export function AuditLogPage() {
     }
 
     if (entity === 'loan_application') {
-      const application = await loanApplicationAPI.getById(entityId);
-      const reference = String(application?.reference_number || '').trim();
-      const staffName = String(application?.staff_name || '').trim();
+      const snapshot = getEntitySnapshot(log);
+      let application: any = null;
+      try {
+        application = await loanApplicationAPI.getById(entityId);
+      } catch (error) {
+        if (!isFeatureDisabledError(error, 'loan')) {
+          throw error;
+        }
+      }
+      const source = application || snapshot;
+      const reference = String(source?.reference_number || '').trim();
+      const staffName = String(source?.staff_name || '').trim();
       const label = reference
         ? `Loan Application ${reference}`
         : staffName
@@ -1094,40 +1113,49 @@ export function AuditLogPage() {
       return {
         kind: 'loan_application',
         label,
-        data: application,
+        data: source,
         details: [
           { label: 'Loan Application', value: label },
           { label: 'Staff Member', value: staffName || '-' },
           {
             label: 'Requested Amount',
             value:
-              typeof application?.amount_requested === 'number'
-                ? formatMoney(application.amount_requested)
-                : String(application?.amount_requested || '-'),
+              typeof source?.amount_requested === 'number'
+                ? formatMoney(source.amount_requested)
+                : String(source?.amount_requested || '-'),
           },
-          { label: 'Status', value: toDisplayCase(application?.status) || '-' },
+          { label: 'Status', value: toDisplayCase(source?.status) || '-' },
         ],
       };
     }
 
     if (entity === 'loan_type') {
-      const loanType = await loanTypeAPI.getById(entityId);
-      const label = String(loanType?.name || `Loan Type ${truncateId(entityId)}`).trim();
+      const snapshot = getEntitySnapshot(log);
+      let loanType: any = null;
+      try {
+        loanType = await loanTypeAPI.getById(entityId);
+      } catch (error) {
+        if (!isFeatureDisabledError(error, 'loan')) {
+          throw error;
+        }
+      }
+      const source = loanType || snapshot;
+      const label = String(source?.name || `Loan Type ${truncateId(entityId)}`).trim();
       return {
         kind: 'loan_type',
         label,
-        data: loanType,
+        data: source,
         details: [
           { label: 'Loan Type', value: label },
-          { label: 'Code', value: String(loanType?.code || '-') },
+          { label: 'Code', value: String(source?.code || '-') },
           {
             label: 'Maximum Amount',
             value:
-              typeof loanType?.max_amount === 'number'
-                ? formatMoney(loanType.max_amount)
-                : String(loanType?.max_amount || '-'),
+              typeof source?.max_amount === 'number'
+                ? formatMoney(source.max_amount)
+                : String(source?.max_amount || '-'),
           },
-          { label: 'Status', value: toDisplayCase(loanType?.status) || '-' },
+          { label: 'Status', value: toDisplayCase(source?.status) || '-' },
         ],
       };
     }

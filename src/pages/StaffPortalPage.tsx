@@ -3,6 +3,7 @@ import { Breadcrumb } from '../components/Breadcrumb';
 import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
+import { useSystemSettings } from '../contexts/SystemSettingsContext';
 import { 
   payrollAPI, 
   loanApplicationAPI, 
@@ -39,10 +40,12 @@ import { generatePayslipPDF } from '../utils/payslipGenerator';
 import { loadPdfMake } from '../utils/loadPdfMake';
 import { downloadPdfDocument } from '../utils/downloadPdf';
 import { formatStaffName } from '../lib/name-utils';
+import { isFeatureDisabledError } from '../lib/feature-toggle-errors';
 
 export function StaffPortalPage() {
   const { user } = useAuth();
   const { showToast } = useToast();
+  const { loanManagementEnabled, cooperativeManagementEnabled } = useSystemSettings();
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -143,7 +146,18 @@ export function StaffPortalPage() {
 
   useEffect(() => {
     loadData();
-  }, [user]);
+  }, [user, loanManagementEnabled, cooperativeManagementEnabled]);
+
+  useEffect(() => {
+    if (activeTab === 'loans' && !loanManagementEnabled) {
+      setActiveTab('dashboard');
+      return;
+    }
+
+    if (activeTab === 'cooperatives' && !cooperativeManagementEnabled) {
+      setActiveTab('dashboard');
+    }
+  }, [activeTab, cooperativeManagementEnabled, loanManagementEnabled]);
 
   useEffect(() => {
     if (!showLeaveModal) return;
@@ -231,37 +245,67 @@ export function StaffPortalPage() {
       }
       
       // Load loan data
-      try {
-        const [apps, types, disbs, guarantors] = await Promise.all([
-          loanApplicationAPI.getAll({ staff_id: user.staff_id }),
-          loanTypeAPI.getAll({ status: 'active' }),
-          disbursementAPI.getAll({ staff_id: user.staff_id }),
-          guarantorAPI.getMyGuarantorRequests(user.staff_id),
-        ]);
-        setLoanApplications(apps);
-        setLoanTypes(types);
-        setMyLoans(disbs);
-        setGuarantorRequests(guarantors);
-      } catch (error) {
-        console.error('Loans error:', error);
-      }
-      
-      // Load cooperative data
-      try {
-        const [memberships, allCoops] = await Promise.all([
-          cooperativeAPI.getMembershipsByStaffId(user.staff_id),
-          cooperativeAPI.getAll({ status: 'active' }),
-        ]);
-        setMyCooperatives(memberships);
-        setCooperatives(allCoops);
-        
-        // Load contributions if user has memberships
-        if (memberships.length > 0) {
-          const contributions = await cooperativeAPI.getContributions({ staff_id: user.staff_id });
-          setCooperativeContributions(contributions);
+      if (loanManagementEnabled) {
+        try {
+          const [apps, types, disbs, guarantors] = await Promise.all([
+            loanApplicationAPI.getAll({ staff_id: user.staff_id }),
+            loanTypeAPI.getAll({ status: 'active' }),
+            disbursementAPI.getAll({ staff_id: user.staff_id }),
+            guarantorAPI.getMyGuarantorRequests(user.staff_id),
+          ]);
+          setLoanApplications(apps);
+          setLoanTypes(types);
+          setMyLoans(disbs);
+          setGuarantorRequests(guarantors);
+        } catch (error) {
+          if (isFeatureDisabledError(error, 'loan')) {
+            setLoanApplications([]);
+            setLoanTypes([]);
+            setMyLoans([]);
+            setGuarantorRequests([]);
+          } else {
+            console.error('Loans error:', error);
+          }
         }
-      } catch (error) {
-        console.error('Cooperatives error:', error);
+      } else {
+        setLoanApplications([]);
+        setLoanTypes([]);
+        setMyLoans([]);
+        setGuarantorRequests([]);
+      }
+
+      // Load cooperative data
+      if (cooperativeManagementEnabled) {
+        try {
+          const [memberships, allCoops] = await Promise.all([
+            cooperativeAPI.getMembershipsByStaffId(user.staff_id),
+            cooperativeAPI.getAll({ status: 'active' }),
+          ]);
+          setMyCooperatives(memberships);
+          setCooperatives(allCoops);
+
+          // Load contributions if user has memberships
+          if (memberships.length > 0) {
+            const contributions = await cooperativeAPI.getContributions({ staff_id: user.staff_id });
+            setCooperativeContributions(contributions);
+          } else {
+            setCooperativeContributions([]);
+          }
+        } catch (error) {
+          if (isFeatureDisabledError(error, 'cooperative')) {
+            setMyCooperatives([]);
+            setCooperatives([]);
+            setCooperativeContributions([]);
+            setCooperativeLoans([]);
+          } else {
+            console.error('Cooperatives error:', error);
+          }
+        }
+      } else {
+        setMyCooperatives([]);
+        setCooperatives([]);
+        setCooperativeContributions([]);
+        setCooperativeLoans([]);
       }
     } catch (error) {
       console.error('General error:', error);
@@ -2204,8 +2248,10 @@ export function StaffPortalPage() {
             { id: 'payslips' as TabType, label: 'My Payslips', icon: FileText },
             { id: 'promotions' as TabType, label: 'Promotions', icon: Award },
             { id: 'leave' as TabType, label: 'Leave', icon: Calendar },
-            { id: 'loans' as TabType, label: 'Loans', icon: Wallet },
-            { id: 'cooperatives' as TabType, label: 'Cooperatives', icon: Building2 },
+            ...(loanManagementEnabled ? [{ id: 'loans' as TabType, label: 'Loans', icon: Wallet }] : []),
+            ...(cooperativeManagementEnabled
+              ? [{ id: 'cooperatives' as TabType, label: 'Cooperatives', icon: Building2 }]
+              : []),
             { id: 'requests' as TabType, label: 'Requests', icon: Send },
             { id: 'documents' as TabType, label: 'Documents', icon: CreditCard },
             { id: 'settings' as TabType, label: 'Settings', icon: Settings },

@@ -18,6 +18,8 @@ import {
 import { format } from 'date-fns';
 import { formatCompactCurrency, formatCurrency } from '../utils/format';
 import { PageSkeleton } from '../components/PageLoader';
+import { useSystemSettings } from '../contexts/SystemSettingsContext';
+import { isFeatureDisabledError } from '../lib/feature-toggle-errors';
 import { cooperativeAPI, disbursementAPI } from '../lib/loanAPI';
 import type { Cooperative, CooperativeMember, CooperativeContribution, LoanDisbursement } from '../types/entities';
 import { toast } from 'sonner';
@@ -86,6 +88,7 @@ const escapeHtml = (value: string) =>
     .replace(/'/g, '&#39;');
 
 export function CooperativeReportsPage() {
+  const { cooperativeManagementEnabled } = useSystemSettings();
   const [activeReport, setActiveReport] = useState<ReportType>('overview');
   const [cooperatives, setCooperatives] = useState<Cooperative[]>([]);
   const [selectedCooperative, setSelectedCooperative] = useState<string>('all');
@@ -97,8 +100,14 @@ export function CooperativeReportsPage() {
   const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
+    if (!cooperativeManagementEnabled) {
+      setLoading(false);
+      setCooperatives([]);
+      return;
+    }
+
     loadInitialData();
-  }, []);
+  }, [cooperativeManagementEnabled]);
 
   const loadInitialData = async () => {
     try {
@@ -106,6 +115,10 @@ export function CooperativeReportsPage() {
       const coops = await cooperativeAPI.getAll({ status: 'active' });
       setCooperatives(coops);
     } catch (error) {
+      if (isFeatureDisabledError(error, 'cooperative')) {
+        setCooperatives([]);
+        return;
+      }
       console.error('Error loading initial data:', error);
       toast.error('Failed to load initial report data.');
     } finally {
@@ -115,10 +128,18 @@ export function CooperativeReportsPage() {
 
   const loadCooperatives = async () => {
     try {
+      if (!cooperativeManagementEnabled) {
+        setCooperatives([]);
+        return;
+      }
       // setLoading(true); // Don't set loading here to avoid flickering if only refreshing cooperatives
       const coops = await cooperativeAPI.getAll({ status: 'active' });
       setCooperatives(coops);
     } catch (error) {
+      if (isFeatureDisabledError(error, 'cooperative')) {
+        setCooperatives([]);
+        return;
+      }
       console.error('Error loading cooperatives:', error);
       toast.error('Failed to refresh cooperatives.');
     }
@@ -150,6 +171,10 @@ export function CooperativeReportsPage() {
   };
 
   const buildExportRows = async (): Promise<ExportRow[]> => {
+    if (!cooperativeManagementEnabled) {
+      return [];
+    }
+
     const scopedCooperatives =
       selectedCooperative === 'all'
         ? cooperatives
@@ -349,6 +374,20 @@ export function CooperativeReportsPage() {
     { id: 'financial', label: 'Financial Statements', icon: BarChart3 },
     { id: 'cross-cooperative', label: 'Cross-Cooperative Analysis', icon: PieChart },
   ];
+
+  if (!cooperativeManagementEnabled) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="rounded-lg border border-border bg-card p-8 text-center">
+          <Building2 className="mx-auto mb-4 h-10 w-10 text-muted-foreground" />
+          <h1 className="page-title mb-2">Cooperative Reports Unavailable</h1>
+          <p className="text-muted-foreground">
+            Cooperative Management is currently disabled in admin settings.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto px-4 py-8 space-y-6">

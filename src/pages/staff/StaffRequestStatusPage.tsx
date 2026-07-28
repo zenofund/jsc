@@ -3,6 +3,7 @@ import { Breadcrumb } from '../../components/Breadcrumb';
 import { DataTable } from '../../components/DataTable';
 import { StatusBadge } from '../../components/StatusBadge';
 import { useAuth } from '../../contexts/AuthContext';
+import { useSystemSettings } from '../../contexts/SystemSettingsContext';
 import { PageSkeleton } from '../../components/PageLoader';
 import { 
   staffPortalAPI, 
@@ -10,6 +11,7 @@ import {
   promotionAPI,
   arrearsAPI,
 } from '../../lib/api-client';
+import { isFeatureDisabledError } from '../../lib/feature-toggle-errors';
 import { 
   FileText, 
   Calendar, 
@@ -38,6 +40,7 @@ interface RequestItem {
 
 export function StaffRequestStatusPage() {
   const { user } = useAuth();
+  const { loanManagementEnabled } = useSystemSettings();
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<RequestItem[]>([]);
   const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
@@ -46,7 +49,7 @@ export function StaffRequestStatusPage() {
     if (user?.staff_id) {
       loadData();
     }
-  }, [user]);
+  }, [user, loanManagementEnabled]);
 
   const loadData = async () => {
     if (!user?.staff_id) return;
@@ -74,23 +77,29 @@ export function StaffRequestStatusPage() {
       } catch (e) { console.error('Error loading leaves', e); }
 
       // Load Loan Applications
-      try {
-        const loansResponse = await loanApplicationAPI.getAll({ staff_id: user.staff_id });
-        const loansData = Array.isArray(loansResponse) ? loansResponse : (loansResponse?.data || []);
-        const loans = Array.isArray(loansData) ? loansData : [];
-        loans.forEach((l: any) => {
-          requestItems.push({
-            id: l.id,
-            type: 'loan',
-            title: 'Loan Application',
-            subtitle: l.loan_type_name,
-            amount: l.requested_amount,
-            status: l.status,
-            created_at: l.created_at,
-            data: l
+      if (loanManagementEnabled) {
+        try {
+          const loansResponse = await loanApplicationAPI.getAll({ staff_id: user.staff_id });
+          const loansData = Array.isArray(loansResponse) ? loansResponse : (loansResponse?.data || []);
+          const loans = Array.isArray(loansData) ? loansData : [];
+          loans.forEach((l: any) => {
+            requestItems.push({
+              id: l.id,
+              type: 'loan',
+              title: 'Loan Application',
+              subtitle: l.loan_type_name,
+              amount: l.requested_amount,
+              status: l.status,
+              created_at: l.created_at,
+              data: l
+            });
           });
-        });
-      } catch (e) { console.error('Error loading loans', e); }
+        } catch (e) {
+          if (!isFeatureDisabledError(e, 'loan')) {
+            console.error('Error loading loans', e);
+          }
+        }
+      }
 
       // Load Promotions
       try {
