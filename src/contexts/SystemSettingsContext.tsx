@@ -12,20 +12,46 @@ type SystemSettingsContextValue = {
 
 const SystemSettingsContext = createContext<SystemSettingsContextValue | null>(null);
 
+const SYSTEM_SETTINGS_CACHE_KEY = 'system_settings_cache_v1';
+
+function loadCachedSettings(): SystemSettings | null {
+  try {
+    const raw = localStorage.getItem(SYSTEM_SETTINGS_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    return parsed as SystemSettings;
+  } catch {
+    return null;
+  }
+}
+
+function persistCachedSettings(settings: SystemSettings) {
+  try {
+    localStorage.setItem(SYSTEM_SETTINGS_CACHE_KEY, JSON.stringify(settings));
+  } catch {}
+}
+
 export function SystemSettingsProvider({ children }: { children: React.ReactNode }) {
-  const [settings, setSettings] = useState<SystemSettings | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [settings, setSettings] = useState<SystemSettings | null>(() => loadCachedSettings());
+  const [loading, setLoading] = useState(settings === null);
+  const [loadedOnce, setLoadedOnce] = useState(settings !== null);
 
   const refresh = useCallback(async () => {
+    const shouldShowLoading = !loadedOnce && settings === null;
     try {
       const data = await settingsAPI.getSettings();
       setSettings(data);
+      persistCachedSettings(data);
     } catch (error) {
       console.error('Failed to load system settings:', error);
     } finally {
-      setLoading(false);
+      setLoadedOnce(true);
+      if (shouldShowLoading) {
+        setLoading(false);
+      }
     }
-  }, []);
+  }, [loadedOnce, settings]);
 
   useEffect(() => {
     refresh();
@@ -35,9 +61,9 @@ export function SystemSettingsProvider({ children }: { children: React.ReactNode
     settings,
     loading,
     refresh,
-    loanManagementEnabled: settings?.loan_management_enabled !== false,
-    cooperativeManagementEnabled: settings?.cooperative_management_enabled !== false,
-  }), [loading, refresh, settings]);
+    loanManagementEnabled: loadedOnce && settings?.loan_management_enabled !== false,
+    cooperativeManagementEnabled: loadedOnce && settings?.cooperative_management_enabled !== false,
+  }), [loadedOnce, loading, refresh, settings]);
 
   return (
     <SystemSettingsContext.Provider value={value}>
