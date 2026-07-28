@@ -22,3 +22,4 @@ node_modules/
 *.err.log
 .vscode/
 __gitseed/
+src/backend/backups/

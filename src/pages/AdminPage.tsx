@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useConfirm } from '../contexts/ConfirmContext';
+import { useSystemSettings } from '../contexts/SystemSettingsContext';
 import { userAPI, settingsAPI, auditAPI } from '../lib/api-client';
 import { User, SystemSettings } from '../types/entities';
 import { Users, Shield, Settings as SettingsIcon, Activity, Plus, Edit, Trash2, Loader2, Save, X, Eye, EyeOff, Lock, Image as ImageIcon, MoreVertical } from 'lucide-react';
@@ -25,6 +26,7 @@ type PermissionCatalogItem = {
 
 export function AdminPage() {
   const { user } = useAuth();
+  const { refresh: refreshSystemSettings } = useSystemSettings();
   const confirm = useConfirm();
   // Removed conflicting useToast hook usage
   const [activeTab, setActiveTab] = useState<'users' | 'settings' | 'app-security'>('users');
@@ -112,6 +114,8 @@ export function AdminPage() {
       })(value.office_radius_meters),
       allowed_ip_range: typeof value.allowed_ip_range === 'string' ? value.allowed_ip_range : '',
       trusted_network_fallback: typeof value.trusted_network_fallback === 'string' ? value.trusted_network_fallback : '',
+      loan_management_enabled: parseBoolean(value.loan_management_enabled ?? true),
+      cooperative_management_enabled: parseBoolean(value.cooperative_management_enabled ?? true),
     } as SystemSettings;
   };
 
@@ -228,6 +232,7 @@ export function AdminPage() {
       });
       if (!updatedSettings) return;
       await settingsAPI.updateSettings(updatedSettings, user!.id, user!.email);
+      await refreshSystemSettings();
       setSettings(updatedSettings);
       setIsEditingWorkflow(false);
       showToast.success('Approval workflow updated successfully');
@@ -426,6 +431,7 @@ export function AdminPage() {
 
       const updated = normalizeSettings({ ...settings, allowed_grades: allowedGrades }) as any;
       const saved = normalizeSettings(await settingsAPI.updateSettings(updated, user!.id, user!.email));
+      await refreshSystemSettings();
       setSettings(saved);
       if (Array.isArray(saved?.allowed_grades)) {
         setAllowedGradesInput(saved.allowed_grades.join(', '));
@@ -445,6 +451,7 @@ export function AdminPage() {
       const normalizedSettings = normalizeSettings(settings);
       if (!normalizedSettings) return;
       const saved = normalizeSettings(await settingsAPI.updateSettings(normalizedSettings, user.id, user.email));
+      await refreshSystemSettings();
       setSettings(saved);
       showToast.success('App security settings updated successfully');
     } catch (error) {
@@ -815,6 +822,42 @@ export function AdminPage() {
                 <p className="text-xs text-muted-foreground mt-1">
                   Comma-separated list; supports numeric (1–17) and alphanumeric (e.g., CAT1, CAT4).
                 </p>
+              </div>
+              <div className="rounded-lg border border-border bg-muted/20 p-4 space-y-4">
+                <div>
+                  <h4 className="text-sm font-medium text-foreground">Module Availability</h4>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Disable these modules to remove them from the app and stop future payroll deductions tied to them.
+                  </p>
+                </div>
+                <label className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={settings.loan_management_enabled !== false}
+                    onChange={(e) => setSettings({ ...settings, loan_management_enabled: e.target.checked })}
+                    className="mt-0.5 w-4 h-4 text-primary rounded focus:ring-2 focus:ring-primary"
+                  />
+                  <span>
+                    <span className="block text-sm text-foreground">Enable Loan Management</span>
+                    <span className="block text-xs text-muted-foreground">
+                      When disabled, loan pages are hidden and new payroll batches stop generating loan repayments.
+                    </span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={settings.cooperative_management_enabled !== false}
+                    onChange={(e) => setSettings({ ...settings, cooperative_management_enabled: e.target.checked })}
+                    className="mt-0.5 w-4 h-4 text-primary rounded focus:ring-2 focus:ring-primary"
+                  />
+                  <span>
+                    <span className="block text-sm text-foreground">Enable Cooperative Management</span>
+                    <span className="block text-xs text-muted-foreground">
+                      When disabled, cooperative pages are hidden and new payroll batches stop generating cooperative deductions.
+                    </span>
+                  </span>
+                </label>
               </div>
             </div>
             <button

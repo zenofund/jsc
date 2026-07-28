@@ -167,6 +167,122 @@ async function updateDisbursementBalances(client, disbursement) {
   );
 }
 
+async function processDeductionEntry(client, batch, deduction, execute, dryRunCache) {
+  const result = {
+    inserted: 0,
+    skipped: 0,
+    failed: 0,
+    errors: [],
+  };
+
+  const months = toArray(deduction.loan_months);
+  const repaymentMonths = months.length > 0 ? months : [batch.payroll_month];
+  const disbursementId = String(deduction.disbursement_id || '').trim();
+
+  if (!disbursementId) {
+    result.failed += 1;
+    result.errors.push({
+      staffName: deduction.staff_name,
+      staffNumber: deduction.staff_number,
+      error: 'Missing loan_disbursement_id in payroll line deduction snapshot.',
+    });
+    return result;
+  }
+
+  const entryClient = execute ? client : null;
+  const disbursementState = execute
+    ? await loadDisbursementState(client, new Map(), disbursementId, deduction.staff_id)
+    : await loadDisbursementState(client, dryRunCache, disbursementId, deduction.staff_id);
+
+  if (!disbursementState) {
+    result.failed += 1;
+    result.errors.push({
+      staffName: deduction.staff_name,
+      staffNumber: deduction.staff_number,
+      error: `Loan disbursement ${disbursementId} was not found for the staff member.`,
+    });
+    return result;
+  }
+
+  let remainingAmount = Math.min(
+    roundCurrency(deduction.total_amount || 0),
+    roundCurrency(disbursementState.outstanding),
+  );
+  const monthlyAmount = Math.max(0, roundCurrency(deduction.monthly_amount || deduction.total_amount || 0));
+  let insertedForEntry = 0;
+  let skippedForEntry = 0;
+
+  for (const repaymentMonth of repaymentMonths) {
+    if (disbursementState.outstanding <= 0 || remainingAmount <= 0) {
+      break;
+    }
+
+    const existingRepayment = await getExistingRepayment(client, disbursementState.id, repaymentMonth);
+    if (existingRepayment) {
+      skippedForEntry += 1;
+      result.skipped += 1;
+      continue;
+    }
+
+    const installmentAmount = Math.min(
+      monthlyAmount > 0 ? monthlyAmount : remainingAmount,
+      remainingAmount,
+      disbursementState.outstanding,
+    );
+
+    if (installmentAmount <= 0) {
+      break;
+    }
+
+    if (execute) {
+      await entryClient.query(
+        `
+          INSERT INTO loan_repayments (
+            disbursement_id,
+            staff_id,
+            amount,
+            repayment_date,
+            month,
+            payroll_batch_id,
+            payment_method,
+            remarks
+          ) VALUES ($1, $2, $3, NOW(), $4, $5, 'payroll_deduction', $6)
+        `,
+        [
+          disbursementState.id,
+          deduction.staff_id,
+          installmentAmount,
+          repaymentMonth,
+          batch.id,
+          `Backfilled from payroll deduction snapshot for batch ${batch.batch_number}.`,
+        ],
+      );
+    }
+
+    disbursementState.outstanding = roundCurrency(disbursementState.outstanding - installmentAmount);
+    disbursementState.dirty = true;
+    remainingAmount = roundCurrency(remainingAmount - installmentAmount);
+    insertedForEntry += 1;
+    result.inserted += 1;
+  }
+
+  if (insertedForEntry === 0 && skippedForEntry === 0) {
+    result.failed += 1;
+    result.errors.push({
+      staffName: deduction.staff_name,
+      staffNumber: deduction.staff_number,
+      error: 'No missing repayment month could be inserted from this payroll snapshot.',
+    });
+    return result;
+  }
+
+  if (execute && disbursementState.dirty) {
+    await updateDisbursementBalances(entryClient, disbursementState);
+  }
+
+  return result;
+}
+
 async function processBatch(client, batch, execute) {
   const deductions = await getLoanDeductionsForBatch(client, batch.id);
   const summary = {
@@ -184,112 +300,41 @@ async function processBatch(client, batch, execute) {
     return summary;
   }
 
-  const disbursementCache = new Map();
+  const dryRunCache = new Map();
+  console.log(`Processing ${deductions.length} loan deduction entr${deductions.length === 1 ? 'y' : 'ies'} for batch ${batch.batch_number}...`);
 
-  for (const deduction of deductions) {
-    const months = toArray(deduction.loan_months);
-    const repaymentMonths = months.length > 0 ? months : [batch.payroll_month];
-    const disbursementId = String(deduction.disbursement_id || '').trim();
-
-    if (!disbursementId) {
-      summary.failed += 1;
-      summary.errors.push({
-        staffName: deduction.staff_name,
-        staffNumber: deduction.staff_number,
-        error: 'Missing loan_disbursement_id in payroll line deduction snapshot.',
-      });
-      continue;
-    }
-
-    const disbursement = await loadDisbursementState(client, disbursementCache, disbursementId, deduction.staff_id);
-    if (!disbursement) {
-      summary.failed += 1;
-      summary.errors.push({
-        staffName: deduction.staff_name,
-        staffNumber: deduction.staff_number,
-        error: `Loan disbursement ${disbursementId} was not found for the staff member.`,
-      });
-      continue;
-    }
-
-    let remainingAmount = Math.min(
-      roundCurrency(deduction.total_amount || 0),
-      roundCurrency(disbursement.outstanding),
-    );
-    const monthlyAmount = Math.max(0, roundCurrency(deduction.monthly_amount || deduction.total_amount || 0));
-    let insertedForEntry = 0;
-    let skippedForEntry = 0;
-
-    for (const repaymentMonth of repaymentMonths) {
-      if (disbursement.outstanding <= 0 || remainingAmount <= 0) {
-        break;
+  for (let index = 0; index < deductions.length; index += 1) {
+    const deduction = deductions[index];
+    try {
+      if (execute) {
+        await client.query('BEGIN');
       }
 
-      const existingRepayment = await getExistingRepayment(client, disbursement.id, repaymentMonth);
-      if (existingRepayment) {
-        skippedForEntry += 1;
-        summary.skipped += 1;
-        continue;
-      }
-
-      const installmentAmount = Math.min(
-        monthlyAmount > 0 ? monthlyAmount : remainingAmount,
-        remainingAmount,
-        disbursement.outstanding,
-      );
-
-      if (installmentAmount <= 0) {
-        break;
-      }
+      const entryResult = await processDeductionEntry(client, batch, deduction, execute, dryRunCache);
+      summary.inserted += entryResult.inserted;
+      summary.skipped += entryResult.skipped;
+      summary.failed += entryResult.failed;
+      summary.errors.push(...entryResult.errors);
 
       if (execute) {
-        await client.query(
-          `
-            INSERT INTO loan_repayments (
-              disbursement_id,
-              staff_id,
-              amount,
-              repayment_date,
-              month,
-              payroll_batch_id,
-              payment_method,
-              remarks
-            ) VALUES ($1, $2, $3, NOW(), $4, $5, 'payroll_deduction', $6)
-          `,
-          [
-            disbursement.id,
-            deduction.staff_id,
-            installmentAmount,
-            repaymentMonth,
-            batch.id,
-            `Backfilled from payroll deduction snapshot for batch ${batch.batch_number}.`,
-          ],
-        );
+        await client.query('COMMIT');
       }
-
-      disbursement.outstanding = roundCurrency(disbursement.outstanding - installmentAmount);
-      disbursement.dirty = true;
-      remainingAmount = roundCurrency(remainingAmount - installmentAmount);
-      insertedForEntry += 1;
-      summary.inserted += 1;
-    }
-
-    if (insertedForEntry === 0 && skippedForEntry === 0) {
+    } catch (error) {
+      if (execute) {
+        await client.query('ROLLBACK');
+      }
       summary.failed += 1;
       summary.errors.push({
         staffName: deduction.staff_name,
         staffNumber: deduction.staff_number,
-        error: 'No missing repayment month could be inserted from this payroll snapshot.',
+        error: error instanceof Error ? error.message : String(error || 'Unknown error'),
       });
     }
-  }
 
-  if (execute) {
-    for (const disbursement of disbursementCache.values()) {
-      if (!disbursement || !disbursement.dirty) {
-        continue;
-      }
-      await updateDisbursementBalances(client, disbursement);
+    if ((index + 1) % 25 === 0 || index === deductions.length - 1) {
+      console.log(
+        `[PROGRESS] ${batch.batch_number}: ${index + 1}/${deductions.length} processed | inserted=${summary.inserted} skipped=${summary.skipped} failed=${summary.failed}`,
+      );
     }
   }
 
@@ -326,10 +371,6 @@ async function run() {
     };
 
     for (const batch of batches) {
-      if (args.execute) {
-        await client.query('BEGIN');
-      }
-
       try {
         const summary = await processBatch(client, batch, args.execute);
         overall.batches += 1;
@@ -337,10 +378,6 @@ async function run() {
         overall.inserted += summary.inserted;
         overall.skipped += summary.skipped;
         overall.failed += summary.failed;
-
-        if (args.execute) {
-          await client.query('COMMIT');
-        }
 
         console.log(
           `[${args.execute ? 'APPLIED' : 'PREVIEW'}] ${summary.batchNumber} ${summary.payrollMonth}: ${summary.inserted} insert(s), ${summary.skipped} skip(s), ${summary.failed} failure(s) from ${summary.deductionEntries} loan deduction entry(ies).`,
@@ -356,9 +393,6 @@ async function run() {
           }
         }
       } catch (error) {
-        if (args.execute) {
-          await client.query('ROLLBACK');
-        }
         throw error;
       }
     }

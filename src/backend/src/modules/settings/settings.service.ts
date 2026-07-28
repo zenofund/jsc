@@ -5,6 +5,31 @@ import { AuditAction } from '../audit/dto/audit.dto';
 
 @Injectable()
 export class SettingsService {
+  private readonly generalSettingsDefaults = {
+    organization_name: 'Judicial Service Committee',
+    organization_logo: '',
+    payroll_prefix: 'JSC',
+    payday_day: 25,
+    auto_generate_payslips: true,
+    app_version: '1.0.1',
+    approval_workflow: [],
+    tax_zones: [],
+    allowed_grades: [3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 17],
+    enforce_2fa: false,
+    single_session_only: false,
+    inactivity_logout_minutes: 30,
+    max_failed_login_attempts: 5,
+    lockout_minutes: 15,
+    geo_fencing_enabled: false,
+    office_latitude: null,
+    office_longitude: null,
+    office_radius_meters: 100,
+    allowed_ip_range: '',
+    trusted_network_fallback: '',
+    loan_management_enabled: true,
+    cooperative_management_enabled: true,
+  };
+
   constructor(
     private readonly databaseService: DatabaseService,
     private readonly auditService: AuditService,
@@ -16,52 +41,19 @@ export class SettingsService {
     );
 
     if (result?.value) {
-      const securityDefaults = {
-        enforce_2fa: false,
-        single_session_only: false,
-        inactivity_logout_minutes: 30,
-        max_failed_login_attempts: 5,
-        lockout_minutes: 15,
-        geo_fencing_enabled: false,
-        office_latitude: null,
-        office_longitude: null,
-        office_radius_meters: 100,
-        allowed_ip_range: '',
-        trusted_network_fallback: '',
-      };
-
       return {
-        ...securityDefaults,
+        ...this.generalSettingsDefaults,
         ...result.value,
         allowed_grades: Array.isArray(result.value.allowed_grades)
           ? result.value.allowed_grades
-          : [3,4,5,6,7,8,9,10,12,13,14,15,16,17],
+          : this.generalSettingsDefaults.allowed_grades,
         created_at: new Date().toISOString(),
         updated_at: result.updated_at || new Date().toISOString(),
       };
     }
 
     return {
-      organization_name: 'Judicial Service Committee',
-      organization_logo: '',
-      payroll_prefix: 'JSC',
-      payday_day: 25,
-      auto_generate_payslips: true,
-      app_version: '1.0.1',
-      approval_workflow: [],
-      tax_zones: [],
-      allowed_grades: [3,4,5,6,7,8,9,10,12,13,14,15,16,17],
-      enforce_2fa: false,
-      single_session_only: false,
-      inactivity_logout_minutes: 30,
-      max_failed_login_attempts: 5,
-      lockout_minutes: 15,
-      geo_fencing_enabled: false,
-      office_latitude: null,
-      office_longitude: null,
-      office_radius_meters: 100,
-      allowed_ip_range: '',
-      trusted_network_fallback: '',
+      ...this.generalSettingsDefaults,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -93,6 +85,8 @@ export class SettingsService {
       office_radius_meters,
       allowed_ip_range,
       trusted_network_fallback,
+      loan_management_enabled,
+      cooperative_management_enabled,
     } = settings;
 
     const parseBoolean = (v: any) => {
@@ -136,6 +130,10 @@ export class SettingsService {
         : 100,
       allowed_ip_range: typeof allowed_ip_range === 'string' ? allowed_ip_range.trim() : '',
       trusted_network_fallback: typeof trusted_network_fallback === 'string' ? trusted_network_fallback.trim() : '',
+      loan_management_enabled: parseBoolean(loan_management_enabled ?? this.generalSettingsDefaults.loan_management_enabled),
+      cooperative_management_enabled: parseBoolean(
+        cooperative_management_enabled ?? this.generalSettingsDefaults.cooperative_management_enabled,
+      ),
     };
 
     await this.databaseService.query(
@@ -158,6 +156,22 @@ export class SettingsService {
     });
 
     return this.getSettings();
+  }
+
+  async isFeatureEnabled(featureKey: 'loan_management' | 'cooperative_management') {
+    const settings = await this.getSettings();
+    if (featureKey === 'loan_management') {
+      return settings.loan_management_enabled !== false;
+    }
+    return settings.cooperative_management_enabled !== false;
+  }
+
+  async getModuleAvailability() {
+    const settings = await this.getSettings();
+    return {
+      loan_management_enabled: settings.loan_management_enabled !== false,
+      cooperative_management_enabled: settings.cooperative_management_enabled !== false,
+    };
   }
 
   async getTaxConfiguration() {

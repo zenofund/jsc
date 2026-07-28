@@ -2,7 +2,9 @@ import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query, Request,
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { LoansService } from './loans.service';
 import { RolesGuard } from '@common/guards/roles.guard';
+import { FeatureToggleGuard } from '@common/guards/feature-toggle.guard';
 import { Roles } from '@common/decorators/roles.decorator';
+import { RequireFeature } from '@common/decorators/require-feature.decorator';
 import {
   CreateLoanTypeDto,
   UpdateLoanTypeDto,
@@ -21,7 +23,8 @@ import { LoanMigrationImportDto } from './dto/migration-import.dto';
 @ApiTags('Loans')
 @ApiBearerAuth()
 @Controller('loans')
-@UseGuards(RolesGuard)
+@UseGuards(RolesGuard, FeatureToggleGuard)
+@RequireFeature('loan_management')
 export class LoansController {
   constructor(private readonly loansService: LoansService) {}
 

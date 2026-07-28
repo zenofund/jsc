@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useSystemSettings } from '../contexts/SystemSettingsContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
-import { settingsAPI } from '../lib/api-client';
 import { getPwaInstallPromptState } from '../lib/pwa-install';
 import { NotificationDropdown } from './NotificationDropdown';
 import { 
@@ -53,16 +53,30 @@ type BeforeInstallPromptEvent = Event & {
 
 export function Layout({ children }: LayoutProps) {
   const { user, logout } = useAuth();
+  const { settings, loanManagementEnabled, cooperativeManagementEnabled } = useSystemSettings();
   const { theme, toggleTheme } = useTheme();
   const networkStatus = useNetworkStatus();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
-  const [appVersion, setAppVersion] = useState<string>('JSCM v.1.0.1');
-  const [approvalRoles, setApprovalRoles] = useState<string[]>(['cpo', 'checking', 'auditor']); // Default fallback
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
   const installReminderMs = 8 * 60 * 60 * 1000;
+  const appVersion = settings?.app_version ? `JSCM v.${settings.app_version}` : 'JSCM v.1.0.1';
+  const approvalRoles = React.useMemo(() => {
+    const normalizeRole = (role: any) => {
+      const r = String(role || '').trim().toLowerCase();
+      if (r === 'reviewer') return 'checking';
+      if (r === 'approver') return 'cpo';
+      return r;
+    };
+    const workflowRoles = Array.isArray(settings?.approval_workflow)
+      ? settings.approval_workflow.map((stage: any) => normalizeRole(stage.role))
+      : [];
+    return workflowRoles.length > 0
+      ? (Array.from(new Set(workflowRoles)) as string[])
+      : ['cpo', 'checking', 'auditor'];
+  }, [settings?.approval_workflow]);
 
   const installPromptState = React.useMemo(() => {
     if (typeof window === 'undefined') {
@@ -83,40 +97,6 @@ export function Layout({ children }: LayoutProps) {
       hasDeferredPrompt: Boolean(deferredPrompt),
     });
   }, [deferredPrompt, isInstalled]);
-
-  React.useEffect(() => {
-    const fetchSettings = async () => {
-      try {
-        const settings = await settingsAPI.getSettings();
-        if (settings) {
-          if (settings.app_version) {
-            setAppVersion(`JSCM v.${settings.app_version}`);
-          }
-          if (settings.approval_workflow && Array.isArray(settings.approval_workflow)) {
-            const normalizeRole = (role: any) => {
-              const r = String(role || '').trim().toLowerCase();
-              if (r === 'reviewer') return 'checking';
-              if (r === 'approver') return 'cpo';
-              return r;
-            };
-            const roles = settings.approval_workflow.map((stage: any) => normalizeRole(stage.role));
-            // Always include admin/auditor for oversight? Maybe not admin if they are not in workflow.
-            // But let's stick to what's in the workflow as requested + maybe 'auditor' for viewing?
-            // The request says: "Approval dashboard visibility exposed based on user roles defined in the approval workflow by the admin."
-            // So we should strictly use those roles.
-            // However, we should probably ensure unique roles.
-            const uniqueRoles = Array.from(new Set(roles)) as string[];
-            if (uniqueRoles.length > 0) {
-              setApprovalRoles(uniqueRoles);
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Failed to fetch settings', error);
-      }
-    };
-    fetchSettings();
-  }, []);
 
   React.useEffect(() => {
     const storedInstalled = localStorage.getItem('pwaInstalled') === 'true';
@@ -218,9 +198,15 @@ export function Layout({ children }: LayoutProps) {
       group: 'Financial Services',
       roles: ['admin', 'payroll_officer', 'cashier'],
       items: [
-        { name: 'Loan Management', icon: Wallet, view: 'loan-management', roles: ['admin', 'payroll_officer'] },
-        { name: 'Cooperative Management', icon: Users, view: 'cooperative-management', roles: ['admin', 'payroll_officer'] },
-        { name: 'Cooperative Reports', icon: Building2, view: 'cooperative-reports', roles: ['admin', 'payroll_officer'] },
+        ...(loanManagementEnabled
+          ? [{ name: 'Loan Management', icon: Wallet, view: 'loan-management', roles: ['admin', 'payroll_officer'] }]
+          : []),
+        ...(cooperativeManagementEnabled
+          ? [
+              { name: 'Cooperative Management', icon: Users, view: 'cooperative-management', roles: ['admin', 'payroll_officer'] },
+              { name: 'Cooperative Reports', icon: Building2, view: 'cooperative-reports', roles: ['admin', 'payroll_officer'] },
+            ]
+          : []),
         { name: 'Bank Payments', icon: Building2, view: 'bank-payments', roles: ['admin', 'payroll_officer', 'cashier'] },
       ],
     },
@@ -413,7 +399,7 @@ export function Layout({ children }: LayoutProps) {
             );
           })}
 
-          {navigationGroups.map((group) => {
+          {navigationGroups.filter((group) => group.items.length > 0).map((group) => {
             if (!hasGroupAccess(group)) return null;
             
             return (

@@ -9,6 +9,7 @@ import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/dto/audit.dto';
 import { CooperativesService } from '../cooperatives/cooperatives.service';
 import { LoansService } from '../loans/loans.service';
+import { SettingsService } from '../settings/settings.service';
 import { CreatePayrollBatchDto } from './dto/create-payroll-batch.dto';
 import { ApprovePayrollDto } from './dto/approve-payroll.dto';
 import { v4 as uuidv4 } from 'uuid';
@@ -26,6 +27,7 @@ export class PayrollService {
     private auditService: AuditService,
     private cooperativesService: CooperativesService,
     private loansService: LoansService,
+    private settingsService: SettingsService,
   ) {}
 
   async onModuleInit() {
@@ -107,6 +109,62 @@ export class PayrollService {
     }
 
     return payableMonths;
+  }
+
+  private async getModuleAvailability() {
+    return this.settingsService.getModuleAvailability().catch(() => ({
+      loan_management_enabled: true,
+      cooperative_management_enabled: true,
+    }));
+  }
+
+  private isLoanDeductionEntry(deduction: any) {
+    return String(deduction?.code || '').toUpperCase() === 'LOAN';
+  }
+
+  private isCooperativeDeductionEntry(deduction: any) {
+    return deduction?.is_cooperative === true && Boolean(deduction?.cooperative_id) && Boolean(deduction?.member_id);
+  }
+
+  private async getDisabledFeatureDeductionSummary(
+    batchId: string,
+    availability: { loan_management_enabled: boolean; cooperative_management_enabled: boolean },
+  ) {
+    if (availability.loan_management_enabled && availability.cooperative_management_enabled) {
+      return { loanCount: 0, cooperativeCount: 0 };
+    }
+
+    const payrollLines = await this.databaseService.query(
+      'SELECT deductions FROM payroll_lines WHERE payroll_batch_id = $1',
+      [batchId],
+    );
+
+    let loanCount = 0;
+    let cooperativeCount = 0;
+
+    for (const line of payrollLines) {
+      let deductions = [];
+      try {
+        deductions = typeof line.deductions === 'string' ? JSON.parse(line.deductions) : line.deductions;
+      } catch (error) {
+        deductions = [];
+      }
+
+      if (!Array.isArray(deductions)) {
+        continue;
+      }
+
+      for (const deduction of deductions) {
+        if (!availability.loan_management_enabled && this.isLoanDeductionEntry(deduction)) {
+          loanCount += 1;
+        }
+        if (!availability.cooperative_management_enabled && this.isCooperativeDeductionEntry(deduction)) {
+          cooperativeCount += 1;
+        }
+      }
+    }
+
+    return { loanCount, cooperativeCount };
   }
 
   private async ensurePayrollLockColumns() {
@@ -380,6 +438,10 @@ export class PayrollService {
       throw new BadRequestException('No payroll-eligible staff found');
     }
 
+    const moduleAvailability = await this.getModuleAvailability();
+    const loanManagementEnabled = moduleAvailability.loan_management_enabled !== false;
+    const cooperativeManagementEnabled = moduleAvailability.cooperative_management_enabled !== false;
+
     // Get global allowances
     const globalAllowances = await this.databaseService.query(
       `SELECT * FROM allowances WHERE status = 'active' AND applies_to_all = true`,
@@ -433,31 +495,35 @@ export class PayrollService {
     );
 
     // Get active loan repayments
-    const loanRepayments = await this.databaseService.query(
-      `SELECT
-         ld.id,
-         ld.staff_id,
-         ld.start_month,
-         ld.tenure_months,
-         ld.monthly_deduction,
-         ld.balance_outstanding,
-         COALESCE(
-           ARRAY_AGG(DISTINCT lr.month) FILTER (WHERE lr.month IS NOT NULL),
-           ARRAY[]::text[]
-         ) as paid_months
-       FROM loan_disbursements ld
-       JOIN loan_applications la ON ld.loan_application_id = la.id
-       LEFT JOIN loan_repayments lr ON lr.disbursement_id = ld.id
-       WHERE ld.status = 'active'
-         AND ld.balance_outstanding > 0
-         AND ld.start_month <= $1
-       GROUP BY ld.id
-       ORDER BY ld.start_month ASC`,
-      [batch.payroll_month],
-    );
+    const loanRepayments = loanManagementEnabled
+      ? await this.databaseService.query(
+          `SELECT
+             ld.id,
+             ld.staff_id,
+             ld.start_month,
+             ld.tenure_months,
+             ld.monthly_deduction,
+             ld.balance_outstanding,
+             COALESCE(
+               ARRAY_AGG(DISTINCT lr.month) FILTER (WHERE lr.month IS NOT NULL),
+               ARRAY[]::text[]
+             ) as paid_months
+           FROM loan_disbursements ld
+           JOIN loan_applications la ON ld.loan_application_id = la.id
+           LEFT JOIN loan_repayments lr ON lr.disbursement_id = ld.id
+           WHERE ld.status = 'active'
+             AND ld.balance_outstanding > 0
+             AND ld.start_month <= $1
+           GROUP BY ld.id
+           ORDER BY ld.start_month ASC`,
+          [batch.payroll_month],
+        )
+      : [];
 
     // Get active cooperative memberships for auto-deduction
-    const cooperativeMemberships = await this.cooperativesService.getAutoDeductMemberships();
+    const cooperativeMemberships = cooperativeManagementEnabled
+      ? await this.cooperativesService.getAutoDeductMemberships()
+      : [];
 
     // Get system tax settings
     const systemSettings = await this.databaseService.queryOne(
@@ -1534,22 +1600,43 @@ export class PayrollService {
    */
   async lockBatch(batchId: string, userId: string) {
     const batch = await this.findOne(batchId);
+    const moduleAvailability = await this.getModuleAvailability();
 
     // Allow locking if batch is ready for payment or already paid
     if (batch.status !== 'ready_for_payment' && batch.status !== 'paid' && batch.status !== 'approved') {
       throw new BadRequestException('Only approved, ready for payment, or paid batches can be locked');
     }
 
-    const loanPostingResult = await this.databaseService.transaction(async (client) => {
-      const loanResults = await this.processLoanDeductions(batchId, userId, client, batch.payroll_month);
-      if (loanResults.failed > 0) {
-        const failureSummary = loanResults.errors
-          .slice(0, 3)
-          .map((entry) => String(entry.staffName || '').trim() || 'a staff loan')
-          .join(', ');
-        throw new BadRequestException(
-          `Loan repayment posting failed for ${loanResults.failed} item${loanResults.failed === 1 ? '' : 's'}${failureSummary ? `: ${failureSummary}` : ''}. Batch was not locked.`,
+    const disabledDeductionSummary = await this.getDisabledFeatureDeductionSummary(batchId, moduleAvailability);
+    if (disabledDeductionSummary.loanCount > 0 || disabledDeductionSummary.cooperativeCount > 0) {
+      const blockedParts: string[] = [];
+      if (disabledDeductionSummary.loanCount > 0) {
+        blockedParts.push(`${disabledDeductionSummary.loanCount} loan deduction${disabledDeductionSummary.loanCount === 1 ? '' : 's'}`);
+      }
+      if (disabledDeductionSummary.cooperativeCount > 0) {
+        blockedParts.push(
+          `${disabledDeductionSummary.cooperativeCount} cooperative deduction${disabledDeductionSummary.cooperativeCount === 1 ? '' : 's'}`,
         );
+      }
+      throw new BadRequestException(
+        `This payroll batch still contains ${blockedParts.join(' and ')} while the related module is disabled. Regenerate the batch before locking so those deductions are removed.`,
+      );
+    }
+
+    const loanPostingResult = await this.databaseService.transaction(async (client) => {
+      let loanResults = { success: 0, failed: 0, skipped: 0, errors: [] as Array<{ staffId: string; staffName?: string; error: string }> };
+
+      if (moduleAvailability.loan_management_enabled !== false) {
+        loanResults = await this.processLoanDeductions(batchId, userId, client, batch.payroll_month);
+        if (loanResults.failed > 0) {
+          const failureSummary = loanResults.errors
+            .slice(0, 3)
+            .map((entry) => String(entry.staffName || '').trim() || 'a staff loan')
+            .join(', ');
+          throw new BadRequestException(
+            `Loan repayment posting failed for ${loanResults.failed} item${loanResults.failed === 1 ? '' : 's'}${failureSummary ? `: ${failureSummary}` : ''}. Batch was not locked.`,
+          );
+        }
       }
 
       await client.query(
@@ -1574,7 +1661,9 @@ export class PayrollService {
     this.processExternalDeductions(batchId);
 
     // Process Cooperative Deductions
-    this.processCooperativeDeductions(batchId, userId);
+    if (moduleAvailability.cooperative_management_enabled !== false) {
+      this.processCooperativeDeductions(batchId, userId);
+    }
 
     return {
       message: 'Batch locked successfully',

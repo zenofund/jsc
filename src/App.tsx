@@ -40,7 +40,7 @@ import { ChangePasswordPage } from './pages/ChangePasswordPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import StaffAdjustmentApprovalPage from './pages/StaffAdjustmentApprovalPage';
 import StaffRequestsAdminPage from './pages/StaffRequestsAdminPage';
-import { settingsAPI } from './lib/api-client';
+import { SystemSettingsProvider, useSystemSettings } from './contexts/SystemSettingsContext';
 
 const getDefaultViewForUser = (user: { role?: string | null }) => {
   const role = String(user?.role || '').trim().toLowerCase();
@@ -63,6 +63,31 @@ const getDefaultViewForUser = (user: { role?: string | null }) => {
 
 function AppContent() {
   const { user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading JSC Payroll System...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginPage />;
+  }
+
+  return (
+    <SystemSettingsProvider>
+      <AuthenticatedAppContent user={user} />
+    </SystemSettingsProvider>
+  );
+}
+
+function AuthenticatedAppContent({ user }: { user: any }) {
+  const { settings, loanManagementEnabled, cooperativeManagementEnabled } = useSystemSettings();
   const [currentView, setCurrentView] = useState<'dashboard' | 'hr-dashboard' | 'cashier-dashboard' | 'staff' | 'staff-portal' | 'staff-request-status' | 'staff-requests' | 'payroll' | 'promotions' | 'arrears' | 'approvals' | 'payslips' | 'reports' | 'setup' | 'admin' | 'loan-management' | 'department-management' | 'staff-allowances' | 'staff-adjustment-approvals' | 'leave-management' | 'bank-payments' | 'notifications' | 'cooperative-reports' | 'cooperative-management' | 'custom-report-builder' | 'reports-list' | 'smtp-settings' | 'change-password' | 'audit-log' | 'tax-configuration'>('dashboard');
   const [geoFenceBanner, setGeoFenceBanner] = useState<string | null>(null);
 
@@ -95,6 +120,16 @@ function AppContent() {
   }, [user, currentView]);
 
   useEffect(() => {
+    if (currentView === 'loan-management' && !loanManagementEnabled) {
+      setCurrentView(getDefaultViewForUser(user));
+      return;
+    }
+    if ((currentView === 'cooperative-management' || currentView === 'cooperative-reports') && !cooperativeManagementEnabled) {
+      setCurrentView(getDefaultViewForUser(user));
+    }
+  }, [cooperativeManagementEnabled, currentView, loanManagementEnabled, user]);
+
+  useEffect(() => {
     const handleGeoFenceDenied = (event: Event) => {
       const customEvent = event as CustomEvent<{ message?: string }>;
       setGeoFenceBanner(customEvent.detail?.message || 'Access denied: you must be within the office perimeter.');
@@ -121,39 +156,12 @@ function AppContent() {
       }
       link.href = href;
     };
-
-    const applyFavicon = async () => {
-      try {
-        const settings = await settingsAPI.getSettings({
-          headers: { 'X-Skip-Auth-Handler': 'true' }
-        });
-        if (settings?.organization_logo) {
-          setFavicon(settings.organization_logo);
-        } else {
-          setFavicon('/favicon.svg');
-        }
-      } catch {
-        setFavicon('/favicon.svg');
-      }
-    };
-
-    applyFavicon();
-  }, [user]);
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Loading JSC Payroll System...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return <LoginPage />;
-  }
+    if (settings?.organization_logo) {
+      setFavicon(settings.organization_logo);
+    } else {
+      setFavicon('/favicon.svg');
+    }
+  }, [settings?.organization_logo]);
 
   return (
     <Layout>
@@ -182,15 +190,15 @@ function AppContent() {
       {currentView === 'reports' && <ReportsPage />}
       {currentView === 'setup' && <PayrollSetupPage />}
       {currentView === 'admin' && <AdminPage />}
-      {currentView === 'loan-management' && <LoanManagementPage />}
+      {currentView === 'loan-management' && loanManagementEnabled && <LoanManagementPage />}
       {currentView === 'department-management' && <DepartmentManagementPage />}
       {currentView === 'staff-allowances' && <StaffAllowancesPage />}
       {currentView === 'staff-adjustment-approvals' && <StaffAdjustmentApprovalPage />}
       {currentView === 'leave-management' && <LeaveManagementPage />}
       {currentView === 'bank-payments' && <BankPaymentsPage />}
       {currentView === 'notifications' && <NotificationsPage />}
-      {currentView === 'cooperative-reports' && <CooperativeReportsPage />}
-      {currentView === 'cooperative-management' && <CooperativeManagementPage />}
+      {currentView === 'cooperative-reports' && cooperativeManagementEnabled && <CooperativeReportsPage />}
+      {currentView === 'cooperative-management' && cooperativeManagementEnabled && <CooperativeManagementPage />}
       {currentView === 'custom-report-builder' && <CustomReportBuilderPage />}
       {currentView === 'reports-list' && <ReportsListPage />}
       {currentView === 'smtp-settings' && <SmtpSettingsPage />}

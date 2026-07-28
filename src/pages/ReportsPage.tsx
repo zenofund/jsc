@@ -4,7 +4,8 @@ import { DataTable } from '../components/DataTable';
 import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
-import { reportAPI, payrollAPI, settingsAPI } from '../lib/api-client';
+import { useSystemSettings } from '../contexts/SystemSettingsContext';
+import { reportAPI, payrollAPI } from '../lib/api-client';
 import { 
   BarChart3, TrendingUp, Users, FileText, 
   Download, Calendar, DollarSign, PieChart, Building2
@@ -16,6 +17,7 @@ import { exportSpreadsheet } from '../utils/exportSpreadsheet';
 
 export function ReportsPage() {
   const { user } = useAuth();
+  const { settings, cooperativeManagementEnabled } = useSystemSettings();
   const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState<'staff' | 'payroll' | 'bank-schedule' | 'variance' | 'remittance'>('staff');
   const [reportData, setReportData] = useState<any>(null);
@@ -67,25 +69,19 @@ export function ReportsPage() {
       setActiveTab('variance');
       return;
     }
-    loadReport();
-    fetchSettings();
-  }, [activeTab, selectedMonth, month1, month2, remittanceType, staffDepartment, isCashier]);
-
-  const fetchSettings = async () => {
-    try {
-      const settings = await settingsAPI.getSettings();
-      if (settings?.organization_name) {
-        setOrganizationName(settings.organization_name);
-      }
-      if (settings?.organization_logo) {
-        setOrganizationLogo(settings.organization_logo);
-      } else {
-        setOrganizationLogo('');
-      }
-    } catch (error) {
-      console.error('Failed to fetch settings:', error);
+    if (!cooperativeManagementEnabled && remittanceType === 'cooperative') {
+      setRemittanceType('pension');
+      return;
     }
-  };
+    loadReport();
+  }, [activeTab, selectedMonth, month1, month2, remittanceType, staffDepartment, isCashier, cooperativeManagementEnabled]);
+
+  useEffect(() => {
+    if (settings?.organization_name) {
+      setOrganizationName(settings.organization_name);
+    }
+    setOrganizationLogo(settings?.organization_logo || '');
+  }, [settings?.organization_logo, settings?.organization_name]);
 
   const loadReport = async () => {
     setLoading(true);
@@ -1455,7 +1451,7 @@ export function ReportsPage() {
                 >
                   <option value="pension">Pension</option>
                   <option value="tax">Tax (PAYE)</option>
-                  <option value="cooperative">Cooperative</option>
+                  {cooperativeManagementEnabled && <option value="cooperative">Cooperative</option>}
                 </select>
               </div>
             </div>

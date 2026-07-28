@@ -468,6 +468,8 @@ export interface SystemSettings {
   office_radius_meters?: number;
   allowed_ip_range?: string;
   trusted_network_fallback?: string;
+  loan_management_enabled?: boolean;
+  cooperative_management_enabled?: boolean;
 }
 
 // ============================================

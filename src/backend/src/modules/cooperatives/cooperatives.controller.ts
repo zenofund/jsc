@@ -1,6 +1,9 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, Request, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, Request, BadRequestException, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { CooperativesService } from './cooperatives.service';
+import { RolesGuard } from '@common/guards/roles.guard';
+import { FeatureToggleGuard } from '@common/guards/feature-toggle.guard';
+import { RequireFeature } from '@common/decorators/require-feature.decorator';
 import { CreateCooperativeDto } from './dto/create-cooperative.dto';
 import { AddCooperativeMemberDto } from './dto/add-member.dto';
 import { RecordContributionDto } from './dto/record-contribution.dto';
@@ -10,6 +13,8 @@ import { SkipAudit } from '../../common/decorators/skip-audit.decorator';
 @ApiTags('Cooperatives')
 @ApiBearerAuth()
 @Controller('cooperatives')
+@UseGuards(RolesGuard, FeatureToggleGuard)
+@RequireFeature('cooperative_management')
 export class CooperativesController {
   constructor(private readonly cooperativesService: CooperativesService) {}
 

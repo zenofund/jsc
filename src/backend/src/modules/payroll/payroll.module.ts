@@ -9,6 +9,7 @@ import { AuditModule } from '@modules/audit/audit.module';
 import { NotificationsModule } from '@modules/notifications/notifications.module';
 import { CooperativesModule } from '@modules/cooperatives/cooperatives.module';
 import { LoansModule } from '@modules/loans/loans.module';
+import { SettingsModule } from '@modules/settings/settings.module';
 
 @Module({
   imports: [
@@ -19,7 +20,8 @@ import { LoansModule } from '@modules/loans/loans.module';
     AuditModule, 
     NotificationsModule,
     CooperativesModule,
-    LoansModule
+    LoansModule,
+    SettingsModule,
   ],
   controllers: [PayrollController],
   providers: [PayrollService],

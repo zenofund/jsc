@@ -80,6 +80,56 @@ export class ReportsService {
     return [];
   }
 
+  private async getModuleAvailability() {
+    return this.settingsService.getModuleAvailability().catch(() => ({
+      loan_management_enabled: true,
+      cooperative_management_enabled: true,
+    }));
+  }
+
+  private isDataSourceBlocked(
+    table: string,
+    availability: { loan_management_enabled: boolean; cooperative_management_enabled: boolean },
+  ) {
+    const loanTables = new Set(['loan_types', 'loan_applications', 'loan_disbursements', 'loan_repayments']);
+    const cooperativeTables = new Set(['cooperatives', 'cooperative_members', 'cooperative_contributions']);
+    if (!availability.loan_management_enabled && loanTables.has(table)) {
+      return true;
+    }
+    if (!availability.cooperative_management_enabled && cooperativeTables.has(table)) {
+      return true;
+    }
+    return false;
+  }
+
+  private assertConfigUsesEnabledModules(
+    config: ReportConfigDto,
+    availability: { loan_management_enabled: boolean; cooperative_management_enabled: boolean },
+  ) {
+    const blockedTables = Array.from(this.getTablesUsed(config)).filter((table) =>
+      this.isDataSourceBlocked(table, availability),
+    );
+
+    if (blockedTables.length === 0) {
+      return;
+    }
+
+    const hasLoanTable = blockedTables.some((table) =>
+      ['loan_types', 'loan_applications', 'loan_disbursements', 'loan_repayments'].includes(table),
+    );
+    const hasCooperativeTable = blockedTables.some((table) =>
+      ['cooperatives', 'cooperative_members', 'cooperative_contributions'].includes(table),
+    );
+
+    if (hasLoanTable && !availability.loan_management_enabled) {
+      throw new BadRequestException('Loan management is currently disabled by admin settings.');
+    }
+
+    if (hasCooperativeTable && !availability.cooperative_management_enabled) {
+      throw new BadRequestException('Cooperative management is currently disabled by admin settings.');
+    }
+  }
+
   // ==================== STANDARD REPORTS ====================
 
   /**
@@ -329,6 +379,7 @@ export class ReportsService {
    * Get Remittance Report
    */
   async getRemittanceReport(month: string, type: string) {
+    const moduleAvailability = await this.getModuleAvailability();
     const batch = await this.databaseService.queryOne(
       `SELECT * FROM payroll_batches WHERE payroll_month = $1 LIMIT 1`,
       [month]
@@ -345,6 +396,9 @@ export class ReportsService {
     );
 
     const typeLower = String(type || '').toLowerCase();
+    if (typeLower === 'cooperative' && !moduleAvailability.cooperative_management_enabled) {
+      throw new BadRequestException('Cooperative management is currently disabled by admin settings.');
+    }
 
     const remittances = (lines || [])
       .map((l: any) => {
@@ -567,10 +621,19 @@ export class ReportsService {
    * Get all available data sources for report building
    */
   async getDataSources(): Promise<DataSource[]> {
-    return this.dataSources.map((source) => ({
+    const moduleAvailability = await this.getModuleAvailability();
+    const visibleSources = this.dataSources.filter(
+      (source) => !this.isDataSourceBlocked(source.table, moduleAvailability),
+    );
+
+    return visibleSources.map((source) => ({
       ...source,
-      relationships: this.getLegacyRelationships(source.table),
-      relationshipGraph: this.getOutgoingEdges(source.table),
+      relationships: this.getLegacyRelationships(source.table).filter(
+        (relationship) => !this.isDataSourceBlocked(relationship.table, moduleAvailability),
+      ),
+      relationshipGraph: this.getOutgoingEdges(source.table).filter(
+        (edge) => !this.isDataSourceBlocked(edge.targetTable, moduleAvailability),
+      ),
     }));
   }
 
@@ -581,6 +644,7 @@ export class ReportsService {
    */
   async createTemplate(dto: CreateReportTemplateDto, userId: string) {
     try {
+      this.assertConfigUsesEnabledModules(dto.config, await this.getModuleAvailability());
       // Validate configuration
       this.validateReportConfig(dto.config);
 
@@ -745,6 +809,7 @@ export class ReportsService {
     }
 
     if (dto.config) {
+      this.assertConfigUsesEnabledModules(dto.config, await this.getModuleAvailability());
       this.validateReportConfig(dto.config);
     }
 
@@ -834,6 +899,8 @@ export class ReportsService {
       config.filters = [...(config.filters || []), ...dto.runtimeFilters];
     }
 
+    this.assertConfigUsesEnabledModules(config, await this.getModuleAvailability());
+
     const { page, pageSize, offset } = this.normalizePagination(
       dto.page,
       dto.pageSize,
@@ -899,6 +966,8 @@ export class ReportsService {
       this.maxResultPageSize,
     );
 
+    this.assertConfigUsesEnabledModules(dto.config, await this.getModuleAvailability());
+
     return this.executeReportConfig({
       config: dto.config,
       templateId: 'preview',
@@ -928,6 +997,7 @@ export class ReportsService {
   }) {
     const startTime = Date.now();
     const config = this.applyPaginationToConfig(options.config, options.pageSize, options.offset);
+    this.assertConfigUsesEnabledModules(config, await this.getModuleAvailability());
     this.validateReportConfig(config);
 
     const countQuery = this.buildCountQuery(config);

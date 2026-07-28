@@ -35,6 +35,7 @@
     "db:migrate-calculation-basis": "node scripts/run-migration-061-add-calculation-basis.js",
     "db:migrate-cooperative-member-fees": "node scripts/run-migration-062-add-cooperative-member-fees.js",
     "db:backfill-loan-repayments": "node scripts/backfill-loan-repayments-from-payroll.js",
+    "db:cleanup-loans": "node scripts/cleanup-loans-transactional-data.js",
     "test:salary-api": "node scripts/test-salary-api.js"
   },
   "dependencies": {
