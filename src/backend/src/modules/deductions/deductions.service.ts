@@ -7,6 +7,22 @@ export class DeductionsService {
 
   constructor(private databaseService: DatabaseService) {}
 
+  private normalizeStatus(value: unknown): string {
+    return String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  }
+
+  private canTransitionApprovalStatus(currentStatus: unknown): boolean {
+    const normalized = this.normalizeStatus(currentStatus);
+    return (
+      normalized === 'pending' ||
+      normalized === 'pending_approval' ||
+      normalized === 'pending_review' ||
+      normalized === 'awaiting_approval' ||
+      normalized === 'submitted' ||
+      normalized === 'active'
+    );
+  }
+
   private toMonthStart(value: any): string | null | undefined {
     if (value === undefined) return undefined;
     if (value === null || value === '') return null;
@@ -394,6 +410,11 @@ export class DeductionsService {
       throw new NotFoundException(`Staff deduction with ID ${id} not found`);
     }
 
+    const requestedStatus = this.normalizeStatus(dto?.status);
+    if ((requestedStatus === 'active' || requestedStatus === 'inactive') && !this.canTransitionApprovalStatus(existing.status)) {
+      throw new BadRequestException('This adjustment is not eligible for approval changes');
+    }
+
     const hasDefinitionInput = this.hasStaffDeductionDefinitionInput(dto);
     const definition = hasDefinitionInput
       ? await this.resolveStaffDeductionDefinition(dto)
@@ -473,10 +494,16 @@ export class DeductionsService {
   async bulkUpdateStaffDeductionStatus(ids: string[], status: string, userId: string) {
     if (!ids.length) return { count: 0 };
 
+    const requestedStatus = this.normalizeStatus(status);
+    if (requestedStatus !== 'active' && requestedStatus !== 'inactive') {
+      throw new BadRequestException('Invalid status for bulk approval');
+    }
+
     const result = await this.databaseService.query(
       `UPDATE staff_deductions 
        SET status = $1, updated_at = NOW() 
        WHERE id = ANY($2::uuid[])
+         AND LOWER(COALESCE(status, '')) IN ('pending','pending_approval','pending_review','awaiting_approval','submitted','active')
        RETURNING id`,
       [status, ids],
     );

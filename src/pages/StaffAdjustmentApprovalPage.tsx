@@ -43,6 +43,26 @@ const StaffAdjustmentApprovalPage: React.FC = () => {
   const { showToast } = useToast();
   const confirm = useConfirm();
 
+  const isPendingStatus = (status: unknown) => {
+    const raw = String(status || '').trim().toLowerCase();
+    const normalized = raw.replace(/[\s-]+/g, '_');
+    return (
+      normalized === 'pending' ||
+      normalized === 'pending_approval' ||
+      normalized === 'pending_review' ||
+      normalized === 'awaiting_approval' ||
+      normalized === 'submitted'
+    );
+  };
+
+  const canShowRowActions = (status: unknown) => {
+    const raw = String(status || '').trim().toLowerCase();
+    const normalized = raw.replace(/[\s-]+/g, '_');
+    return isPendingStatus(status) || normalized === 'active';
+  };
+
+  const isRowSelectable = (status: unknown) => canShowRowActions(status);
+
   const fetchItems = async () => {
     setLoading(true);
     // Clear selection when refreshing/changing filters
@@ -184,10 +204,11 @@ const StaffAdjustmentApprovalPage: React.FC = () => {
   };
 
   const toggleSelectAll = () => {
-    if (selectedIds.length === items.length) {
+    const selectableIds = items.filter((item) => isRowSelectable(item.status)).map((item) => item.id);
+    if (selectableIds.length > 0 && selectedIds.length === selectableIds.length) {
       setSelectedIds([]);
     } else {
-      setSelectedIds(items.map(i => i.id));
+      setSelectedIds(selectableIds);
     }
   };
 
@@ -300,7 +321,7 @@ const StaffAdjustmentApprovalPage: React.FC = () => {
                 <th className="px-4 py-3 w-8">
                   <input 
                     type="checkbox" 
-                    checked={items.length > 0 && selectedIds.length === items.length}
+                    checked={items.some((item) => isRowSelectable(item.status)) && selectedIds.length === items.filter((item) => isRowSelectable(item.status)).length}
                     onChange={toggleSelectAll}
                     className="rounded border-gray-300"
                   />
@@ -337,7 +358,8 @@ const StaffAdjustmentApprovalPage: React.FC = () => {
                         type="checkbox" 
                         checked={selectedIds.includes(item.id)}
                         onChange={() => toggleSelectOne(item.id)}
-                        className="rounded border-gray-300"
+                        disabled={!isRowSelectable(item.status)}
+                        className="rounded border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed"
                       />
                     </td>
                     <td className="px-4 py-3 text-foreground whitespace-nowrap">
@@ -360,7 +382,7 @@ const StaffAdjustmentApprovalPage: React.FC = () => {
                       <StatusBadge status={item.status as any} />
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {item.status === 'pending' && (
+                      {canShowRowActions(item.status) && (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <button
