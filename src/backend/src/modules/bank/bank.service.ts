@@ -1,6 +1,8 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { DatabaseService } from '../../common/database/database.service';
 import {
+  CreateBankGroupDto,
+  UpdateBankGroupDto,
   CreateBankAccountDto,
   UpdateBankAccountDto,
   CreatePaymentBatchDto,
@@ -77,6 +79,11 @@ export class BankService {
 
   constructor(private databaseService: DatabaseService) {}
 
+  private normalizeOptionalText(value: unknown): string | null {
+    const text = String(value ?? '').trim();
+    return text || null;
+  }
+
   private formatExportText(value: unknown): string {
     const text = String(value ?? '').trim();
     if (!text) return '';
@@ -136,6 +143,181 @@ export class BankService {
     } catch (error: any) {
       this.logger.warn(`ensurePerformanceIndexes failed: ${error?.message}`);
     }
+  }
+
+  // ==================== BANK GROUPS ====================
+
+  async createBankGroup(dto: CreateBankGroupDto, userId: string) {
+    const groupName = this.normalizeOptionalText(dto.groupName || dto.group_name);
+    const bankName = this.normalizeOptionalText(dto.bankName || dto.bank_name);
+    const bankCode = this.normalizeOptionalText(dto.bankCode || dto.bank_code);
+    const description = this.normalizeOptionalText(dto.description);
+    const isActive = dto.isActive !== undefined ? dto.isActive : (dto.is_active !== undefined ? dto.is_active : true);
+
+    if (!groupName || !bankName) {
+      throw new BadRequestException('Bank name and group name are required');
+    }
+
+    const existing = await this.databaseService.queryOne(
+      `SELECT id
+       FROM bank_groups
+       WHERE LOWER(bank_name) = LOWER($1)
+         AND LOWER(group_name) = LOWER($2)
+       LIMIT 1`,
+      [bankName, groupName],
+    );
+
+    if (existing) {
+      throw new BadRequestException('Bank group already exists for this bank');
+    }
+
+    const bankGroup = await this.databaseService.queryOne(
+      `INSERT INTO bank_groups (
+        group_name, bank_name, bank_code, description, is_active, created_by
+      ) VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING *`,
+      [groupName, bankName, bankCode, description, isActive, userId],
+    );
+
+    this.logger.log(`Bank group ${groupName} created for ${bankName}`);
+    return bankGroup;
+  }
+
+  async findAllBankGroups(filters?: { isActive?: boolean; bankCode?: string; bankName?: string }) {
+    const conditions: string[] = [];
+    const params: any[] = [];
+    let paramIndex = 1;
+
+    if (filters?.isActive !== undefined) {
+      conditions.push(`is_active = $${paramIndex++}`);
+      params.push(filters.isActive);
+    }
+    if (filters?.bankCode) {
+      conditions.push(`bank_code = $${paramIndex++}`);
+      params.push(filters.bankCode);
+    }
+    if (filters?.bankName) {
+      conditions.push(`LOWER(bank_name) = LOWER($${paramIndex++})`);
+      params.push(filters.bankName);
+    }
+
+    const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    return this.databaseService.query(
+      `SELECT *
+       FROM bank_groups
+       ${whereClause}
+       ORDER BY bank_name ASC, group_name ASC`,
+      params,
+    );
+  }
+
+  async findOneBankGroup(id: string) {
+    const bankGroup = await this.databaseService.queryOne(
+      'SELECT * FROM bank_groups WHERE id = $1',
+      [id],
+    );
+
+    if (!bankGroup) {
+      throw new NotFoundException('Bank group not found');
+    }
+
+    return bankGroup;
+  }
+
+  async updateBankGroup(id: string, dto: UpdateBankGroupDto, userId: string) {
+    const existing = await this.findOneBankGroup(id);
+    const updates: string[] = [];
+    const values: any[] = [];
+    let paramIndex = 1;
+
+    const groupName = dto.groupName !== undefined ? this.normalizeOptionalText(dto.groupName) : undefined;
+    const bankName = dto.bankName !== undefined ? this.normalizeOptionalText(dto.bankName) : undefined;
+    const bankCode = dto.bankCode !== undefined ? this.normalizeOptionalText(dto.bankCode) : undefined;
+    const description = dto.description !== undefined ? this.normalizeOptionalText(dto.description) : undefined;
+
+    if (dto.groupName !== undefined && !groupName) {
+      throw new BadRequestException('Group name is required');
+    }
+    if (dto.bankName !== undefined && !bankName) {
+      throw new BadRequestException('Bank name is required');
+    }
+
+    if (groupName !== undefined) {
+      updates.push(`group_name = $${paramIndex++}`);
+      values.push(groupName);
+    }
+    if (bankName !== undefined) {
+      updates.push(`bank_name = $${paramIndex++}`);
+      values.push(bankName);
+    }
+    if (bankCode !== undefined) {
+      updates.push(`bank_code = $${paramIndex++}`);
+      values.push(bankCode);
+    }
+    if (description !== undefined) {
+      updates.push(`description = $${paramIndex++}`);
+      values.push(description);
+    }
+    if (dto.isActive !== undefined) {
+      updates.push(`is_active = $${paramIndex++}`);
+      values.push(dto.isActive);
+    }
+
+    if (!updates.length) {
+      throw new BadRequestException('No fields to update');
+    }
+
+    const duplicate = await this.databaseService.queryOne(
+      `SELECT id
+       FROM bank_groups
+       WHERE LOWER(bank_name) = LOWER($1)
+         AND LOWER(group_name) = LOWER($2)
+         AND id <> $3
+       LIMIT 1`,
+      [bankName ?? existing.bank_name, groupName ?? existing.group_name, id],
+    );
+    if (duplicate) {
+      throw new BadRequestException('Another bank group already uses this bank and group name');
+    }
+
+    values.push(id);
+    const bankGroup = await this.databaseService.queryOne(
+      `UPDATE bank_groups
+       SET ${updates.join(', ')}, updated_at = NOW()
+       WHERE id = $${paramIndex}
+       RETURNING *`,
+      values,
+    );
+
+    this.logger.log(`Bank group ${id} updated by ${userId}`);
+    return bankGroup;
+  }
+
+  async deleteBankGroup(id: string, userId: string) {
+    await this.findOneBankGroup(id);
+
+    const staffLinks = await this.databaseService.queryOne(
+      'SELECT COUNT(*)::int AS count FROM staff WHERE bank_group_id = $1',
+      [id],
+    ).catch(() => ({ count: 0 }));
+    const payrollLinks = await this.databaseService.queryOne(
+      'SELECT COUNT(*)::int AS count FROM payroll_lines WHERE bank_group_id = $1',
+      [id],
+    ).catch(() => ({ count: 0 }));
+    const hasLinks = (staffLinks?.count || 0) > 0 || (payrollLinks?.count || 0) > 0;
+
+    if (hasLinks) {
+      await this.databaseService.query(
+        'UPDATE bank_groups SET is_active = FALSE, updated_at = NOW() WHERE id = $1',
+        [id],
+      );
+      this.logger.log(`Bank group ${id} deactivated by ${userId}`);
+      return { message: 'Bank group has linked records and was deactivated instead' };
+    }
+
+    await this.databaseService.query('DELETE FROM bank_groups WHERE id = $1', [id]);
+    this.logger.log(`Bank group ${id} deleted by ${userId}`);
+    return { message: 'Bank group deleted successfully' };
   }
 
   // ==================== BANK ACCOUNTS ====================
@@ -270,6 +452,7 @@ export class BankService {
   // ==================== PAYMENT BATCHES ====================
 
   async createPaymentBatch(dto: CreatePaymentBatchDto, userId: string) {
+    const fileFormat = String(dto.fileFormat || dto.file_format || '').trim() || 'e_mandate';
     const payrollBatch = await this.databaseService.queryOne(
       'SELECT * FROM payroll_batches WHERE id = $1',
       [dto.payrollBatchId],
@@ -335,7 +518,7 @@ export class BankService {
         dto.payrollBatchId,
         dto.bankAccountId || null,
         dto.paymentMethod,
-        dto.fileFormat,
+        fileFormat,
         totalAmount,
         totalTransactions,
         bankName,
@@ -352,26 +535,22 @@ export class BankService {
       SELECT
         $1,
         pl.staff_id,
-        s.staff_number,
-        COALESCE(NULLIF(TRIM(s.account_name), ''), TRIM(CONCAT(COALESCE(s.first_name, ''), ' ', COALESCE(s.last_name, '')))),
-        COALESCE(NULLIF(TRIM(s.bank_name), ''), 'N/A'),
-        COALESCE(NULLIF(TRIM(s.account_number), ''), 'N/A'),
+        COALESCE(NULLIF(TRIM(pl.staff_number), ''), s.staff_number),
+        COALESCE(NULLIF(TRIM(s.account_name), ''), NULLIF(TRIM(pl.staff_name), ''), TRIM(CONCAT(COALESCE(s.first_name, ''), ' ', COALESCE(s.last_name, '')))),
+        COALESCE(NULLIF(TRIM(pl.bank_name), ''), NULLIF(TRIM(s.bank_name), ''), 'N/A'),
+        COALESCE(NULLIF(TRIM(pl.account_number), ''), NULLIF(TRIM(s.account_number), ''), 'N/A'),
         COALESCE(pl.net_pay::numeric, 0),
         CASE
-          WHEN s.bank_name IS NOT NULL
-           AND TRIM(s.bank_name) <> ''
-           AND s.account_number IS NOT NULL
-           AND TRIM(s.account_number) <> ''
-           AND s.account_number <> 'N/A'
+          WHEN COALESCE(NULLIF(TRIM(pl.bank_name), ''), NULLIF(TRIM(s.bank_name), '')) IS NOT NULL
+           AND COALESCE(NULLIF(TRIM(pl.account_number), ''), NULLIF(TRIM(s.account_number), '')) IS NOT NULL
+           AND COALESCE(NULLIF(TRIM(pl.account_number), ''), NULLIF(TRIM(s.account_number), '')) <> 'N/A'
           THEN 'pending'
           ELSE 'failed'
         END,
         CASE
-          WHEN s.bank_name IS NOT NULL
-           AND TRIM(s.bank_name) <> ''
-           AND s.account_number IS NOT NULL
-           AND TRIM(s.account_number) <> ''
-           AND s.account_number <> 'N/A'
+          WHEN COALESCE(NULLIF(TRIM(pl.bank_name), ''), NULLIF(TRIM(s.bank_name), '')) IS NOT NULL
+           AND COALESCE(NULLIF(TRIM(pl.account_number), ''), NULLIF(TRIM(s.account_number), '')) IS NOT NULL
+           AND COALESCE(NULLIF(TRIM(pl.account_number), ''), NULLIF(TRIM(s.account_number), '')) <> 'N/A'
           THEN NULL
           ELSE 'Missing bank details'
         END
@@ -502,14 +681,14 @@ export class BankService {
         content += `"${txn.staff_name}",${this.formatExportText(txn.account_number)},${this.formatExportText(bankCode)},${txn.amount},"Salary Payment ${batch.batch_number}"\n`;
       }
       filename = `REMITA_${batch.batch_number.replace(/\//g, '-')}.csv`;
-    } else if (batch.file_format === 'custom_csv') {
+    } else if (batch.file_format === 'custom_csv' || batch.file_format === 'e_mandate') {
       content = 'Transaction Reference Number,Beneficiary Name,Payment Amount,Payment Date,Beneficiary Code,Beneficiary Account Number,Bank Sort Code,Account Number to Debit\n';
       for (const txn of transactions) {
         const bankName = String(txn.bank_name || '').toLowerCase();
         const bankCode = bankName.includes('zenith') ? '' : (this.BANK_SORT_CODES[bankName] || '');
         content += `"${batch.batch_number}","${txn.staff_name}",${txn.amount},${paymentDate},${txn.staff_number || ''},${this.formatExportText(txn.account_number)},${this.formatExportText(bankCode)},${this.formatExportText(debitAccountNumber)}\n`;
       }
-      filename = `CUSTOM_${batch.batch_number.replace(/\//g, '-')}.csv`;
+      filename = `${batch.file_format === 'e_mandate' ? 'E_MANDATE' : 'CUSTOM'}_${batch.batch_number.replace(/\//g, '-')}.csv`;
     } else if (batch.file_format === 'csv') {
       content = 'Account Number,Account Name,Bank Name,Amount,Narration\n';
       for (const txn of transactions) {

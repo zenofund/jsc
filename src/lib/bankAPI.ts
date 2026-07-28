@@ -3,6 +3,7 @@
 // V2.0 - Direct backend calls (IndexedDB removed)
 
 import type {
+  BankGroup,
   BankAccount,
   PaymentBatch,
   PaymentTransaction,
@@ -46,6 +47,45 @@ async function makeApiRequest(endpoint: string, options: RequestInit = {}): Prom
 }
 
 // ==================== BANK ACCOUNT MANAGEMENT ====================
+
+export const bankGroupAPI = {
+  async create(data: Omit<BankGroup, 'id' | 'created_at' | 'updated_at'>): Promise<BankGroup> {
+    return makeApiRequest('/bank/groups', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async getAll(params?: { is_active?: boolean; bank_code?: string; bank_name?: string }): Promise<BankGroup[]> {
+    const search = new URLSearchParams();
+    if (params?.is_active !== undefined) search.set('is_active', String(params.is_active));
+    if (params?.bank_code) search.set('bank_code', params.bank_code);
+    if (params?.bank_name) search.set('bank_name', params.bank_name);
+    search.set('_t', String(Date.now()));
+    return makeApiRequest(`/bank/groups?${search.toString()}`, { method: 'GET' });
+  },
+
+  async getById(id: string): Promise<BankGroup | null> {
+    try {
+      return await makeApiRequest(`/bank/groups/${id}?_t=${Date.now()}`, { method: 'GET' });
+    } catch {
+      return null;
+    }
+  },
+
+  async update(id: string, data: Partial<BankGroup>): Promise<BankGroup> {
+    return makeApiRequest(`/bank/groups/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async delete(id: string): Promise<{ message?: string }> {
+    return makeApiRequest(`/bank/groups/${id}`, {
+      method: 'DELETE',
+    });
+  },
+};
 
 export const bankAccountAPI = {
   async create(data: Omit<BankAccount, 'id' | 'created_at' | 'updated_at'>, userId: string): Promise<BankAccount> {

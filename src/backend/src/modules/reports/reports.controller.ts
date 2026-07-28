@@ -44,9 +44,12 @@ export class ReportsController {
 
   @Get('payroll/:month/bank-schedule')
   @Roles('admin', 'payroll_officer')
-  @ApiOperation({ summary: 'Get payroll bank payment schedule grouped by bank' })
-  getPayrollBankSchedule(@Param('month') month: string) {
-    return this.reportsService.getPayrollBankSchedule(month);
+  @ApiOperation({ summary: 'Get payroll E-Mandate schedule grouped by bank or bank group' })
+  getPayrollBankSchedule(
+    @Param('month') month: string,
+    @Query('grouping') grouping?: 'bank' | 'bank_group',
+  ) {
+    return this.reportsService.getPayrollBankSchedule(month, grouping);
   }
 
   @Get('variance')

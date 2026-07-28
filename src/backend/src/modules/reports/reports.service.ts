@@ -254,7 +254,7 @@ export class ReportsService {
     }
   }
 
-  async getPayrollBankSchedule(month: string) {
+  async getPayrollBankSchedule(month: string, grouping: 'bank' | 'bank_group' = 'bank') {
     const batch = await this.databaseService.queryOne(
       `SELECT * FROM payroll_batches WHERE payroll_month = $1 LIMIT 1`,
       [month],
@@ -267,63 +267,77 @@ export class ReportsService {
     const rawLines = await this.databaseService.query(
       `SELECT 
         pl.bank_name,
+        pl.bank_group_id,
+        pl.bank_group_name,
         pl.account_number,
         pl.net_pay,
-        s.staff_number,
-        s.first_name,
-        s.middle_name,
-        s.last_name
+        pl.staff_number,
+        pl.staff_name
       FROM payroll_lines pl
-      JOIN staff s ON pl.staff_id = s.id
       WHERE pl.payroll_batch_id = $1
-      ORDER BY pl.bank_name NULLS LAST, s.staff_number ASC`,
+      ORDER BY pl.bank_name NULLS LAST, pl.bank_group_name NULLS LAST, pl.staff_number ASC`,
       [batch.id],
     );
 
     const lines = (rawLines || []).map((l: any) => {
       const bankName = String(l.bank_name || '').trim() || 'Unknown Bank';
+      const bankGroupName = String(l.bank_group_name || '').trim() || 'Unassigned Bank Group';
       const accountNumber = String(l.account_number || '').trim() || '';
       const amount = typeof l.net_pay === 'number' ? l.net_pay : parseFloat(l.net_pay || '0');
       return {
         bank_name: bankName,
+        bank_group_id: l.bank_group_id || null,
+        bank_group_name: bankGroupName,
         staff_number: l.staff_number,
-        staff_name: [l.first_name, l.middle_name, l.last_name].filter(Boolean).join(' ').trim(),
+        staff_name: l.staff_name,
         account_number: accountNumber,
         net_pay: Number.isFinite(amount) ? amount : 0,
         has_bank_details: Boolean(bankName && accountNumber),
       };
     });
 
-    const bankMap = new Map<string, any>();
+    const groupMap = new Map<string, any>();
     for (const line of lines) {
-      const key = line.bank_name;
-      if (!bankMap.has(key)) {
-        bankMap.set(key, {
-          bank_name: key,
+      const key = grouping === 'bank_group'
+        ? String(line.bank_group_id || line.bank_group_name)
+        : line.bank_name;
+      const groupLabel = grouping === 'bank_group' ? line.bank_group_name : line.bank_name;
+      if (!groupMap.has(key)) {
+        groupMap.set(key, {
+          group_key: key,
+          group_label: groupLabel,
+          grouping,
+          bank_name: line.bank_name,
+          bank_group_id: line.bank_group_id,
+          bank_group_name: line.bank_group_name,
           total_staff: 0,
           total_amount: 0,
           lines: [],
         });
       }
-      const entry = bankMap.get(key);
+      const entry = groupMap.get(key);
       entry.total_staff += 1;
       entry.total_amount += line.net_pay;
       entry.lines.push(line);
     }
 
-    const banks = Array.from(bankMap.values()).sort((a, b) =>
-      String(a.bank_name).localeCompare(String(b.bank_name), undefined, { sensitivity: 'base' }),
+    const groups = Array.from(groupMap.values()).sort((a, b) =>
+      String(a.group_label).localeCompare(String(b.group_label), undefined, { sensitivity: 'base' }),
     );
 
+    const uniqueBankCount = new Set(lines.map((line) => line.bank_name)).size;
     const totals = {
-      total_banks: banks.length,
+      total_groups: groups.length,
+      total_banks: uniqueBankCount,
       total_staff: lines.length,
-      total_amount: banks.reduce((sum, b) => sum + (b.total_amount || 0), 0),
+      total_amount: groups.reduce((sum, group) => sum + (group.total_amount || 0), 0),
       missing_bank_details: lines.filter((l) => !l.account_number || l.bank_name === 'Unknown Bank').length,
+      missing_group_assignments: lines.filter((l) => !l.bank_group_id).length,
     };
 
     return {
       month,
+      grouping,
       batch: {
         id: batch.id,
         batch_number: batch.batch_number,
@@ -331,7 +345,7 @@ export class ReportsService {
         status: batch.status,
       },
       totals,
-      banks,
+      groups,
     };
   }
 

@@ -8,6 +8,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import {
   paymentBatchAPI,
+  bankGroupAPI,
   bankAccountAPI,
   bankStatementAPI,
   reconciliationAPI,
@@ -16,6 +17,7 @@ import {
 } from '../lib/bankAPI';
 import { payrollAPI } from '../lib/api-client';
 import type {
+  BankGroup,
   PaymentBatch,
   BankStatement,
   PaymentException,
@@ -42,7 +44,7 @@ import { formatCurrency } from '../utils/format';
 import { Button } from '../components/ui/button';
 import { PageSkeleton } from '../components/PageLoader';
 
-type TabType = 'overview' | 'payments' | 'reconciliation' | 'exceptions' | 'bank-accounts';
+type TabType = 'overview' | 'payments' | 'reconciliation' | 'exceptions' | 'bank-accounts' | 'bank-groups';
 
 export function BankPaymentsPage() {
   const { user } = useAuth();
@@ -55,6 +57,7 @@ export function BankPaymentsPage() {
   // Data states
   const [stats, setStats] = useState<any>(null);
   const [paymentBatches, setPaymentBatches] = useState<PaymentBatch[]>([]);
+  const [bankGroups, setBankGroups] = useState<BankGroup[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [exceptions, setExceptions] = useState<PaymentException[]>([]);
   
@@ -63,6 +66,7 @@ export function BankPaymentsPage() {
   const [showBatchDetailsModal, setShowBatchDetailsModal] = useState(false);
   const [showReconciliationModal, setShowReconciliationModal] = useState(false);
   const [showAddBankAccountModal, setShowAddBankAccountModal] = useState(false);
+  const [showAddBankGroupModal, setShowAddBankGroupModal] = useState(false);
   const [selectedBatch, setSelectedBatch] = useState<PaymentBatch | null>(null);
   const [batchTransactions, setBatchTransactions] = useState<PaymentTransaction[]>([]);
   
@@ -77,7 +81,15 @@ export function BankPaymentsPage() {
     payroll_batch_id: '',
     bank_account_id: '',
     payment_method: 'bank_transfer' as PaymentBatch['payment_method'],
-    file_format: 'custom_csv' as PaymentBatch['file_format'],
+    file_format: 'e_mandate' as PaymentBatch['file_format'],
+  });
+
+  const [newBankGroupForm, setNewBankGroupForm] = useState({
+    group_name: '',
+    bank_name: '',
+    bank_code: '',
+    description: '',
+    is_active: true,
   });
 
   const [newBankAccountForm, setNewBankAccountForm] = useState({
@@ -91,11 +103,21 @@ export function BankPaymentsPage() {
   });
   const [showEditBankAccountModal, setShowEditBankAccountModal] = useState(false);
   const [editingBankAccount, setEditingBankAccount] = useState<BankAccount | null>(null);
+  const [showEditBankGroupModal, setShowEditBankGroupModal] = useState(false);
+  const [editingBankGroup, setEditingBankGroup] = useState<BankGroup | null>(null);
   const [editBankAccountForm, setEditBankAccountForm] = useState({
     account_name: '',
     is_active: true,
   });
+  const [editBankGroupForm, setEditBankGroupForm] = useState({
+    group_name: '',
+    bank_name: '',
+    bank_code: '',
+    description: '',
+    is_active: true,
+  });
   const canManageBankAccounts = ['admin', 'super_admin', 'payroll_manager'].includes(user?.role || '');
+  const canManageBankGroups = canManageBankAccounts;
 
   useEffect(() => {
     loadData();
@@ -104,15 +126,17 @@ export function BankPaymentsPage() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [statsData, batches, accounts, exceptionsData] = await Promise.all([
+      const [statsData, batches, groups, accounts, exceptionsData] = await Promise.all([
         paymentStatsAPI.getDashboard(),
         paymentBatchAPI.getAll(),
+        bankGroupAPI.getAll(),
         bankAccountAPI.getAll(),
         paymentExceptionAPI.getAll(),
       ]);
 
       setStats(statsData);
       setPaymentBatches(batches);
+      setBankGroups(groups);
       setBankAccounts(accounts);
       setExceptions(exceptionsData);
 
@@ -259,24 +283,35 @@ export function BankPaymentsPage() {
       showToast('success', 'Bank account added successfully');
       setShowAddBankAccountModal(false);
       resetBankAccountForm();
-      
-      // Force reload all data
-      setLoading(true);
-      const [statsData, batches, accounts, exceptionsData] = await Promise.all([
-        paymentStatsAPI.getDashboard(),
-        paymentBatchAPI.getAll(),
-        bankAccountAPI.getAll(),
-        paymentExceptionAPI.getAll(),
-      ]);
-
-      setStats(statsData);
-      setPaymentBatches(batches);
-      setBankAccounts(accounts);
-      setExceptions(exceptionsData);
-      setLoading(false);
+      await loadData();
     } catch (error: any) {
       showToast('error', error.message || 'Failed to add bank account');
-      setLoading(false);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleAddBankGroup = async () => {
+    try {
+      if (!newBankGroupForm.group_name || !newBankGroupForm.bank_name) {
+        showToast('error', 'Please fill in the bank and group name');
+        return;
+      }
+
+      setIsSubmitting(true);
+      await bankGroupAPI.create({
+        groupName: newBankGroupForm.group_name,
+        bankName: newBankGroupForm.bank_name,
+        bankCode: newBankGroupForm.bank_code,
+        description: newBankGroupForm.description || undefined,
+        isActive: newBankGroupForm.is_active,
+      } as any);
+      showToast('success', 'Bank group added successfully');
+      setShowAddBankGroupModal(false);
+      resetBankGroupForm();
+      await loadData();
+    } catch (error: any) {
+      showToast('error', error.message || 'Failed to add bank group');
     } finally {
       setIsSubmitting(false);
     }
@@ -289,6 +324,18 @@ export function BankPaymentsPage() {
       is_active: Boolean(account.is_active),
     });
     setShowEditBankAccountModal(true);
+  };
+
+  const openEditBankGroup = (group: BankGroup) => {
+    setEditingBankGroup(group);
+    setEditBankGroupForm({
+      group_name: group.group_name || '',
+      bank_name: group.bank_name || '',
+      bank_code: group.bank_code || '',
+      description: group.description || '',
+      is_active: Boolean(group.is_active),
+    });
+    setShowEditBankGroupModal(true);
   };
 
   const handleUpdateBankAccount = async () => {
@@ -330,10 +377,53 @@ export function BankPaymentsPage() {
     }
   };
 
+  const handleUpdateBankGroup = async () => {
+    if (!editingBankGroup) return;
+    try {
+      setIsSubmitting(true);
+      await bankGroupAPI.update(editingBankGroup.id, {
+        groupName: editBankGroupForm.group_name,
+        bankName: editBankGroupForm.bank_name,
+        bankCode: editBankGroupForm.bank_code || undefined,
+        description: editBankGroupForm.description || undefined,
+        isActive: editBankGroupForm.is_active,
+      } as any);
+      showToast('success', 'Bank group updated successfully');
+      setShowEditBankGroupModal(false);
+      setEditingBankGroup(null);
+      setBankGroups(await bankGroupAPI.getAll());
+    } catch (error: any) {
+      showToast('error', error.message || 'Failed to update bank group');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteBankGroup = async (group: BankGroup) => {
+    const ok = await confirm({
+      title: 'Delete bank group?',
+      message: `Delete ${group.group_name} for ${group.bank_name}? This cannot be undone.`,
+    });
+    if (!ok) return;
+    try {
+      setIsSubmitting(true);
+      const result = await bankGroupAPI.delete(group.id);
+      showToast('success', result?.message || 'Bank group deleted successfully');
+      setBankGroups(await bankGroupAPI.getAll());
+    } catch (error: any) {
+      showToast('error', error.message || 'Failed to delete bank group');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   useEffect(() => {
     if (activeTab === 'bank-accounts') {
       // Force refresh bank accounts when tab is active
       bankAccountAPI.getAll().then(setBankAccounts).catch(console.error);
+    }
+    if (activeTab === 'bank-groups') {
+      bankGroupAPI.getAll().then(setBankGroups).catch(console.error);
     }
   }, [activeTab]);
 
@@ -342,7 +432,17 @@ export function BankPaymentsPage() {
       payroll_batch_id: '',
       bank_account_id: '',
       payment_method: 'bank_transfer',
-      file_format: 'custom_csv',
+      file_format: 'e_mandate',
+    });
+  };
+
+  const resetBankGroupForm = () => {
+    setNewBankGroupForm({
+      group_name: '',
+      bank_name: '',
+      bank_code: '',
+      description: '',
+      is_active: true,
     });
   };
 
@@ -478,22 +578,53 @@ export function BankPaymentsPage() {
       : []),
   ];
 
+  const bankGroupColumns = [
+    { header: 'Group Name', accessor: 'group_name' as keyof BankGroup },
+    { header: 'Bank', accessor: 'bank_name' as keyof BankGroup },
+    { header: 'Bank Code', accessor: (row: BankGroup) => row.bank_code || '-' },
+    { header: 'Description', accessor: (row: BankGroup) => row.description || '-' },
+    {
+      header: 'Status',
+      accessor: (row: BankGroup) => (
+        <span className={`px-2 py-1 rounded text-xs font-medium ${row.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
+          {row.is_active ? 'Active' : 'Inactive'}
+        </span>
+      ),
+    },
+    ...(canManageBankGroups
+      ? [{
+          header: 'Actions',
+          accessor: (row: BankGroup) => (
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={() => openEditBankGroup(row)}>
+                Edit
+              </Button>
+              <Button variant="destructive" onClick={() => handleDeleteBankGroup(row)}>
+                Delete
+              </Button>
+            </div>
+          ),
+        }]
+      : []),
+  ];
+
   const tabs = [
     { id: 'overview', label: 'Overview', icon: BarChart3 },
     { id: 'payments', label: 'Payment Batches', icon: CreditCard },
     { id: 'reconciliation', label: 'Reconciliation', icon: CheckCircle },
     { id: 'exceptions', label: 'Exceptions', icon: AlertTriangle },
+    { id: 'bank-groups', label: 'Bank Groups', icon: Building2 },
     { id: 'bank-accounts', label: 'Bank Accounts', icon: Building2 },
   ];
 
   return (
     <div className="p-4 sm:p-6 space-y-6">
-      <Breadcrumb items={[{ label: 'Bank Payments & Reconciliation' }]} />
+      <Breadcrumb items={[{ label: 'E-Mandate & Reconciliation' }]} />
 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 mb-4 sm:mb-6">
         <div className="min-w-0 flex-1">
-          <h1 className="page-title">Bank Payments & Reconciliation</h1>
-          <p className="text-muted-foreground text-sm sm:text-base">Automated salary disbursement and payment reconciliation</p>
+          <h1 className="page-title">E-Mandate & Reconciliation</h1>
+          <p className="text-muted-foreground text-sm sm:text-base">Manage E-Mandate files, bank groups, and payment reconciliation</p>
         </div>
         <div className="flex items-center gap-2">
           {activeTab === 'payments' && (
@@ -502,11 +633,21 @@ export function BankPaymentsPage() {
               className="bg-primary text-primary-foreground px-3 sm:px-4 py-2 rounded-lg hover:bg-primary/90 active:bg-primary/80 flex items-center gap-2 transition-colors text-sm sm:text-base whitespace-nowrap"
             >
               <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
-              <span className="hidden sm:inline">Create Payment Batch</span>
+              <span className="hidden sm:inline">Create E-Mandate Batch</span>
               <span className="sm:hidden">Create Batch</span>
             </button>
           )}
-          {activeTab === 'bank-accounts' && ['admin', 'super_admin'].includes(user?.role || '') && (
+          {activeTab === 'bank-groups' && canManageBankGroups && (
+            <button
+              onClick={() => setShowAddBankGroupModal(true)}
+              className="bg-primary text-primary-foreground px-3 sm:px-4 py-2 rounded-lg hover:bg-primary/90 active:bg-primary/80 flex items-center gap-2 transition-colors text-sm sm:text-base whitespace-nowrap"
+            >
+              <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
+              <span className="hidden sm:inline">Add Bank Group</span>
+              <span className="sm:hidden">Add Group</span>
+            </button>
+          )}
+          {activeTab === 'bank-accounts' && canManageBankAccounts && (
             <button
               onClick={() => setShowAddBankAccountModal(true)}
               className="bg-primary text-primary-foreground px-3 sm:px-4 py-2 rounded-lg hover:bg-primary/90 active:bg-primary/80 flex items-center gap-2 transition-colors text-sm sm:text-base whitespace-nowrap"
@@ -649,7 +790,7 @@ export function BankPaymentsPage() {
               data={paymentBatches}
               columns={paymentColumns}
               searchable
-              searchPlaceholder="Search payment batches..."
+              searchPlaceholder="Search E-Mandate batches..."
             />
           )}
 
@@ -678,6 +819,16 @@ export function BankPaymentsPage() {
           )}
 
           {/* Bank Accounts Tab */}
+          {activeTab === 'bank-groups' && (
+            <DataTable
+              data={bankGroups}
+              columns={bankGroupColumns}
+              searchable
+              searchPlaceholder="Search bank groups..."
+            />
+          )}
+
+          {/* Bank Accounts Tab */}
           {activeTab === 'bank-accounts' && (
             <DataTable
               data={bankAccounts}
@@ -696,7 +847,7 @@ export function BankPaymentsPage() {
           setShowCreatePaymentModal(false);
           resetPaymentForm();
         }}
-        title="Create Payment Batch"
+        title="Create E-Mandate Batch"
         footer={
           <div className="flex items-center justify-end gap-2">
             <Button
@@ -713,7 +864,7 @@ export function BankPaymentsPage() {
               onClick={handleCreatePayment}
               isLoading={isSubmitting}
             >
-              Create Payment Batch
+              Create E-Mandate Batch
             </Button>
           </div>
         }
@@ -762,7 +913,8 @@ export function BankPaymentsPage() {
               onChange={(e) => setNewPaymentForm({ ...newPaymentForm, file_format: e.target.value as any })}
               className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary"
             >
-              <option value="custom_csv">Standard CSV</option>
+              <option value="e_mandate">E-Mandate CSV</option>
+              <option value="custom_csv">Legacy Standard CSV</option>
               <option value="nibss">NIBSS Format</option>
               <option value="remita">Remita Format</option>
             </select>
@@ -940,6 +1092,78 @@ export function BankPaymentsPage() {
         </div>
       </Modal>
 
+      {/* Add Bank Group Modal */}
+      <Modal
+        isOpen={showAddBankGroupModal}
+        onClose={() => {
+          setShowAddBankGroupModal(false);
+          resetBankGroupForm();
+        }}
+        title="Add Bank Group"
+        footer={
+          <div className="flex items-center justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowAddBankGroupModal(false);
+                resetBankGroupForm();
+              }}
+              disabled={isSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleAddBankGroup} isLoading={isSubmitting}>
+              Add Group
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">Bank *</label>
+            <select
+              value={newBankGroupForm.bank_name}
+              onChange={(e) => {
+                const bank = NIGERIAN_BANKS.find((item) => item.name === e.target.value);
+                setNewBankGroupForm({
+                  ...newBankGroupForm,
+                  bank_name: e.target.value,
+                  bank_code: bank?.code || '',
+                });
+              }}
+              className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary"
+            >
+              <option value="">-- Select Bank --</option>
+              {NIGERIAN_BANKS.map((bank) => (
+                <option key={bank.code} value={bank.name}>
+                  {bank.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">Group Name *</label>
+            <input
+              type="text"
+              value={newBankGroupForm.group_name}
+              onChange={(e) => setNewBankGroupForm({ ...newBankGroupForm, group_name: e.target.value })}
+              className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">Description</label>
+            <textarea
+              value={newBankGroupForm.description}
+              onChange={(e) => setNewBankGroupForm({ ...newBankGroupForm, description: e.target.value })}
+              className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary"
+              rows={3}
+            />
+          </div>
+        </div>
+      </Modal>
+
       {/* Edit Bank Account Modal */}
       <Modal
         isOpen={showEditBankAccountModal}
@@ -997,6 +1221,85 @@ export function BankPaymentsPage() {
                 type="checkbox"
                 checked={editBankAccountForm.is_active}
                 onChange={(e) => setEditBankAccountForm({ ...editBankAccountForm, is_active: e.target.checked })}
+                className="h-4 w-4"
+              />
+              <span className="text-sm text-foreground">Active</span>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Edit Bank Group Modal */}
+      <Modal
+        isOpen={showEditBankGroupModal}
+        onClose={() => {
+          setShowEditBankGroupModal(false);
+          setEditingBankGroup(null);
+        }}
+        title="Edit Bank Group"
+        footer={
+          <div className="flex items-center justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowEditBankGroupModal(false);
+                setEditingBankGroup(null);
+              }}
+              disabled={isSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleUpdateBankGroup} isLoading={isSubmitting}>
+              Save Changes
+            </Button>
+          </div>
+        }
+      >
+        {editingBankGroup && (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1">Bank</label>
+              <select
+                value={editBankGroupForm.bank_name}
+                onChange={(e) => {
+                  const bank = NIGERIAN_BANKS.find((item) => item.name === e.target.value);
+                  setEditBankGroupForm({
+                    ...editBankGroupForm,
+                    bank_name: e.target.value,
+                    bank_code: bank?.code || '',
+                  });
+                }}
+                className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary"
+              >
+                {NIGERIAN_BANKS.map((bank) => (
+                  <option key={bank.code} value={bank.name}>
+                    {bank.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1">Group Name</label>
+              <input
+                value={editBankGroupForm.group_name}
+                onChange={(e) => setEditBankGroupForm({ ...editBankGroupForm, group_name: e.target.value })}
+                className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1">Description</label>
+              <textarea
+                value={editBankGroupForm.description}
+                onChange={(e) => setEditBankGroupForm({ ...editBankGroupForm, description: e.target.value })}
+                className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary"
+                rows={3}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={editBankGroupForm.is_active}
+                onChange={(e) => setEditBankGroupForm({ ...editBankGroupForm, is_active: e.target.checked })}
                 className="h-4 w-4"
               />
               <span className="text-sm text-foreground">Active</span>

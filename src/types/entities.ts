@@ -98,6 +98,8 @@ export interface Staff {
     step: number;
     bank_name: string;
     bank_code?: string;
+    bank_group_id?: string;
+    bank_group_name?: string;
     account_number: string;
     account_name?: string;
     bvn?: string;
@@ -520,6 +522,18 @@ export interface LeaveBalance {
 // Bank Payments & Reconciliation
 // ============================================
 
+export interface BankGroup {
+  id: string;
+  group_name: string;
+  bank_name: string;
+  bank_code?: string;
+  description?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  created_by?: string;
+}
+
 export interface BankAccount {
   id: string;
   bank_name: string;
@@ -554,7 +568,7 @@ export interface PaymentBatch {
   bank_name?: string;
   status: 'pending' | 'draft' | 'pending_approval' | 'approved' | 'processing' | 'completed' | 'failed' | 'partially_completed' | 'confirmed';
   file_generated: boolean;
-  file_format?: 'nibss' | 'remita' | 'custom_csv' | 'bank_specific';
+  file_format?: 'nibss' | 'remita' | 'custom_csv' | 'e_mandate' | 'bank_specific';
   file_path?: string;
   file_content?: string; // Blob or base64 for download
   initiated_by: string;

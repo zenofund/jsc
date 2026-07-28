@@ -1,5 +1,65 @@
 import { IsString, IsNotEmpty, IsOptional, IsNumber, IsBoolean, IsEnum, IsDateString } from 'class-validator';
 
+export class CreateBankGroupDto {
+  @IsString()
+  @IsNotEmpty()
+  groupName: string;
+
+  @IsString()
+  @IsNotEmpty()
+  bankName: string;
+
+  @IsString()
+  @IsOptional()
+  bankCode?: string;
+
+  @IsString()
+  @IsOptional()
+  description?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  isActive?: boolean;
+
+  @IsString()
+  @IsOptional()
+  group_name?: string;
+
+  @IsString()
+  @IsOptional()
+  bank_name?: string;
+
+  @IsString()
+  @IsOptional()
+  bank_code?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  is_active?: boolean;
+}
+
+export class UpdateBankGroupDto {
+  @IsString()
+  @IsOptional()
+  groupName?: string;
+
+  @IsString()
+  @IsOptional()
+  bankName?: string;
+
+  @IsString()
+  @IsOptional()
+  bankCode?: string;
+
+  @IsString()
+  @IsOptional()
+  description?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  isActive?: boolean;
+}
+
 export class CreateBankAccountDto {
   @IsString()
   @IsNotEmpty()
@@ -94,6 +154,10 @@ export class CreatePaymentBatchDto {
   fileFormat: string;
 
   @IsString()
+  @IsOptional()
+  file_format?: string;
+
+  @IsString()
   @IsNotEmpty()
   userId: string;
 
@@ -106,6 +170,20 @@ export class UpdatePaymentBatchDto {
   @IsString()
   @IsNotEmpty()
   status: string;
+}
+
+export class BankGroupQueryDto {
+  @IsBoolean()
+  @IsOptional()
+  isActive?: boolean;
+
+  @IsString()
+  @IsOptional()
+  bankCode?: string;
+
+  @IsString()
+  @IsOptional()
+  bankName?: string;
 }
 
 export class ProcessPaymentDto {

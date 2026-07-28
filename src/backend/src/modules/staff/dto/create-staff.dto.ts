@@ -198,6 +198,11 @@ export class CreateStaffDto {
   @IsOptional()
   bankCode?: string;
 
+  @ApiPropertyOptional({ description: 'Bank group ID for E-Mandate grouping' })
+  @IsUUID()
+  @IsOptional()
+  bankGroupId?: string;
+
   @ApiPropertyOptional()
   @IsString()
   @IsOptional()

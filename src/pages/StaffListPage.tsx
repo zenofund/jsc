@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../components/Toast';
 import { staffAPI, departmentAPI, bankAPI, settingsAPI } from '../lib/api-client';
-import { Staff, Department } from '../types/entities';
+import { Staff, Department, BankGroup } from '../types/entities';
 import { getAllStateNames, getLGAsByState } from '../lib/nigerian-locations';
 import { Plus, Edit, UserX, UserCheck, Trash2, Eye, Upload } from 'lucide-react';
 import { Modal } from '../components/Modal';
@@ -76,6 +76,7 @@ export function StaffListPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [availableLGAs, setAvailableLGAs] = useState<string[]>([]);
   const [supportedBanks, setSupportedBanks] = useState<{ name: string; code: string }[]>([]);
+  const [bankGroups, setBankGroups] = useState<BankGroup[]>([]);
   const [allowedGrades, setAllowedGrades] = useState<string[]>(['3','4','5','6','7','8','9','10','12','13','14','15','16','17']);
   const [idempotencyKey, setIdempotencyKey] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -131,6 +132,22 @@ export function StaffListPage() {
     return supportedBanks.find((bank) => String(bank.name).trim().toLowerCase() === normalizedName)?.code || bankCode || '';
   };
 
+  const getFilteredBankGroups = (bankCode?: string, bankName?: string) => {
+    const normalizedCode = String(bankCode || '').trim();
+    const normalizedName = String(bankName || '').trim().toLowerCase();
+
+    return bankGroups.filter((group) => {
+      if (!group.is_active) return false;
+      if (normalizedCode && String(group.bank_code || '').trim() === normalizedCode) {
+        return true;
+      }
+      if (normalizedName && String(group.bank_name || '').trim().toLowerCase() === normalizedName) {
+        return true;
+      }
+      return false;
+    });
+  };
+
   const [formData, setFormData] = useState({
     staff_number: '',
     first_name: '',
@@ -169,6 +186,7 @@ export function StaffListPage() {
     step: 1,
     bank_code: '',
     bank_name: '',
+    bank_group_id: '',
     account_number: '',
     account_name: '',
     pension_pin: '',
@@ -220,13 +238,14 @@ export function StaffListPage() {
     phone: 'Phone Number',
     nok_phone: 'Next of Kin Phone Number',
     account_number: 'Account Number',
+    bank_group_id: 'Bank Group',
   };
 
   const stepFields: Record<number, string[]> = {
     1: ['staff_number', 'last_name', 'first_name', 'gender', 'date_of_birth', 'state_of_origin', 'lga', 'zone', 'qualification', 'marital_status', 'phone', 'email', 'nationality', 'address'],
     2: ['nok_name', 'nok_relationship', 'nok_phone', 'nok_address'],
     3: ['post_on_first_appointment', 'appointment_date', 'confirmation_date', 'present_appointment', 'date_of_present_appointment', 'exit_date', 'exit_reason', 'appointment_type', 'employment_date', 'department', 'unit', 'cadre', 'designation'],
-    4: ['grade_level', 'step', 'bank_code', 'bank_name', 'account_number', 'account_name', 'pension_pin', 'tax_id', 'pit_remittance_state', 'bvn', 'nhf_number'],
+    4: ['grade_level', 'step', 'bank_code', 'bank_name', 'bank_group_id', 'account_number', 'account_name', 'pension_pin', 'tax_id', 'pit_remittance_state', 'bvn', 'nhf_number'],
   };
 
   const dateFields = [
@@ -362,7 +381,13 @@ export function StaffListPage() {
     if (name === 'bank_code') {
       const selected = supportedBanks.find((b) => String(b.code) === String(value));
       const bankName = selected?.name || '';
-      setFormData((prev) => ({ ...prev, bank_code: value, bank_name: bankName }));
+      const availableGroups = getFilteredBankGroups(value, bankName);
+      setFormData((prev) => ({
+        ...prev,
+        bank_code: value,
+        bank_name: bankName,
+        bank_group_id: availableGroups.some((group) => group.id === prev.bank_group_id) ? prev.bank_group_id : '',
+      }));
       validateField('bank_code', value);
       validateField('bank_name', bankName);
     } else {
@@ -390,6 +415,7 @@ export function StaffListPage() {
     loadStaff();
     loadDepartments();
     loadSupportedBanks();
+    loadBankGroups();
     // Load allowed grades from settings
     (async () => {
       try {
@@ -426,6 +452,18 @@ export function StaffListPage() {
     } catch (error) {
       console.error('Failed to load supported banks:', error);
       setSupportedBanks([]);
+    }
+  };
+
+  const loadBankGroups = async () => {
+    try {
+      if (bankAPI && typeof bankAPI.getBankGroups === 'function') {
+        const groups = await bankAPI.getBankGroups({ is_active: true });
+        setBankGroups(Array.isArray(groups) ? groups : []);
+      }
+    } catch (error) {
+      console.error('Failed to load bank groups:', error);
+      setBankGroups([]);
     }
   };
 
@@ -484,6 +522,8 @@ export function StaffListPage() {
           step: item.step,
           bank_name: item.bank_name,
           bank_code: item.bank_code,
+          bank_group_id: item.bank_group_id,
+          bank_group_name: item.bank_group_name,
           account_number: item.account_number,
           account_name: item.account_name,
           bvn: item.bvn,
@@ -599,6 +639,7 @@ export function StaffListPage() {
             step: num(r.step),
             bankName: resolvedBankName || r.bank_name,
             bankCode: resolvedBankCode || r.bank_code,
+            bankGroupId: r.bank_group_id || undefined,
             accountNumber: r.account_number || undefined,
             accountName: r.account_name || undefined,
             pensionPin: r.pension_pin || undefined,
@@ -717,6 +758,7 @@ export function StaffListPage() {
       step: staffMember.salary_info.step || 1,
       bank_code: findBankCode(staffMember.salary_info.bank_code, staffMember.salary_info.bank_name),
       bank_name: staffMember.salary_info.bank_name || '',
+      bank_group_id: staffMember.salary_info.bank_group_id || '',
       account_number: staffMember.salary_info.account_number || '',
       account_name: staffMember.salary_info.account_name || '',
       pension_pin: staffMember.salary_info.pension_pin || '',
@@ -873,6 +915,7 @@ export function StaffListPage() {
               ['Grade Level', String(viewingStaff.salary_info.grade_level ?? '')],
               ['Step', String(viewingStaff.salary_info.step ?? '')],
               ['Bank Name', viewingStaff.salary_info.bank_name || ''],
+              ['Bank Group', viewingStaff.salary_info.bank_group_name || ''],
               ['Account Number', viewingStaff.salary_info.account_number || ''],
               ['Account Name', viewingStaff.salary_info.account_name || ''],
               ['BVN', viewingStaff.salary_info.bvn || ''],
@@ -946,6 +989,7 @@ export function StaffListPage() {
         step: Number(formData.step),
         bankName: formData.bank_name || undefined,
         bankCode: formData.bank_code || undefined,
+      bankGroupId: formData.bank_group_id || undefined,
         accountNumber: formData.account_number || undefined,
         accountName: formData.account_name || undefined,
         pensionPin: formData.pension_pin || undefined,
@@ -1036,6 +1080,7 @@ export function StaffListPage() {
         step: Number(formData.step),
         bankName: formData.bank_name || undefined,
         bankCode: formData.bank_code || undefined,
+        bankGroupId: formData.bank_group_id || undefined,
         accountNumber: formData.account_number || undefined,
         accountName: formData.account_name || undefined,
         pensionPin: formData.pension_pin || undefined,
@@ -1110,6 +1155,7 @@ export function StaffListPage() {
       step: 1,
       bank_code: '',
       bank_name: '',
+      bank_group_id: '',
       account_number: '',
       account_name: '',
       pension_pin: '',
@@ -1975,6 +2021,29 @@ export function StaffListPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">
+                    Bank Group
+                  </label>
+                  <select
+                    name="bank_group_id"
+                    value={formData.bank_group_id}
+                    onChange={handleInputChange}
+                    disabled={!formData.bank_code}
+                    className={`w-full px-3 py-2 border ${formErrors.bank_group_id ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent disabled:opacity-60`}
+                  >
+                    <option value="">{formData.bank_code ? 'Select Bank Group' : 'Select Bank First'}</option>
+                    {getFilteredBankGroups(formData.bank_code, formData.bank_name).map((group) => (
+                      <option key={group.id} value={group.id}>
+                        {group.group_name}
+                      </option>
+                    ))}
+                  </select>
+                  {formErrors.bank_group_id && <p className="text-red-500 text-xs mt-1">{formErrors.bank_group_id}</p>}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">
                     Account Number
                   </label>
                   <input
@@ -1986,20 +2055,19 @@ export function StaffListPage() {
                   />
                   {formErrors.account_number && <p className="text-red-500 text-xs mt-1">{formErrors.account_number}</p>}
                 </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-1">
-                  Account Name
-                </label>
-                <input
-                  type="text"
-                  name="account_name"
-                  value={formData.account_name}
-                  onChange={handleInputChange}
-                  className={`w-full px-3 py-2 border ${formErrors.account_name ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
-                />
-                {formErrors.account_name && <p className="text-red-500 text-xs mt-1">{formErrors.account_name}</p>}
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">
+                    Account Name
+                  </label>
+                  <input
+                    type="text"
+                    name="account_name"
+                    value={formData.account_name}
+                    onChange={handleInputChange}
+                    className={`w-full px-3 py-2 border ${formErrors.account_name ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
+                  />
+                  {formErrors.account_name && <p className="text-red-500 text-xs mt-1">{formErrors.account_name}</p>}
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -2095,7 +2163,7 @@ export function StaffListPage() {
               onClick={() => {
                 const csv =
                   [
-                    'staff_number,first_name,middle_name,last_name,date_of_birth,gender,marital_status,nationality,state_of_origin,lga,zone,qualification,phone,email,address,nok_name,nok_relationship,nok_phone,nok_address,post_on_first_appointment,date_of_first_appointment,confirmation_date,present_appointment,date_of_present_appointment,exit_date,exit_reason,department_name,department_id,designation,unit,cadre,appointment_type,employment_date,grade_level,step,bank_code,bank_name,account_name,account_number,pension_pin,tax_id,pit_remittance_state,bvn,nhf_number,status',
+                    'staff_number,first_name,middle_name,last_name,date_of_birth,gender,marital_status,nationality,state_of_origin,lga,zone,qualification,phone,email,address,nok_name,nok_relationship,nok_phone,nok_address,post_on_first_appointment,date_of_first_appointment,confirmation_date,present_appointment,date_of_present_appointment,exit_date,exit_reason,department_name,department_id,designation,unit,cadre,appointment_type,employment_date,grade_level,step,bank_code,bank_name,bank_group_id,account_name,account_number,pension_pin,tax_id,pit_remittance_state,bvn,nhf_number,status',
                     'JSC/2026/0001,Ada,Chioma,Okafor,1988-06-12,female,married,Nigerian,Anambra,Awka,SE,LLB,08012345678,ada.okafor@example.com,"12 Court Rd, GRA, Awka",Chinedu Okafor,Spouse,08087654321,"12 Court Rd, GRA, Awka",Legal Department,2024-04-15,2025-04-15,Senior Legal Officer,2026-01-10,2053-06-12,,Legal Department,,Senior Legal Officer,Prosecution,Legal,Permanent,,10,3,057,Zenith Bank,Ada Okafor,0123456789,PN12345678,TAX-00921,FCT,22334455667,NHF-00231,active',
                     'JSC/2026/0002,Bello,Musa,Yusuf,1990-11-03,male,single,Nigerian,Kano,Nasarawa,NW,BSc,08123456789,bello.yusuf@example.com,"21 Civic Ave, Kano",Hauwa Yusuf,Parent,08198765432,"21 Civic Ave, Kano",Accounts Department,2024-09-01,2025-09-01,Accounts Officer,2026-02-01,2050-11-03,,Accounts Department,,Accounts Officer,Payments,Administrative,Contract,,8,2,044,Access Bank,Bello Musa Yusuf,0987654321,PN87654321,TAX-00456,Nasarawa,33445566778,NHF-00987,on_leave',
                   ].join('\n');
@@ -2135,7 +2203,7 @@ export function StaffListPage() {
               Upload a CSV file with headers like: staff_number, first_name, middle_name, last_name, date_of_birth,
               gender, state_of_origin, lga, zone, qualification, post_on_first_appointment, date_of_first_appointment,
               confirmation_date, present_appointment, date_of_present_appointment, exit_date, grade_level, step,
-              bank_code, bank_name, account_name, account_number. Other existing headers can also be included.
+              bank_code, bank_name, bank_group_id, account_name, account_number. Other existing headers can also be included.
             </p>
           </div>
           <div className="space-y-2">
@@ -2358,6 +2426,10 @@ export function StaffListPage() {
                   <div className="flex justify-between">
                     <dt className="text-muted-foreground">Bank</dt>
                     <dd className="text-foreground">{viewingStaff.salary_info.bank_name}</dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt className="text-muted-foreground">Bank Group</dt>
+                    <dd className="text-foreground">{viewingStaff.salary_info.bank_group_name || 'N/A'}</dd>
                   </div>
                   <div className="flex justify-between">
                     <dt className="text-muted-foreground">Account Number</dt>

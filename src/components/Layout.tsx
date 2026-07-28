@@ -207,7 +207,7 @@ export function Layout({ children }: LayoutProps) {
               { name: 'Cooperative Reports', icon: Building2, view: 'cooperative-reports', roles: ['admin', 'payroll_officer'] },
             ]
           : []),
-        { name: 'Bank Payments', icon: Building2, view: 'bank-payments', roles: ['admin', 'payroll_officer', 'cashier'] },
+        { name: 'E-Mandate', icon: Building2, view: 'bank-payments', roles: ['admin', 'payroll_officer', 'cashier'] },
       ],
     },
     {

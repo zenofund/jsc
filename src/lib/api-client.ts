@@ -893,6 +893,16 @@ export const bankAPI = {
     });
   },
 
+  getBankGroups: async (params?: { is_active?: boolean; bank_code?: string; bank_name?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.is_active !== undefined) query.set('is_active', String(params.is_active));
+    if (params?.bank_code) query.set('bank_code', params.bank_code);
+    if (params?.bank_name) query.set('bank_name', params.bank_name);
+    return makeApiRequest(`/bank/groups${query.toString() ? `?${query.toString()}` : ''}`, {
+      method: 'GET',
+    });
+  },
+
   createPaymentBatch: async (data: any) => {
     return makeApiRequest('/bank/payment-batches', {
       method: 'POST',
@@ -1048,8 +1058,8 @@ export const reportAPI = {
     });
   },
 
-  async getPayrollBankSchedule(month: string): Promise<any> {
-    return makeApiRequest(`/reports/payroll/${month}/bank-schedule`, {
+  async getPayrollBankSchedule(month: string, grouping: 'bank' | 'bank_group' = 'bank'): Promise<any> {
+    return makeApiRequest(`/reports/payroll/${month}/bank-schedule?grouping=${grouping}`, {
       method: 'GET',
     });
   },

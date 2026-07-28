@@ -427,9 +427,10 @@ export class PayrollService {
 
     // Get all payroll-eligible staff with department info
     const staff = await this.databaseService.query<any>(
-      `SELECT s.*, d.name as department_name
+      `SELECT s.*, d.name as department_name, bg.group_name as bank_group_name
        FROM staff s
        LEFT JOIN departments d ON s.department_id = d.id
+       LEFT JOIN bank_groups bg ON s.bank_group_id = bg.id
        WHERE s.status IN ('active', 'interdiction')
        ORDER BY s.staff_number`,
     );
@@ -967,6 +968,8 @@ export class PayrollService {
         net_pay: netPay,
         tax_details: JSON.stringify(taxDetails),
         bank_name: staffMember.bank_name,
+        bank_group_id: staffMember.bank_group_id,
+        bank_group_name: staffMember.bank_group_name,
         account_number: staffMember.account_number,
       });
 
@@ -1008,6 +1011,8 @@ export class PayrollService {
             rowPlaceholders.push(`$${paramIndex++}`); // net_pay
             rowPlaceholders.push(`$${paramIndex++}`); // tax_details
             rowPlaceholders.push(`$${paramIndex++}`); // bank_name
+            rowPlaceholders.push(`$${paramIndex++}`); // bank_group_id
+            rowPlaceholders.push(`$${paramIndex++}`); // bank_group_name
             rowPlaceholders.push(`$${paramIndex++}`); // account_number
 
             placeholders.push(`(${rowPlaceholders.join(', ')})`);
@@ -1028,6 +1033,8 @@ export class PayrollService {
               line.net_pay,
               line.tax_details,
               line.bank_name,
+              line.bank_group_id,
+              line.bank_group_name,
               line.account_number,
             );
           });
@@ -1036,7 +1043,7 @@ export class PayrollService {
             INSERT INTO payroll_lines (
               id, payroll_batch_id, staff_id, staff_number, staff_name,
               grade_level, step, basic_salary, allowances, deductions,
-              gross_pay, total_deductions, net_pay, tax_details, bank_name, account_number
+              gross_pay, total_deductions, net_pay, tax_details, bank_name, bank_group_id, bank_group_name, account_number
             ) VALUES ${placeholders.join(', ')}
           `;
 

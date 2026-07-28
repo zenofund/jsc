@@ -48,6 +48,8 @@ export const REPORT_DATA_SOURCES: DataSource[] = [
       { field: 'payroll_batch_id', type: 'string', label: 'Payroll Batch ID', isSearchable: false, isFilterable: true, isAggregatable: false },
       { field: 'staff_id', type: 'string', label: 'Staff ID', isSearchable: false, isFilterable: true, isAggregatable: false },
       { field: 'bank_name', type: 'string', label: 'Bank Name', isSearchable: true, isFilterable: true, isAggregatable: false },
+      { field: 'bank_group_id', type: 'string', label: 'Bank Group ID', isSearchable: false, isFilterable: true, isAggregatable: false },
+      { field: 'bank_group_name', type: 'string', label: 'Bank Group Name', isSearchable: true, isFilterable: true, isAggregatable: false },
       { field: 'account_number', type: 'string', label: 'Account Number', isSearchable: true, isFilterable: true, isAggregatable: false },
       { field: 'grade_level', type: 'string', label: 'Grade Level', isSearchable: false, isFilterable: true, isAggregatable: false },
       { field: 'step', type: 'number', label: 'Step', isSearchable: false, isFilterable: true, isAggregatable: false },

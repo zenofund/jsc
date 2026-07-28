@@ -24,6 +24,7 @@ export function ReportsPage() {
   const [loading, setLoading] = useState(true);
   const [selectedBank, setSelectedBank] = useState<any>(null);
   const [showBankModal, setShowBankModal] = useState(false);
+  const [bankScheduleGrouping, setBankScheduleGrouping] = useState<'bank' | 'bank_group'>('bank');
 
   // Filter states
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().substring(0, 7));
@@ -34,6 +35,9 @@ export function ReportsPage() {
   const [staffDepartment, setStaffDepartment] = useState('');
   const [organizationName, setOrganizationName] = useState('Nigerian Judicial Service Committee');
   const [organizationLogo, setOrganizationLogo] = useState('');
+  const scheduleGroupLabel = bankScheduleGrouping === 'bank_group' ? 'Bank Group' : 'Bank';
+  const scheduleCollectionLabel = bankScheduleGrouping === 'bank_group' ? 'Groups' : 'Banks';
+  const selectedScheduleLabel = selectedBank?.group_label || selectedBank?.bank_name || scheduleGroupLabel;
 
   const isCashier = user?.role === 'cashier';
 
@@ -74,7 +78,7 @@ export function ReportsPage() {
       return;
     }
     loadReport();
-  }, [activeTab, selectedMonth, month1, month2, remittanceType, staffDepartment, isCashier, cooperativeManagementEnabled]);
+  }, [activeTab, selectedMonth, month1, month2, remittanceType, staffDepartment, isCashier, cooperativeManagementEnabled, bankScheduleGrouping]);
 
   useEffect(() => {
     if (settings?.organization_name) {
@@ -123,7 +127,7 @@ export function ReportsPage() {
         const data = await reportAPI.getPayrollReport(selectedMonth);
         setReportData(data);
       } else if (activeTab === 'bank-schedule') {
-        const data = await reportAPI.getPayrollBankSchedule(selectedMonth);
+        const data = await reportAPI.getPayrollBankSchedule(selectedMonth, bankScheduleGrouping);
         setReportData(data);
       } else if (activeTab === 'variance') {
         const data = await reportAPI.getVarianceReport(month1, month2);
@@ -289,9 +293,10 @@ export function ReportsPage() {
 
       } else if (activeTab === 'bank-schedule') {
         const totals = reportData?.totals || {};
-        const rows = (reportData?.banks || []).flatMap((bank: any) =>
-          (bank.lines || []).map((line: any) => ({
-            bank_name: bank.bank_name,
+        const rows = (reportData?.groups || []).flatMap((group: any) =>
+          (group.lines || []).map((line: any) => ({
+            group_label: group.group_label,
+            bank_name: group.bank_name,
             staff_number: line.staff_number,
             staff_name: line.staff_name,
             account_number: String(line.account_number ?? '').trim(),
@@ -300,18 +305,19 @@ export function ReportsPage() {
         );
 
         exportSpreadsheet({
-          title: `Payroll Bank Schedule - ${selectedMonth}`,
-          fileName: `payroll_bank_schedule_${selectedMonth}_${new Date().toISOString().split('T')[0]}.xls`,
+          title: `Payroll E-Mandate Schedule - ${selectedMonth}`,
+          fileName: `payroll_e_mandate_schedule_${bankScheduleGrouping}_${selectedMonth}_${new Date().toISOString().split('T')[0]}.xls`,
           meta: [
             { label: 'Organization', value: organizationName },
-            { label: 'Total Banks', value: String(totals.total_banks || 0) },
+            { label: `Total ${scheduleCollectionLabel}`, value: String(totals.total_groups || 0) },
             { label: 'Total Staff', value: String(totals.total_staff || 0) },
             { label: 'Total Amount', value: formatAmount(totals.total_amount || 0) },
-            { label: 'Missing Bank Details', value: String(totals.missing_bank_details || 0) },
+            { label: bankScheduleGrouping === 'bank_group' ? 'Missing Group Assignments' : 'Missing Bank Details', value: String(bankScheduleGrouping === 'bank_group' ? (totals.missing_group_assignments || 0) : (totals.missing_bank_details || 0)) },
             { label: 'Generated At', value: new Date().toLocaleString() },
           ],
           columns: [
-            { key: 'bank_name', label: 'Bank' },
+            { key: 'group_label', label: scheduleGroupLabel },
+            ...(bankScheduleGrouping === 'bank_group' ? [{ key: 'bank_name', label: 'Bank' }] : []),
             { key: 'staff_number', label: 'Staff Number' },
             { key: 'staff_name', label: 'Staff Name' },
             { key: 'account_number', label: 'Account Number' },
@@ -423,6 +429,7 @@ export function ReportsPage() {
         return isNaN(num) ? '0.00' : num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       };
       const rows = (selectedBank.lines || []).map((line: any) => ({
+        bank_name: line.bank_name,
         staff_number: line.staff_number,
         staff_name: line.staff_name,
         account_number: String(line.account_number ?? '').trim(),
@@ -430,15 +437,18 @@ export function ReportsPage() {
       }));
 
       exportSpreadsheet({
-        title: `Payroll Bank Schedule - ${selectedMonth} (${String(selectedBank.bank_name || 'Bank')})`,
-        fileName: `payroll_bank_schedule_${String(selectedBank.bank_name || 'bank').replace(/\s+/g, '_')}_${selectedMonth}_${new Date().toISOString().split('T')[0]}.xls`,
+        title: `Payroll E-Mandate Schedule - ${selectedMonth} (${String(selectedScheduleLabel || scheduleGroupLabel)})`,
+        fileName: `payroll_e_mandate_schedule_${String(selectedScheduleLabel || scheduleGroupLabel).replace(/\s+/g, '_')}_${selectedMonth}_${new Date().toISOString().split('T')[0]}.xls`,
         meta: [
           { label: 'Organization', value: organizationName },
+          { label: scheduleGroupLabel, value: String(selectedScheduleLabel || '') },
+          ...(bankScheduleGrouping === 'bank_group' ? [{ label: 'Bank', value: String(selectedBank.bank_name || '') }] : []),
           { label: 'Total Staff', value: String(selectedBank.total_staff || 0) },
           { label: 'Total Amount', value: formatAmount(selectedBank.total_amount || 0) },
           { label: 'Generated At', value: new Date().toLocaleString() },
         ],
         columns: [
+          ...(bankScheduleGrouping === 'bank_group' ? [{ key: 'bank_name', label: 'Bank' }] : []),
           { key: 'staff_number', label: 'Staff Number' },
           { key: 'staff_name', label: 'Staff Name' },
           { key: 'account_number', label: 'Account Number' },
@@ -447,10 +457,10 @@ export function ReportsPage() {
         rows,
       });
 
-      showToast('success', 'Bank report exported successfully');
+      showToast('success', `${scheduleGroupLabel} report exported successfully`);
     } catch (error) {
-      showToast('error', 'Failed to export bank report');
-      console.error('Bank Export Error:', error);
+      showToast('error', `Failed to export ${scheduleGroupLabel.toLowerCase()} report`);
+      console.error('Schedule Export Error:', error);
     }
   };
 
@@ -613,7 +623,7 @@ export function ReportsPage() {
 
       } else if (activeTab === 'bank-schedule') {
         docDefinition.content.push(
-          { text: `Payroll Bank Payment Schedule (By Bank) - ${selectedMonth}`, style: 'subheader' },
+          { text: `Payroll E-Mandate Schedule (${scheduleGroupLabel}) - ${selectedMonth}`, style: 'subheader' },
           { text: `Generated: ${new Date().toLocaleDateString()}`, style: 'generated' }
         );
 
@@ -622,19 +632,19 @@ export function ReportsPage() {
           { text: 'Summary', style: 'subheader', alignment: 'left', margin: [0, 10, 0, 5] },
           {
             columns: [
-              { text: `Total Banks: ${totals.total_banks || 0}`, width: '*' },
+              { text: `Total ${scheduleCollectionLabel}: ${totals.total_groups || 0}`, width: '*' },
               { text: `Total Staff: ${totals.total_staff || 0}`, width: '*' },
               { text: `Total Amount: ${formatPDFCurrency(totals.total_amount || 0)}`, width: '*' },
-              { text: `Missing Details: ${totals.missing_bank_details || 0}`, width: '*' },
+              { text: bankScheduleGrouping === 'bank_group' ? `Missing Assignments: ${totals.missing_group_assignments || 0}` : `Missing Details: ${totals.missing_bank_details || 0}`, width: '*' },
             ],
             margin: [0, 0, 0, 10],
           },
         );
 
-        (reportData?.banks || []).forEach((bank: any, idx: number) => {
+        (reportData?.groups || []).forEach((group: any, idx: number) => {
           docDefinition.content.push(
             {
-              text: `Bank: ${bank.bank_name}  |  Staff: ${bank.total_staff || 0}  |  Total: ${formatPDFCurrency(bank.total_amount || 0)}`,
+              text: `${scheduleGroupLabel}: ${group.group_label}  |  Staff: ${group.total_staff || 0}  |  Total: ${formatPDFCurrency(group.total_amount || 0)}${bankScheduleGrouping === 'bank_group' ? `  |  Bank: ${group.bank_name || 'Unknown Bank'}` : ''}`,
               style: 'subheader',
               alignment: 'left',
               margin: [0, idx === 0 ? 5 : 12, 0, 5],
@@ -643,6 +653,7 @@ export function ReportsPage() {
 
           const tableBody = [
             [
+              ...(bankScheduleGrouping === 'bank_group' ? [{ text: 'Bank', style: 'tableHeader' }] : []),
               { text: 'Staff #', style: 'tableHeader' },
               { text: 'Name', style: 'tableHeader' },
               { text: 'Account Number', style: 'tableHeader' },
@@ -650,8 +661,9 @@ export function ReportsPage() {
             ],
           ];
 
-          (bank.lines || []).forEach((line: any) => {
+          (group.lines || []).forEach((line: any) => {
             tableBody.push([
+              ...(bankScheduleGrouping === 'bank_group' ? [{ text: line.bank_name || group.bank_name || 'N/A', style: 'tableCell' }] : []),
               { text: line.staff_number || 'N/A', style: 'tableCell' },
               { text: line.staff_name || 'N/A', style: 'tableCell' },
               { text: line.account_number || 'N/A', style: 'tableCell' },
@@ -662,14 +674,14 @@ export function ReportsPage() {
           docDefinition.content.push({
             table: {
               headerRows: 1,
-              widths: ['auto', '*', 'auto', 'auto'],
+              widths: bankScheduleGrouping === 'bank_group' ? ['auto', 'auto', '*', 'auto', 'auto'] : ['auto', '*', 'auto', 'auto'],
               body: tableBody,
             },
             layout: tableLayout,
           });
         });
 
-        filename = `payroll_bank_schedule_${selectedMonth}.pdf`;
+        filename = `payroll_e_mandate_schedule_${bankScheduleGrouping}_${selectedMonth}.pdf`;
 
       } else if (activeTab === 'variance') {
         // Variance Report PDF
@@ -820,7 +832,7 @@ export function ReportsPage() {
 
   const handleExportSelectedBankPDF = async () => {
     if (!selectedBank) {
-      showToast('error', 'No bank selected');
+        showToast('error', `No ${scheduleGroupLabel.toLowerCase()} selected`);
       return;
     }
 
@@ -873,8 +885,9 @@ export function ReportsPage() {
       }
 
       docDefinition.content.push(
-        { text: `Payroll Bank Payment Schedule (By Bank) - ${selectedMonth}`, style: 'subheader' },
-        { text: `Bank: ${selectedBank.bank_name}`, style: 'generated' },
+        { text: `Payroll E-Mandate Schedule (${scheduleGroupLabel}) - ${selectedMonth}`, style: 'subheader' },
+        { text: `${scheduleGroupLabel}: ${selectedScheduleLabel}`, style: 'generated' },
+        ...(bankScheduleGrouping === 'bank_group' ? [{ text: `Bank: ${selectedBank.bank_name || 'Unknown Bank'}`, style: 'generated' }] : []),
         { text: `Generated: ${new Date().toLocaleDateString()}`, style: 'generated' }
       );
 
@@ -890,6 +903,7 @@ export function ReportsPage() {
 
       const tableBody = [
         [
+          ...(bankScheduleGrouping === 'bank_group' ? [{ text: 'Bank', style: 'tableHeader' }] : []),
           { text: 'Staff #', style: 'tableHeader' },
           { text: 'Name', style: 'tableHeader' },
           { text: 'Account Number', style: 'tableHeader' },
@@ -899,6 +913,7 @@ export function ReportsPage() {
 
       (selectedBank.lines || []).forEach((line: any) => {
         tableBody.push([
+          ...(bankScheduleGrouping === 'bank_group' ? [{ text: line.bank_name || selectedBank.bank_name || 'N/A', style: 'tableCell' }] : []),
           { text: line.staff_number || 'N/A', style: 'tableCell' },
           { text: line.staff_name || 'N/A', style: 'tableCell' },
           { text: line.account_number || 'N/A', style: 'tableCell' },
@@ -909,20 +924,20 @@ export function ReportsPage() {
       docDefinition.content.push({
         table: {
           headerRows: 1,
-          widths: ['auto', '*', 'auto', 'auto'],
+          widths: bankScheduleGrouping === 'bank_group' ? ['auto', 'auto', '*', 'auto', 'auto'] : ['auto', '*', 'auto', 'auto'],
           body: tableBody,
         },
         layout: tableLayout,
       });
 
-      const filename = `payroll_bank_schedule_${String(selectedBank.bank_name || 'bank').replace(/\s+/g, '_')}_${selectedMonth}.pdf`;
+      const filename = `payroll_e_mandate_schedule_${String(selectedScheduleLabel || scheduleGroupLabel).replace(/\s+/g, '_')}_${selectedMonth}.pdf`;
       const pdfMake = await loadPdfMake();
       pdfMake.createPdf(docDefinition).download(filename);
 
-      showToast('success', 'Bank PDF exported successfully');
+      showToast('success', `${scheduleGroupLabel} PDF exported successfully`);
     } catch (error) {
-      showToast('error', 'Failed to export bank PDF');
-      console.error('Bank PDF Export Error:', error);
+      showToast('error', `Failed to export ${scheduleGroupLabel.toLowerCase()} PDF`);
+      console.error('Schedule PDF Export Error:', error);
     }
   };
 
@@ -934,7 +949,7 @@ export function ReportsPage() {
     : [
         { id: 'staff', label: 'Staff Report', icon: Users },
         { id: 'payroll', label: 'Payroll Report', icon: DollarSign },
-        { id: 'bank-schedule', label: 'Bank Payment Schedule', icon: Building2 },
+        { id: 'bank-schedule', label: 'E-Mandate Schedule', icon: Building2 },
         { id: 'variance', label: 'Variance Report', icon: TrendingUp },
         { id: 'remittance', label: 'Remittance Report', icon: FileText },
       ];
@@ -1197,32 +1212,47 @@ export function ReportsPage() {
         </div>
       )}
 
-      {/* Bank Payment Schedule */}
+      {/* E-Mandate Schedule */}
       {activeTab === 'bank-schedule' && (
         <div className="space-y-6">
           <div className="bg-card rounded-lg border border-border p-4">
-            <div className="flex items-center gap-4">
-              <Calendar className="w-5 h-5 text-muted-foreground" />
-              <div className="flex-1">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+              <div className="flex items-center gap-4">
+                <Calendar className="w-5 h-5 text-muted-foreground" />
+                <div className="flex-1">
+                  <label className="block text-sm mb-1 text-card-foreground">
+                    Select Month
+                  </label>
+                  <input
+                    type="month"
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(e.target.value)}
+                    className="w-full max-w-xs px-3 py-2 border border-border rounded-lg bg-input-background dark:bg-gray-800 text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                </div>
+              </div>
+              <div>
                 <label className="block text-sm mb-1 text-card-foreground">
-                  Select Month
+                  Group By
                 </label>
-                <input
-                  type="month"
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(e.target.value)}
+                <select
+                  value={bankScheduleGrouping}
+                  onChange={(e) => setBankScheduleGrouping(e.target.value as 'bank' | 'bank_group')}
                   className="w-full max-w-xs px-3 py-2 border border-border rounded-lg bg-input-background dark:bg-gray-800 text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                />
+                >
+                  <option value="bank">Bank</option>
+                  <option value="bank_group">Bank Group</option>
+                </select>
               </div>
             </div>
           </div>
 
-          {reportData && reportData.banks ? (
+          {reportData && reportData.groups ? (
             <>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 <div className="bg-card rounded-lg border border-border p-6">
-                  <div className="text-sm text-muted-foreground mb-1">Total Banks</div>
-                  <div className="text-2xl font-semibold text-foreground">{reportData.totals?.total_banks || 0}</div>
+                  <div className="text-sm text-muted-foreground mb-1">Total {scheduleCollectionLabel}</div>
+                  <div className="text-2xl font-semibold text-foreground">{reportData.totals?.total_groups || 0}</div>
                 </div>
                 <div className="bg-card rounded-lg border border-border p-6">
                   <div className="text-sm text-muted-foreground mb-1">Total Staff</div>
@@ -1236,17 +1266,18 @@ export function ReportsPage() {
                   </div>
                 </div>
                 <div className="bg-card rounded-lg border border-border p-6">
-                  <div className="text-sm text-muted-foreground mb-1">Missing Bank Details</div>
-                  <div className="text-2xl font-semibold text-foreground">{reportData.totals?.missing_bank_details || 0}</div>
+                  <div className="text-sm text-muted-foreground mb-1">{bankScheduleGrouping === 'bank_group' ? 'Missing Group Assignments' : 'Missing Bank Details'}</div>
+                  <div className="text-2xl font-semibold text-foreground">{bankScheduleGrouping === 'bank_group' ? (reportData.totals?.missing_group_assignments || 0) : (reportData.totals?.missing_bank_details || 0)}</div>
                 </div>
               </div>
 
               <div className="bg-card rounded-lg border border-border p-6">
-                <h3 className="font-semibold text-card-foreground mb-4">Banks - {selectedMonth}</h3>
+                <h3 className="font-semibold text-card-foreground mb-4">E-Mandate {scheduleCollectionLabel} - {selectedMonth}</h3>
                 <DataTable
-                  data={reportData.banks || []}
+                  data={reportData.groups || []}
                   columns={[
-                    { header: 'Bank', accessor: (row: any) => row.bank_name || 'Unknown', sortable: true },
+                    { header: scheduleGroupLabel, accessor: (row: any) => row.group_label || 'Unknown', sortable: true },
+                    ...(bankScheduleGrouping === 'bank_group' ? [{ header: 'Bank', accessor: (row: any) => row.bank_name || 'Unknown', sortable: true }] : []),
                     { header: 'Staff Count', accessor: (row: any) => row.total_staff || 0, sortable: true },
                     { header: 'Total Amount', accessor: (row: any) => formatCurrency(row.total_amount || 0), sortable: true },
                   ]}
@@ -1255,14 +1286,14 @@ export function ReportsPage() {
                     setShowBankModal(true);
                   }}
                   searchable
-                  searchPlaceholder="Search banks..."
+                  searchPlaceholder={`Search ${scheduleCollectionLabel.toLowerCase()}...`}
                 />
               </div>
             </>
           ) : (
             <div className="bg-card rounded-lg border border-border p-12 text-center">
               <Building2 className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground">No payroll bank schedule for selected month</p>
+              <p className="text-muted-foreground">No payroll E-Mandate schedule for selected month</p>
             </div>
           )}
         </div>
@@ -1372,7 +1403,7 @@ export function ReportsPage() {
           setShowBankModal(false);
           setSelectedBank(null);
         }}
-        title={`${selectedBank?.bank_name || 'Bank'} - ${selectedMonth}`}
+        title={`${selectedScheduleLabel || scheduleGroupLabel} - ${selectedMonth}`}
         size="xl"
         footer={
           <div className="flex items-center justify-end gap-2">
@@ -1381,14 +1412,14 @@ export function ReportsPage() {
               className="flex items-center gap-2 px-4 py-2 border border-border text-foreground rounded-lg hover:bg-accent"
             >
               <Download className="w-4 h-4" />
-              Export Bank Excel
+              Export {scheduleGroupLabel} Excel
             </button>
             <button
               onClick={handleExportSelectedBankPDF}
               className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
             >
               <FileText className="w-4 h-4" />
-              Export Bank PDF
+              Export {scheduleGroupLabel} PDF
             </button>
           </div>
         }
@@ -1404,14 +1435,15 @@ export function ReportsPage() {
               <div className="text-lg font-semibold text-foreground">{formatCurrency(selectedBank?.total_amount || 0)}</div>
             </div>
             <div className="bg-muted/30 border border-border rounded-lg p-4">
-              <div className="text-xs text-muted-foreground mb-1">Month</div>
-              <div className="text-lg font-semibold text-foreground">{selectedMonth}</div>
+              <div className="text-xs text-muted-foreground mb-1">{scheduleGroupLabel}</div>
+              <div className="text-lg font-semibold text-foreground">{selectedScheduleLabel || 'N/A'}</div>
             </div>
           </div>
 
           <DataTable
             data={selectedBank?.lines || []}
             columns={[
+              ...(bankScheduleGrouping === 'bank_group' ? [{ header: 'Bank', accessor: 'bank_name' as keyof any, sortable: true }] : []),
               { header: 'Staff Number', accessor: 'staff_number' as keyof any, sortable: true },
               { header: 'Staff Name', accessor: 'staff_name' as keyof any, sortable: true },
               { header: 'Account Number', accessor: 'account_number' as keyof any, sortable: true },

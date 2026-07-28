@@ -4,6 +4,8 @@ import { RolesGuard } from '@common/guards/roles.guard';
 import { Roles } from '@common/decorators/roles.decorator';
 import { BankService } from './bank.service';
 import {
+  CreateBankGroupDto,
+  UpdateBankGroupDto,
   CreateBankAccountDto,
   UpdateBankAccountDto,
   CreatePaymentBatchDto,
@@ -19,7 +21,7 @@ import {
   EscalateExceptionDto,
 } from './dto/bank.dto';
 
-@ApiTags('Bank Payments')
+@ApiTags('E-Mandate')
 @ApiBearerAuth()
 @Controller('bank')
 @UseGuards(RolesGuard)
@@ -30,6 +32,53 @@ export class BankController {
   @ApiOperation({ summary: 'Get list of supported banks' })
   getSupportedBanks() {
     return this.bankService.getSupportedBanks();
+  }
+
+  // ==================== BANK GROUPS ====================
+
+  @Post('groups')
+  @Roles('admin', 'super_admin', 'payroll_manager')
+  @ApiOperation({ summary: 'Create bank group' })
+  createBankGroup(@Body() dto: CreateBankGroupDto, @Request() req) {
+    return this.bankService.createBankGroup(dto, req.user.userId);
+  }
+
+  @Get('groups')
+  @ApiOperation({ summary: 'Get all bank groups' })
+  findAllBankGroups(
+    @Query('is_active') isActive?: string,
+    @Query('bank_code') bankCode?: string,
+    @Query('bank_name') bankName?: string,
+  ) {
+    return this.bankService.findAllBankGroups({
+      isActive: isActive === undefined ? undefined : isActive === 'true',
+      bankCode,
+      bankName,
+    });
+  }
+
+  @Get('groups/:id')
+  @ApiOperation({ summary: 'Get bank group by ID' })
+  findOneBankGroup(@Param('id') id: string) {
+    return this.bankService.findOneBankGroup(id);
+  }
+
+  @Put('groups/:id')
+  @Roles('admin', 'super_admin', 'payroll_manager')
+  @ApiOperation({ summary: 'Update bank group' })
+  updateBankGroup(
+    @Param('id') id: string,
+    @Body() dto: UpdateBankGroupDto,
+    @Request() req,
+  ) {
+    return this.bankService.updateBankGroup(id, dto, req.user.userId);
+  }
+
+  @Delete('groups/:id')
+  @Roles('admin', 'super_admin', 'payroll_manager')
+  @ApiOperation({ summary: 'Delete bank group' })
+  deleteBankGroup(@Param('id') id: string, @Request() req) {
+    return this.bankService.deleteBankGroup(id, req.user.userId);
   }
 
   // ==================== BANK ACCOUNTS ====================

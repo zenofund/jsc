@@ -72,6 +72,53 @@ export class StaffService implements OnModuleInit {
     return normalized || null;
   }
 
+  private async queryOneWithOptionalClient(text: string, params: any[], client?: any) {
+    if (client) {
+      const result = await client.query(text, params);
+      return result.rows[0] ?? null;
+    }
+    return this.databaseService.queryOne(text, params);
+  }
+
+  private async resolveBankGroupAssignment(
+    bankGroupId: string | null | undefined,
+    bankName: string | null | undefined,
+    bankCode: string | null | undefined,
+    client?: any,
+  ) {
+    if (!bankGroupId) {
+      return null;
+    }
+
+    const bankGroup = await this.queryOneWithOptionalClient(
+      `SELECT id, group_name, bank_name, bank_code, is_active
+       FROM bank_groups
+       WHERE id = $1
+       LIMIT 1`,
+      [bankGroupId],
+      client,
+    );
+
+    if (!bankGroup) {
+      throw new BadRequestException('Selected bank group was not found');
+    }
+    if (bankGroup.is_active === false) {
+      throw new BadRequestException('Selected bank group is inactive');
+    }
+
+    const normalizedBankName = String(bankName || '').trim().toLowerCase();
+    const normalizedBankCode = String(bankCode || '').trim();
+
+    if (normalizedBankName && normalizedBankName !== String(bankGroup.bank_name || '').trim().toLowerCase()) {
+      throw new BadRequestException('Selected bank group does not belong to the chosen bank');
+    }
+    if (normalizedBankCode && normalizedBankCode !== String(bankGroup.bank_code || '').trim()) {
+      throw new BadRequestException('Selected bank group does not belong to the chosen bank code');
+    }
+
+    return bankGroup;
+  }
+
   private async ensureEmailIsAvailable(
     email: string,
     options?: {
@@ -180,13 +227,21 @@ export class StaffService implements OnModuleInit {
       );
     }
 
+    const selectedBankGroup = await this.resolveBankGroupAssignment(
+      createStaffDto.bankGroupId,
+      createStaffDto.bankName,
+      createStaffDto.bankCode,
+    );
+    const resolvedBankName = createStaffDto.bankName || selectedBankGroup?.bank_name || null;
+    const resolvedBankCode = createStaffDto.bankCode || selectedBankGroup?.bank_code || null;
+
     const staff = await this.databaseService.queryOne(
       `INSERT INTO staff (
         staff_number, first_name, middle_name, last_name, date_of_birth, gender, marital_status,
         phone, email, address, state_of_origin, lga_of_origin, zone, qualification, nationality,
         department_id, designation, employment_type, employment_date, date_of_first_appointment, post_on_first_appointment, present_appointment, date_of_present_appointment, exit_date, exit_reason, confirmation_date, retirement_date,
         grade_level, step, current_basic_salary,
-        bank_name, bank_code, account_number, account_name, bvn,
+        bank_name, bank_code, bank_group_id, account_number, account_name, bvn,
         tax_id, pit_remittance_state, pension_pin, nhf_number,
         nok_name, nok_relationship, nok_phone, nok_address,
         unit, cadre,
@@ -196,11 +251,11 @@ export class StaffService implements OnModuleInit {
         $8, $9, $10, $11, $12, $13, $14, $15,
         $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
         $28, $29, $30,
-        $31, $32, $33, $34, $35,
-        $36, $37, $38, $39,
-        $40, $41, $42, $43,
-        $44, $45,
-        $46, $47
+        $31, $32, $33, $34, $35, $36,
+        $37, $38, $39, $40,
+        $41, $42, $43, $44,
+        $45, $46,
+        $47, $48
       ) RETURNING *`,
       [
         staffNumber,
@@ -233,8 +288,9 @@ export class StaffService implements OnModuleInit {
         createStaffDto.gradeLevel,
         createStaffDto.step,
         basicSalary, // Use salary from structure instead of createStaffDto.currentBasicSalary
-        createStaffDto.bankName,
-        createStaffDto.bankCode,
+        resolvedBankName,
+        resolvedBankCode,
+        selectedBankGroup?.id || null,
         createStaffDto.accountNumber,
         createStaffDto.accountName,
         createStaffDto.bvn || null,
@@ -389,8 +445,10 @@ export class StaffService implements OnModuleInit {
     // Get paginated data
     const dataQuery = `
       SELECT s.*, d.name as department_name, d.code as department_code
+             , bg.group_name as bank_group_name
       FROM staff s
       LEFT JOIN departments d ON s.department_id = d.id
+      LEFT JOIN bank_groups bg ON s.bank_group_id = bg.id
       ${whereClause}
       ORDER BY s.created_at DESC
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
@@ -414,9 +472,11 @@ export class StaffService implements OnModuleInit {
   async findOne(id: string) {
     const staff = await this.databaseService.queryOne(
       `SELECT s.*, d.name as department_name, d.code as department_code,
-              u.email as user_email, u.role as user_role
+              u.email as user_email, u.role as user_role,
+              bg.group_name as bank_group_name
        FROM staff s
        LEFT JOIN departments d ON s.department_id = d.id
+       LEFT JOIN bank_groups bg ON s.bank_group_id = bg.id
        LEFT JOIN users u ON u.staff_id = s.id
        WHERE s.id = $1`,
       [id],
@@ -434,9 +494,10 @@ export class StaffService implements OnModuleInit {
    */
   async findByStaffNumber(staffNumber: string) {
     const staff = await this.databaseService.queryOne(
-      `SELECT s.*, d.name as department_name
+      `SELECT s.*, d.name as department_name, bg.group_name as bank_group_name
        FROM staff s
        LEFT JOIN departments d ON s.department_id = d.id
+       LEFT JOIN bank_groups bg ON s.bank_group_id = bg.id
        WHERE s.staff_number = $1`,
       [staffNumber],
     );
@@ -476,6 +537,12 @@ export class StaffService implements OnModuleInit {
       throw new BadRequestException('Email is required');
     }
 
+    const requestedBankGroupId = Object.prototype.hasOwnProperty.call(updateStaffDto, 'bankGroupId')
+      ? (updateStaffDto.bankGroupId ?? null)
+      : existing.bank_group_id;
+    const requestedBankName = updateStaffDto.bankName !== undefined ? updateStaffDto.bankName : existing.bank_name;
+    const requestedBankCode = updateStaffDto.bankCode !== undefined ? updateStaffDto.bankCode : existing.bank_code;
+
     // Build dynamic update query
     Object.entries(updateStaffDto).forEach(([key, value]) => {
       if (value !== undefined) {
@@ -504,6 +571,24 @@ export class StaffService implements OnModuleInit {
           excludeUserId: linkedUser?.id,
           client,
         });
+      }
+
+      const resolvedBankGroup = await this.resolveBankGroupAssignment(
+        requestedBankGroupId,
+        requestedBankName,
+        requestedBankCode,
+        client,
+      );
+
+      if (updateStaffDto.bankName === undefined && resolvedBankGroup?.bank_name && requestedBankGroupId) {
+        updates.push(`bank_name = $${paramIndex}`);
+        params.push(resolvedBankGroup.bank_name);
+        paramIndex++;
+      }
+      if (updateStaffDto.bankCode === undefined && resolvedBankGroup?.bank_code && requestedBankGroupId) {
+        updates.push(`bank_code = $${paramIndex}`);
+        params.push(resolvedBankGroup.bank_code);
+        paramIndex++;
       }
 
       updates.push(`updated_at = NOW()`);
@@ -900,6 +985,8 @@ export class StaffService implements OnModuleInit {
         grade_level: staff.grade_level,
         step: staff.step,
         bank_name: staff.bank_name,
+        bank_group_id: staff.bank_group_id,
+        bank_group_name: staff.bank_group_name,
         account_number: staff.account_number,
         current_salary: dashboardBasicSalary,
       },
@@ -1280,6 +1367,7 @@ export class StaffService implements OnModuleInit {
             current_basic_salary: basicSalary,
             bank_name: record.bankName,
             bank_code: record.bankCode,
+            bank_group_id: record.bankGroupId || null,
             account_number: record.accountNumber,
             account_name: record.accountName,
             bvn: record.bvn || null,
