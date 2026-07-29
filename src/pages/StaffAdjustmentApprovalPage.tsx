@@ -55,13 +55,23 @@ const StaffAdjustmentApprovalPage: React.FC = () => {
     );
   };
 
+  const isFinalizedStatus = (status: unknown) => {
+    const raw = String(status || '').trim().toLowerCase();
+    const normalized = raw.replace(/[\s-]+/g, '_');
+    return (
+      normalized === 'approved' ||
+      normalized === 'rejected' ||
+      normalized === 'inactive'
+    );
+  };
+
   const canShowRowActions = (status: unknown) => {
     const raw = String(status || '').trim().toLowerCase();
     const normalized = raw.replace(/[\s-]+/g, '_');
     return isPendingStatus(status) || normalized === 'active';
   };
 
-  const isRowSelectable = (status: unknown) => canShowRowActions(status);
+  const isRowSelectable = (status: unknown) => !isFinalizedStatus(status);
 
   const fetchItems = async () => {
     setLoading(true);

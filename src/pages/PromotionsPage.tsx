@@ -549,7 +549,8 @@ export function PromotionsPage() {
     {
       header: 'Actions',
       accessor: (row: Promotion) => {
-        const canApproveOrReject = row.status === 'pending' && canReviewPromotions;
+        const canApprovePromotion = row.status === 'pending' && canReviewPromotions;
+        const canRejectPromotion = row.status === 'pending' && canReviewPromotions;
         const isProcessing = processingPromotionId === row.id || bulkActionLoading;
 
         return (
@@ -580,16 +581,16 @@ export function PromotionsPage() {
                 <Eye className="w-4 h-4 mr-2 text-blue-600" />
                 View Details
               </DropdownMenuItem>
-              {canApproveOrReject && (
+              {canApprovePromotion && (
                 <DropdownMenuItem onClick={() => handleApprovePromotion(row.id)}>
                   <CheckCircle className="w-4 h-4 mr-2 text-green-600" />
                   Approve
                 </DropdownMenuItem>
               )}
-              {canApproveOrReject && (
+              {canRejectPromotion && (
                 <DropdownMenuItem
                   onClick={() => handleRejectPromotion(row.id)}
-                  className="text-destructive focus:text-destructive"
+                  className="text-red-600 focus:text-red-600"
                 >
                   <XCircle className="w-4 h-4 mr-2 text-red-600" />
                   Reject
@@ -1275,6 +1276,7 @@ export function PromotionsPage() {
                 />
               </div>
             )}
+
 
             <div className="p-4 bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-900 rounded-lg">
               <h4 className="font-medium text-orange-900 dark:text-orange-400 mb-2 flex items-center gap-2">

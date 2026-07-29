@@ -4,6 +4,7 @@ import { DatabaseService } from '@common/database/database.service';
 @Injectable()
 export class DeductionsService {
   private readonly logger = new Logger(DeductionsService.name);
+  private readonly lagosTimeZone = 'Africa/Lagos';
 
   constructor(private databaseService: DatabaseService) {}
 
@@ -33,6 +34,45 @@ export class DeductionsService {
     if (value === undefined || value === null) return null;
     const normalized = String(value).trim();
     return normalized ? normalized : null;
+  }
+
+  private formatDateForLagos(value: any): string | null {
+    if (value === undefined || value === null || value === '') return null;
+
+    const raw = String(value).trim();
+    const plainDateMatch = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (plainDateMatch && !raw.includes('T')) {
+      return plainDateMatch[1];
+    }
+
+    const parsed = value instanceof Date ? value : new Date(raw);
+    if (Number.isNaN(parsed.getTime())) {
+      return plainDateMatch?.[1] || raw;
+    }
+
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: this.lagosTimeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(parsed);
+
+    const year = parts.find((part) => part.type === 'year')?.value ?? '';
+    const month = parts.find((part) => part.type === 'month')?.value ?? '';
+    const day = parts.find((part) => part.type === 'day')?.value ?? '';
+    return `${year}-${month}-${day}`;
+  }
+
+  private normalizeStaffDeductionRecord<T extends Record<string, any> | null>(record: T): T {
+    if (!record) {
+      return record;
+    }
+
+    return {
+      ...record,
+      effective_from: this.formatDateForLagos(record.effective_from),
+      effective_to: this.formatDateForLagos(record.effective_to),
+    };
   }
 
   private hasOwn(dto: any, key: string): boolean {
@@ -321,7 +361,7 @@ export class DeductionsService {
     this.logger.log(
       `Staff deduction created for staff ${dto.staff_id || dto.staffId} by user ${userId} with status ${initialStatus}`,
     );
-    return staffDeduction;
+    return this.normalizeStaffDeductionRecord(staffDeduction);
   }
 
   async findStaffDeductions(staffId: string, query: any) {
@@ -356,7 +396,7 @@ export class DeductionsService {
       params,
     );
 
-    return data;
+    return data.map((record: any) => this.normalizeStaffDeductionRecord(record));
   }
 
   async findAllStaffDeductions(query: any) {
@@ -395,7 +435,7 @@ export class DeductionsService {
     const data = await this.databaseService.query(dataQuery, [...params, limit, offset]);
 
     return {
-      data,
+      data: data.map((record: any) => this.normalizeStaffDeductionRecord(record)),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) }
     };
   }
@@ -469,7 +509,7 @@ export class DeductionsService {
     );
 
     this.logger.log(`Staff deduction ${id} updated by user ${userId}`);
-    return updated;
+    return this.normalizeStaffDeductionRecord(updated);
   }
 
   async removeStaffDeduction(id: string, userId: string) {

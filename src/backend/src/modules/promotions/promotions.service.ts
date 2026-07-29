@@ -61,6 +61,52 @@ export class PromotionsService {
     return [staff?.first_name, staff?.last_name].filter(Boolean).join(' ').trim();
   }
 
+  private valuesMatch(left: unknown, right: unknown) {
+    return String(left ?? '') === String(right ?? '');
+  }
+
+  private async rollbackPromotionOnRejection(client: any, promotion: any) {
+    const staffResult = await client.query('SELECT * FROM staff WHERE id = $1 FOR UPDATE', [promotion.staff_id]);
+    const staff = staffResult.rows[0];
+
+    if (!staff) {
+      throw new NotFoundException(`Staff member for promotion ${promotion.id} was not found`);
+    }
+
+    const stillOnAppliedPromotion =
+      this.valuesMatch(staff.grade_level, promotion.new_grade_level) &&
+      this.valuesMatch(staff.step, promotion.new_step);
+
+    if (!stillOnAppliedPromotion) {
+      return false;
+    }
+
+    const previousPromotionResult = await client.query(
+      `SELECT promotion_date, effective_date
+       FROM promotions
+       WHERE staff_id = $1
+         AND id != $2
+         AND status = 'approved'
+       ORDER BY COALESCE(promotion_date, effective_date) DESC NULLS LAST
+       LIMIT 1`,
+      [promotion.staff_id, promotion.id],
+    );
+    const previousPromotion = previousPromotionResult.rows[0];
+    const previousPromotionDate = previousPromotion?.promotion_date || previousPromotion?.effective_date || null;
+
+    await client.query(
+      `UPDATE staff
+       SET grade_level = $1,
+           step = $2,
+           current_basic_salary = $3,
+           last_promotion_date = $4,
+           updated_at = NOW()
+       WHERE id = $5`,
+      [promotion.old_grade_level, promotion.old_step, promotion.old_basic_salary, previousPromotionDate, promotion.staff_id],
+    );
+    return true;
+  }
+
   /**
    * Reduce a grade level token to a single canonical form so exclusion rules
    * configured in System Config always match the staff record regardless of how
@@ -302,10 +348,19 @@ export class PromotionsService {
       throw new BadRequestException(`Cannot reject promotion with status ${promotion.status}`);
     }
 
-    await this.databaseService.query(
-      `UPDATE promotions SET status = 'rejected', rejection_reason = $1, updated_at = NOW() WHERE id = $2`,
-      [reason, id]
-    );
+    let rolledBack = false;
+    await this.databaseService.transaction(async (client) => {
+      rolledBack = await this.rollbackPromotionOnRejection(client, promotion);
+
+      await client.query(
+        `UPDATE promotions
+         SET status = 'rejected',
+             rejection_reason = $1,
+             updated_at = NOW()
+         WHERE id = $2`,
+        [reason, id],
+      );
+    });
 
     const updatedPromotion = await this.databaseService.queryOne('SELECT * FROM promotions WHERE id = $1', [id]);
 
@@ -317,7 +372,9 @@ export class PromotionsService {
       action: AuditAction.UPDATE,
       entity: 'promotions',
       entityId: promotion.id,
-      description: `Rejected promotion for ${staffName}`,
+      description: rolledBack
+        ? `Rejected promotion for ${staffName} and restored the previous grade/step`
+        : `Rejected promotion for ${staffName}`,
       oldValues: promotion,
       newValues: updatedPromotion,
     });
@@ -328,7 +385,9 @@ export class PromotionsService {
         type: NotificationType.PROMOTION,
         category: NotificationCategory.WARNING,
         title: 'Promotion rejected',
-        message: staffName ? `${staffName} promotion was rejected.` : 'Promotion was rejected.',
+        message: rolledBack
+          ? (staffName ? `${staffName} promotion was rejected and rolled back.` : 'Promotion was rejected and rolled back.')
+          : (staffName ? `${staffName} promotion was rejected.` : 'Promotion was rejected.'),
         link: '/promotions',
         entity_type: 'promotion',
         entity_id: promotion.id,
@@ -340,7 +399,11 @@ export class PromotionsService {
       });
     }
 
-    return { message: 'Promotion rejected successfully' };
+    return {
+      message: rolledBack
+        ? 'Promotion rejected successfully and the staff record was rolled back.'
+        : 'Promotion rejected successfully',
+    };
   }
 
   private async prepareBulkPromotionBatch(promotionIds: string[]) {

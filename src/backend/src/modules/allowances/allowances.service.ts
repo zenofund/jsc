@@ -4,6 +4,7 @@ import { DatabaseService } from '@common/database/database.service';
 @Injectable()
 export class AllowancesService {
   private readonly logger = new Logger(AllowancesService.name);
+  private readonly lagosTimeZone = 'Africa/Lagos';
 
   constructor(private databaseService: DatabaseService) {}
 
@@ -33,6 +34,45 @@ export class AllowancesService {
     if (value === undefined || value === null) return null;
     const normalized = String(value).trim();
     return normalized ? normalized : null;
+  }
+
+  private formatDateForLagos(value: any): string | null {
+    if (value === undefined || value === null || value === '') return null;
+
+    const raw = String(value).trim();
+    const plainDateMatch = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (plainDateMatch && !raw.includes('T')) {
+      return plainDateMatch[1];
+    }
+
+    const parsed = value instanceof Date ? value : new Date(raw);
+    if (Number.isNaN(parsed.getTime())) {
+      return plainDateMatch?.[1] || raw;
+    }
+
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: this.lagosTimeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(parsed);
+
+    const year = parts.find((part) => part.type === 'year')?.value ?? '';
+    const month = parts.find((part) => part.type === 'month')?.value ?? '';
+    const day = parts.find((part) => part.type === 'day')?.value ?? '';
+    return `${year}-${month}-${day}`;
+  }
+
+  private normalizeStaffAllowanceRecord<T extends Record<string, any> | null>(record: T): T {
+    if (!record) {
+      return record;
+    }
+
+    return {
+      ...record,
+      effective_from: this.formatDateForLagos(record.effective_from),
+      effective_to: this.formatDateForLagos(record.effective_to),
+    };
   }
 
   private hasOwn(dto: any, key: string): boolean {
@@ -336,7 +376,7 @@ export class AllowancesService {
     this.logger.log(
       `Staff allowance created for staff ${dto.staff_id || dto.staffId} by user ${userId} with status ${initialStatus}`,
     );
-    return staffAllowance;
+    return this.normalizeStaffAllowanceRecord(staffAllowance);
   }
 
   async findStaffAllowances(staffId: string, query: any) {
@@ -373,7 +413,7 @@ export class AllowancesService {
       params,
     );
 
-    return data;
+    return data.map((record: any) => this.normalizeStaffAllowanceRecord(record));
   }
 
   async findAllStaffAllowances(query: any) {
@@ -414,7 +454,7 @@ export class AllowancesService {
     const data = await this.databaseService.query(dataQuery, [...params, limit, offset]);
 
     return {
-      data,
+      data: data.map((record: any) => this.normalizeStaffAllowanceRecord(record)),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) }
     };
   }
@@ -494,7 +534,7 @@ export class AllowancesService {
     );
 
     this.logger.log(`Staff allowance ${id} updated by user ${userId}`);
-    return updated;
+    return this.normalizeStaffAllowanceRecord(updated);
   }
 
   async removeStaffAllowance(id: string, userId: string) {

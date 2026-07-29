@@ -14,6 +14,713 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 
 type TabType = 'allowances' | 'deductions';
 type EntryMode = 'configured' | 'custom';
+type FrequencyType = 'recurring' | 'one-time';
+
+type StaffAllowanceFormData = {
+  entry_mode: EntryMode;
+  allowance_id: string;
+  allowance_code: string;
+  allowance_name: string;
+  type: 'fixed' | 'percentage';
+  calculation_basis: 'basic' | 'gross';
+  amount: number | string;
+  percentage: number | string;
+  frequency: FrequencyType;
+  is_taxable: boolean;
+  is_pensionable: boolean;
+  effective_from: string;
+  effective_to: string;
+  notes: string;
+};
+
+type StaffDeductionFormData = {
+  entry_mode: EntryMode;
+  deduction_id: string;
+  deduction_code: string;
+  deduction_name: string;
+  type: 'fixed' | 'percentage';
+  calculation_basis: 'basic' | 'gross';
+  amount: number | string;
+  percentage: number | string;
+  frequency: FrequencyType;
+  effective_from: string;
+  effective_to: string;
+  notes: string;
+};
+
+const LAGOS_TIMEZONE = 'Africa/Lagos';
+const MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+const getDatePartsInLagos = (date: Date) => {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: LAGOS_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+
+  const year = parts.find((part) => part.type === 'year')?.value ?? '';
+  const month = parts.find((part) => part.type === 'month')?.value ?? '';
+  const day = parts.find((part) => part.type === 'day')?.value ?? '';
+
+  return { year, month, day };
+};
+
+const getCurrentMonthValue = () => {
+  const { year, month } = getDatePartsInLagos(new Date());
+  return `${year}-${month}`;
+};
+
+const normalizeAdjustmentDateValue = (value?: string | null) => {
+  const raw = String(value ?? '').trim();
+  if (!raw) {
+    return { monthValue: '', displayValue: '' };
+  }
+
+  const plainDateMatch = raw.match(/^(\d{4})-(\d{2})(?:-(\d{2}))?$/);
+  if (plainDateMatch) {
+    const [, year, month, day] = plainDateMatch;
+    return {
+      monthValue: `${year}-${month}`,
+      displayValue: day ? `${MONTH_NAMES[Number(month) - 1]} ${Number(day)}, ${year}` : `${MONTH_NAMES[Number(month) - 1]} ${year}`,
+    };
+  }
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    return { monthValue: raw.substring(0, 7), displayValue: raw };
+  }
+
+  const { year, month, day } = getDatePartsInLagos(parsed);
+  return {
+    monthValue: `${year}-${month}`,
+    displayValue: `${MONTH_NAMES[Number(month) - 1]} ${Number(day)}, ${year}`,
+  };
+};
+
+const buildAllowanceFormState = (
+  initialData?: StaffAllowance | null,
+  allowanceOptions: Allowance[] = [],
+): StaffAllowanceFormData => {
+  if (!initialData) {
+    return {
+      entry_mode: 'configured',
+      allowance_id: '',
+      allowance_code: '',
+      allowance_name: '',
+      type: 'fixed',
+      calculation_basis: 'basic',
+      amount: 0,
+      percentage: 0,
+      frequency: 'recurring',
+      is_taxable: true,
+      is_pensionable: false,
+      effective_from: getCurrentMonthValue(),
+      effective_to: '',
+      notes: '',
+    };
+  }
+
+  const match = allowanceOptions.find((a) => a.code === initialData.allowance_code);
+  return {
+    entry_mode: (initialData.entry_mode ?? (initialData.allowance_id ? 'configured' : 'custom')) as EntryMode,
+    allowance_id: initialData.allowance_id ?? match?.id ?? '',
+    allowance_code: initialData.allowance_code ?? '',
+    allowance_name: initialData.allowance_name ?? '',
+    type: (initialData.type ?? 'fixed') as 'fixed' | 'percentage',
+    calculation_basis: (initialData.calculation_basis ?? 'basic') as 'basic' | 'gross',
+    amount: initialData.amount ?? 0,
+    percentage: initialData.percentage ?? 0,
+    frequency: (initialData.frequency ?? 'recurring') as FrequencyType,
+    is_taxable: initialData.is_taxable ?? true,
+    is_pensionable: initialData.is_pensionable ?? false,
+    effective_from: normalizeAdjustmentDateValue(initialData.effective_from).monthValue || getCurrentMonthValue(),
+    effective_to: normalizeAdjustmentDateValue(initialData.effective_to).monthValue,
+    notes: initialData.notes ?? '',
+  };
+};
+
+const buildDeductionFormState = (
+  initialData?: StaffDeduction | null,
+  deductionOptions: Deduction[] = [],
+): StaffDeductionFormData => {
+  if (!initialData) {
+    return {
+      entry_mode: 'configured',
+      deduction_id: '',
+      deduction_code: '',
+      deduction_name: '',
+      type: 'fixed',
+      calculation_basis: 'basic',
+      amount: 0,
+      percentage: 0,
+      frequency: 'recurring',
+      effective_from: getCurrentMonthValue(),
+      effective_to: '',
+      notes: '',
+    };
+  }
+
+  const match = deductionOptions.find((d) => d.code === initialData.deduction_code);
+  return {
+    entry_mode: (initialData.entry_mode ?? (initialData.deduction_id ? 'configured' : 'custom')) as EntryMode,
+    deduction_id: initialData.deduction_id ?? match?.id ?? '',
+    deduction_code: initialData.deduction_code ?? '',
+    deduction_name: initialData.deduction_name ?? '',
+    type: (initialData.type ?? 'fixed') as 'fixed' | 'percentage',
+    calculation_basis: (initialData.calculation_basis ?? 'basic') as 'basic' | 'gross',
+    amount: initialData.amount ?? 0,
+    percentage: initialData.percentage ?? 0,
+    frequency: (initialData.frequency ?? 'recurring') as FrequencyType,
+    effective_from: normalizeAdjustmentDateValue(initialData.effective_from).monthValue || getCurrentMonthValue(),
+    effective_to: normalizeAdjustmentDateValue(initialData.effective_to).monthValue,
+    notes: initialData.notes ?? '',
+  };
+};
+
+function StaffAllowanceForm({
+  initialData,
+  onSubmit,
+  onCancel,
+  isSubmitting,
+  allowanceOptions,
+}: {
+  initialData?: StaffAllowance | null;
+  onSubmit: (data: StaffAllowanceFormData) => void;
+  onCancel: () => void;
+  isSubmitting: boolean;
+  allowanceOptions: Allowance[];
+}) {
+  const [localFormData, setLocalFormData] = useState<StaffAllowanceFormData>(() =>
+    buildAllowanceFormState(initialData, allowanceOptions),
+  );
+
+  useEffect(() => {
+    if (!initialData) return;
+    setLocalFormData(buildAllowanceFormState(initialData, allowanceOptions));
+  }, [initialData?.id, allowanceOptions]);
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium text-foreground mb-2">Entry Method</label>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => setLocalFormData((prev) => ({ ...prev, entry_mode: 'configured' }))}
+            className={`rounded-md border px-3 py-2 text-sm ${
+              localFormData.entry_mode === 'configured'
+                ? 'border-primary bg-primary/10 text-primary'
+                : 'border-border bg-background text-muted-foreground'
+            }`}
+          >
+            Configured Item
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              setLocalFormData((prev) => ({
+                ...prev,
+                entry_mode: 'custom',
+                allowance_id: '',
+              }))
+            }
+            className={`rounded-md border px-3 py-2 text-sm ${
+              localFormData.entry_mode === 'custom'
+                ? 'border-primary bg-primary/10 text-primary'
+                : 'border-border bg-background text-muted-foreground'
+            }`}
+          >
+            Custom Item
+          </button>
+        </div>
+      </div>
+
+      {localFormData.entry_mode === 'configured' ? (
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-1">Allowance *</label>
+          <select
+            value={localFormData.allowance_id}
+            onChange={(e) => {
+              const selected = allowanceOptions.find((a) => a.id === e.target.value);
+              if (!selected) {
+                setLocalFormData((prev) => ({
+                  ...prev,
+                  allowance_id: e.target.value,
+                }));
+                return;
+              }
+              setLocalFormData((prev) => ({
+                ...prev,
+                allowance_id: selected.id,
+                allowance_code: selected.code,
+                allowance_name: selected.name,
+                type: selected.type as 'fixed' | 'percentage',
+                calculation_basis: (selected.calculation_basis ?? 'basic') as 'basic' | 'gross',
+                is_taxable: selected.is_taxable,
+                is_pensionable: selected.is_pensionable,
+                amount: selected.type === 'fixed' ? (selected.amount ?? 0) : prev.amount,
+                percentage: selected.type === 'percentage' ? (selected.percentage ?? 0) : prev.percentage,
+              }));
+            }}
+            className="w-full p-2 border border-border rounded-md bg-background text-foreground"
+          >
+            <option value="">-- Select Allowance --</option>
+            {allowanceOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.code} - {option.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">Allowance Name *</label>
+            <input
+              type="text"
+              value={localFormData.allowance_name}
+              onChange={(e) => setLocalFormData((prev) => ({ ...prev, allowance_name: e.target.value }))}
+              placeholder="e.g. Special Duty Allowance"
+              className="w-full p-2 border border-border rounded-md bg-background text-foreground"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">Code (Optional)</label>
+            <input
+              type="text"
+              value={localFormData.allowance_code}
+              onChange={(e) =>
+                setLocalFormData((prev) => ({ ...prev, allowance_code: e.target.value.toUpperCase() }))
+              }
+              placeholder="e.g. SPEC_DUTY"
+              className="w-full p-2 border border-border rounded-md bg-background text-foreground"
+            />
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-1">Type</label>
+          <select
+            value={localFormData.type}
+            disabled={localFormData.entry_mode === 'configured'}
+            onChange={(e) =>
+              setLocalFormData((prev) => ({ ...prev, type: e.target.value as 'fixed' | 'percentage' }))
+            }
+            className={`w-full p-2 border border-border rounded-md text-foreground ${
+              localFormData.entry_mode === 'configured' ? 'bg-muted' : 'bg-background'
+            }`}
+          >
+            <option value="fixed">Fixed Amount</option>
+            <option value="percentage">Percentage</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-1">
+            {localFormData.type === 'fixed' ? 'Amount (₦)' : 'Percentage (%)'}
+          </label>
+          <input
+            type="number"
+            value={localFormData.type === 'fixed' ? localFormData.amount : localFormData.percentage}
+            onChange={(e) =>
+              setLocalFormData((prev) => ({
+                ...prev,
+                [prev.type === 'fixed' ? 'amount' : 'percentage']: e.target.value,
+              }))
+            }
+            className="w-full p-2 border border-border rounded-md bg-background text-foreground"
+          />
+        </div>
+      </div>
+
+      {localFormData.type === 'percentage' && (
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-1">Calculation Basis</label>
+          <label
+            className={`flex items-center gap-2 rounded-md border border-border px-3 py-2 ${
+              localFormData.entry_mode === 'configured'
+                ? 'cursor-not-allowed bg-muted text-muted-foreground'
+                : 'cursor-pointer bg-background text-foreground'
+            }`}
+          >
+            <input
+              type="checkbox"
+              checked={localFormData.calculation_basis === 'gross'}
+              disabled={localFormData.entry_mode === 'configured'}
+              onChange={(e) =>
+                setLocalFormData((prev) => ({
+                  ...prev,
+                  calculation_basis: e.target.checked ? 'gross' : 'basic',
+                }))
+              }
+              className="size-4"
+            />
+            <span className="text-sm">Calculate on Gross Salary</span>
+          </label>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {localFormData.entry_mode === 'configured'
+              ? 'Inherited from the configured allowance.'
+              : 'Unchecked uses Basic Salary.'}
+          </p>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-1">Frequency</label>
+          <select
+            value={localFormData.frequency}
+            onChange={(e) =>
+              setLocalFormData((prev) => ({ ...prev, frequency: e.target.value as FrequencyType }))
+            }
+            className="w-full p-2 border border-border rounded-md bg-background text-foreground"
+          >
+            <option value="recurring">Recurring (Monthly)</option>
+            <option value="one-time">One-Time</option>
+          </select>
+        </div>
+
+        <div className="flex items-center gap-4 pt-6">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={localFormData.is_taxable}
+              disabled={localFormData.entry_mode === 'configured'}
+              onChange={(e) => setLocalFormData((prev) => ({ ...prev, is_taxable: e.target.checked }))}
+              className="size-4"
+            />
+            <span className="text-sm text-foreground">Taxable</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={localFormData.is_pensionable}
+              disabled={localFormData.entry_mode === 'configured'}
+              onChange={(e) => setLocalFormData((prev) => ({ ...prev, is_pensionable: e.target.checked }))}
+              className="size-4"
+            />
+            <span className="text-sm text-foreground">Pensionable</span>
+          </label>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-1">Effective From</label>
+          <input
+            type="month"
+            value={localFormData.effective_from}
+            onChange={(e) => setLocalFormData((prev) => ({ ...prev, effective_from: e.target.value }))}
+            className="w-full p-2 border border-border rounded-md bg-background text-foreground"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-1">Effective To (Optional)</label>
+          <input
+            type="month"
+            value={localFormData.effective_to}
+            onChange={(e) => setLocalFormData((prev) => ({ ...prev, effective_to: e.target.value }))}
+            className="w-full p-2 border border-border rounded-md bg-background text-foreground"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-foreground mb-1">Notes</label>
+        <textarea
+          value={localFormData.notes}
+          onChange={(e) => setLocalFormData((prev) => ({ ...prev, notes: e.target.value }))}
+          rows={3}
+          placeholder="Reason for allowance..."
+          className="w-full p-2 border border-border rounded-md bg-background text-foreground"
+        />
+      </div>
+
+      <div className="flex gap-3 justify-end pt-4">
+        <button onClick={onCancel} className="btn-secondary" disabled={isSubmitting}>
+          Cancel
+        </button>
+        <button
+          onClick={() => onSubmit(localFormData)}
+          className="btn-primary flex items-center gap-2"
+          disabled={isSubmitting}
+        >
+          {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+          {initialData ? 'Update' : 'Create'} Allowance
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function StaffDeductionForm({
+  initialData,
+  onSubmit,
+  onCancel,
+  isSubmitting,
+  deductionOptions,
+}: {
+  initialData?: StaffDeduction | null;
+  onSubmit: (data: StaffDeductionFormData) => void;
+  onCancel: () => void;
+  isSubmitting: boolean;
+  deductionOptions: Deduction[];
+}) {
+  const [localFormData, setLocalFormData] = useState<StaffDeductionFormData>(() =>
+    buildDeductionFormState(initialData, deductionOptions),
+  );
+
+  useEffect(() => {
+    if (!initialData) return;
+    setLocalFormData(buildDeductionFormState(initialData, deductionOptions));
+  }, [initialData?.id, deductionOptions]);
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium text-foreground mb-2">Entry Method</label>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => setLocalFormData((prev) => ({ ...prev, entry_mode: 'configured' }))}
+            className={`rounded-md border px-3 py-2 text-sm ${
+              localFormData.entry_mode === 'configured'
+                ? 'border-primary bg-primary/10 text-primary'
+                : 'border-border bg-background text-muted-foreground'
+            }`}
+          >
+            Configured Item
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              setLocalFormData((prev) => ({
+                ...prev,
+                entry_mode: 'custom',
+                deduction_id: '',
+              }))
+            }
+            className={`rounded-md border px-3 py-2 text-sm ${
+              localFormData.entry_mode === 'custom'
+                ? 'border-primary bg-primary/10 text-primary'
+                : 'border-border bg-background text-muted-foreground'
+            }`}
+          >
+            Custom Item
+          </button>
+        </div>
+      </div>
+
+      {localFormData.entry_mode === 'configured' ? (
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-1">Deduction *</label>
+          <select
+            value={localFormData.deduction_id}
+            onChange={(e) => {
+              const selected = deductionOptions.find((d) => d.id === e.target.value);
+              if (!selected) {
+                setLocalFormData((prev) => ({
+                  ...prev,
+                  deduction_id: e.target.value,
+                }));
+                return;
+              }
+              setLocalFormData((prev) => ({
+                ...prev,
+                deduction_id: selected.id,
+                deduction_code: selected.code,
+                deduction_name: selected.name,
+                type: selected.type as 'fixed' | 'percentage',
+                calculation_basis: (selected.calculation_basis ?? 'basic') as 'basic' | 'gross',
+                amount: selected.type === 'fixed' ? (selected.amount ?? 0) : prev.amount,
+                percentage: selected.type === 'percentage' ? (selected.percentage ?? 0) : prev.percentage,
+              }));
+            }}
+            className="w-full p-2 border border-border rounded-md bg-background text-foreground"
+          >
+            <option value="">-- Select Deduction --</option>
+            {deductionOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.code} - {option.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">Deduction Name *</label>
+            <input
+              type="text"
+              value={localFormData.deduction_name}
+              onChange={(e) => setLocalFormData((prev) => ({ ...prev, deduction_name: e.target.value }))}
+              placeholder="e.g. Staff Recovery"
+              className="w-full p-2 border border-border rounded-md bg-background text-foreground"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">Code (Optional)</label>
+            <input
+              type="text"
+              value={localFormData.deduction_code}
+              onChange={(e) =>
+                setLocalFormData((prev) => ({ ...prev, deduction_code: e.target.value.toUpperCase() }))
+              }
+              placeholder="e.g. RECOVERY"
+              className="w-full p-2 border border-border rounded-md bg-background text-foreground"
+            />
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-1">Type</label>
+          <select
+            value={localFormData.type}
+            disabled={localFormData.entry_mode === 'configured'}
+            onChange={(e) =>
+              setLocalFormData((prev) => ({ ...prev, type: e.target.value as 'fixed' | 'percentage' }))
+            }
+            className={`w-full p-2 border border-border rounded-md text-foreground ${
+              localFormData.entry_mode === 'configured' ? 'bg-muted' : 'bg-background'
+            }`}
+          >
+            <option value="fixed">Fixed Amount</option>
+            <option value="percentage">Percentage</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-1">
+            {localFormData.type === 'fixed' ? 'Amount (₦)' : 'Percentage (%)'}
+          </label>
+          <input
+            type="number"
+            value={localFormData.type === 'fixed' ? localFormData.amount : localFormData.percentage}
+            onChange={(e) =>
+              setLocalFormData((prev) => ({
+                ...prev,
+                [prev.type === 'fixed' ? 'amount' : 'percentage']: e.target.value,
+              }))
+            }
+            className="w-full p-2 border border-border rounded-md bg-background text-foreground"
+          />
+        </div>
+      </div>
+
+      {localFormData.type === 'percentage' && (
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-1">Calculation Basis</label>
+          <label
+            className={`flex items-center gap-2 rounded-md border border-border px-3 py-2 ${
+              localFormData.entry_mode === 'configured'
+                ? 'cursor-not-allowed bg-muted text-muted-foreground'
+                : 'cursor-pointer bg-background text-foreground'
+            }`}
+          >
+            <input
+              type="checkbox"
+              checked={localFormData.calculation_basis === 'gross'}
+              disabled={localFormData.entry_mode === 'configured'}
+              onChange={(e) =>
+                setLocalFormData((prev) => ({
+                  ...prev,
+                  calculation_basis: e.target.checked ? 'gross' : 'basic',
+                }))
+              }
+              className="size-4"
+            />
+            <span className="text-sm">Calculate on Gross Salary</span>
+          </label>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {localFormData.entry_mode === 'configured'
+              ? 'Inherited from the configured deduction.'
+              : 'Unchecked uses Basic Salary.'}
+          </p>
+        </div>
+      )}
+
+      <div>
+        <label className="block text-sm font-medium text-foreground mb-1">Frequency</label>
+        <select
+          value={localFormData.frequency}
+          onChange={(e) =>
+            setLocalFormData((prev) => ({ ...prev, frequency: e.target.value as FrequencyType }))
+          }
+          className="w-full p-2 border border-border rounded-md bg-background text-foreground"
+        >
+          <option value="recurring">Recurring (Monthly)</option>
+          <option value="one-time">One-Time</option>
+        </select>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-1">Effective From</label>
+          <input
+            type="month"
+            value={localFormData.effective_from}
+            onChange={(e) => setLocalFormData((prev) => ({ ...prev, effective_from: e.target.value }))}
+            className="w-full p-2 border border-border rounded-md bg-background text-foreground"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-1">Effective To (Optional)</label>
+          <input
+            type="month"
+            value={localFormData.effective_to}
+            onChange={(e) => setLocalFormData((prev) => ({ ...prev, effective_to: e.target.value }))}
+            className="w-full p-2 border border-border rounded-md bg-background text-foreground"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-foreground mb-1">Notes</label>
+        <textarea
+          value={localFormData.notes}
+          onChange={(e) => setLocalFormData((prev) => ({ ...prev, notes: e.target.value }))}
+          rows={3}
+          placeholder="Reason for deduction..."
+          className="w-full p-2 border border-border rounded-md bg-background text-foreground"
+        />
+      </div>
+
+      <div className="flex gap-3 justify-end pt-4">
+        <button onClick={onCancel} className="btn-secondary" disabled={isSubmitting}>
+          Cancel
+        </button>
+        <button
+          onClick={() => onSubmit(localFormData)}
+          className="btn-primary flex items-center gap-2"
+          disabled={isSubmitting}
+        >
+          {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+          {initialData ? 'Update' : 'Create'} Deduction
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export function StaffAllowancesPage() {
   const { user } = useAuth();
@@ -93,625 +800,6 @@ export function StaffAllowancesPage() {
     }
   };
 // ... existing code ...
-
-  const StaffAllowanceForm = ({
-    initialData,
-    onSubmit,
-    onCancel,
-    isSubmitting,
-    allowanceOptions,
-  }: {
-    initialData?: StaffAllowance | null,
-    onSubmit: (data: any) => void,
-    onCancel: () => void,
-    isSubmitting: boolean,
-    allowanceOptions: Allowance[],
-  }) => {
-    const buildInitialState = () => ({
-      entry_mode: (initialData?.entry_mode ?? (initialData?.allowance_id ? 'configured' : 'custom')) as EntryMode,
-      allowance_id: initialData?.allowance_id ?? '',
-      allowance_code: initialData?.allowance_code ?? '',
-      allowance_name: initialData?.allowance_name ?? '',
-      type: initialData?.type ?? 'fixed',
-      calculation_basis: initialData?.calculation_basis ?? 'basic',
-      amount: initialData?.amount ?? 0,
-      percentage: initialData?.percentage ?? 0,
-      frequency: initialData?.frequency ?? 'recurring',
-      is_taxable: initialData?.is_taxable ?? true,
-      is_pensionable: initialData?.is_pensionable ?? false,
-      effective_from: initialData?.effective_from
-        ? initialData.effective_from.substring(0, 7)
-        : new Date().toISOString().substring(0, 7),
-      effective_to: initialData?.effective_to ? initialData.effective_to.substring(0, 7) : '',
-      notes: initialData?.notes ?? '',
-    });
-
-    const [localFormData, setLocalFormData] = useState(buildInitialState);
-
-    useEffect(() => {
-      if (!initialData) {
-        setLocalFormData({
-          entry_mode: 'configured',
-          allowance_id: '',
-          allowance_code: '',
-          allowance_name: '',
-          type: 'fixed',
-          calculation_basis: 'basic',
-          amount: 0,
-          percentage: 0,
-          frequency: 'recurring',
-          is_taxable: true,
-          is_pensionable: false,
-          effective_from: new Date().toISOString().substring(0, 7),
-          effective_to: '',
-          notes: '',
-        });
-        return;
-      }
-
-      const match = allowanceOptions.find((a) => a.code === initialData.allowance_code);
-      setLocalFormData({
-        entry_mode: (initialData.entry_mode ?? (initialData.allowance_id ? 'configured' : 'custom')) as EntryMode,
-        allowance_id: initialData.allowance_id ?? match?.id ?? '',
-        allowance_code: initialData.allowance_code ?? '',
-        allowance_name: initialData.allowance_name ?? '',
-        type: initialData.type ?? 'fixed',
-        calculation_basis: initialData.calculation_basis ?? 'basic',
-        amount: initialData.amount ?? 0,
-        percentage: initialData.percentage ?? 0,
-        frequency: initialData.frequency ?? 'recurring',
-        is_taxable: initialData.is_taxable ?? true,
-        is_pensionable: initialData.is_pensionable ?? false,
-        effective_from: initialData.effective_from
-          ? initialData.effective_from.substring(0, 7)
-          : new Date().toISOString().substring(0, 7),
-        effective_to: initialData.effective_to ? initialData.effective_to.substring(0, 7) : '',
-        notes: initialData.notes ?? '',
-      });
-    }, [initialData, allowanceOptions]);
-
-    return (
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-2">Entry Method</label>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => setLocalFormData((prev) => ({ ...prev, entry_mode: 'configured' }))}
-              className={`rounded-md border px-3 py-2 text-sm ${
-                localFormData.entry_mode === 'configured'
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-border bg-background text-muted-foreground'
-              }`}
-            >
-              Configured Item
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                setLocalFormData((prev) => ({
-                  ...prev,
-                  entry_mode: 'custom',
-                  allowance_id: '',
-                }))
-              }
-              className={`rounded-md border px-3 py-2 text-sm ${
-                localFormData.entry_mode === 'custom'
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-border bg-background text-muted-foreground'
-              }`}
-            >
-              Custom Item
-            </button>
-          </div>
-        </div>
-
-        {localFormData.entry_mode === 'configured' ? (
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1">Allowance *</label>
-            <select
-              value={localFormData.allowance_id}
-              onChange={(e) => {
-                const selected = allowanceOptions.find((a) => a.id === e.target.value);
-                if (!selected) {
-                  setLocalFormData({
-                    ...localFormData,
-                    allowance_id: e.target.value,
-                  });
-                  return;
-                }
-                setLocalFormData({
-                  ...localFormData,
-                  allowance_id: selected.id,
-                  allowance_code: selected.code,
-                  allowance_name: selected.name,
-                  type: selected.type,
-                  calculation_basis: selected.calculation_basis ?? 'basic',
-                  is_taxable: selected.is_taxable,
-                  is_pensionable: selected.is_pensionable,
-                  amount: selected.type === 'fixed' ? (selected.amount ?? 0) : localFormData.amount,
-                  percentage: selected.type === 'percentage' ? (selected.percentage ?? 0) : localFormData.percentage,
-                });
-              }}
-              className="w-full p-2 border border-border rounded-md bg-background text-foreground"
-            >
-              <option value="">-- Select Allowance --</option>
-              {allowanceOptions.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.code} - {option.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1">Allowance Name *</label>
-              <input
-                type="text"
-                value={localFormData.allowance_name}
-                onChange={(e) => setLocalFormData({ ...localFormData, allowance_name: e.target.value })}
-                placeholder="e.g. Special Duty Allowance"
-                className="w-full p-2 border border-border rounded-md bg-background text-foreground"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1">Code (Optional)</label>
-              <input
-                type="text"
-                value={localFormData.allowance_code}
-                onChange={(e) => setLocalFormData({ ...localFormData, allowance_code: e.target.value.toUpperCase() })}
-                placeholder="e.g. SPEC_DUTY"
-                className="w-full p-2 border border-border rounded-md bg-background text-foreground"
-              />
-            </div>
-          </div>
-        )}
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1">Type</label>
-            <select
-              value={localFormData.type}
-              disabled={localFormData.entry_mode === 'configured'}
-              onChange={(e) => setLocalFormData({ ...localFormData, type: e.target.value as 'fixed' | 'percentage' })}
-              className={`w-full p-2 border border-border rounded-md text-foreground ${
-                localFormData.entry_mode === 'configured' ? 'bg-muted' : 'bg-background'
-              }`}
-            >
-              <option value="fixed">Fixed Amount</option>
-              <option value="percentage">Percentage</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1">
-              {localFormData.type === 'fixed' ? 'Amount (₦)' : 'Percentage (%)'}
-            </label>
-            <input
-              type="number"
-              value={localFormData.type === 'fixed' ? localFormData.amount : localFormData.percentage}
-              onChange={(e) =>
-                setLocalFormData({
-                  ...localFormData,
-                  [localFormData.type === 'fixed' ? 'amount' : 'percentage']: e.target.value,
-                })
-              }
-              className="w-full p-2 border border-border rounded-md bg-background text-foreground"
-            />
-          </div>
-        </div>
-
-        {localFormData.type === 'percentage' && (
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1">Calculation Basis</label>
-            <label
-              className={`flex items-center gap-2 rounded-md border border-border px-3 py-2 ${
-                localFormData.entry_mode === 'configured'
-                  ? 'cursor-not-allowed bg-muted text-muted-foreground'
-                  : 'cursor-pointer bg-background text-foreground'
-              }`}
-            >
-              <input
-                type="checkbox"
-                checked={localFormData.calculation_basis === 'gross'}
-                disabled={localFormData.entry_mode === 'configured'}
-                onChange={(e) =>
-                  setLocalFormData({
-                    ...localFormData,
-                    calculation_basis: e.target.checked ? 'gross' : 'basic',
-                  })
-                }
-                className="size-4"
-              />
-              <span className="text-sm">Calculate on Gross Salary</span>
-            </label>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {localFormData.entry_mode === 'configured'
-                ? 'Inherited from the configured allowance.'
-                : 'Unchecked uses Basic Salary.'}
-            </p>
-          </div>
-        )}
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1">Frequency</label>
-            <select
-              value={localFormData.frequency}
-              onChange={(e) => setLocalFormData({ ...localFormData, frequency: e.target.value as 'recurring' | 'one-time' })}
-              className="w-full p-2 border border-border rounded-md bg-background text-foreground"
-            >
-              <option value="recurring">Recurring (Monthly)</option>
-              <option value="one-time">One-Time</option>
-            </select>
-          </div>
-
-          <div className="flex items-center gap-4 pt-6">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={localFormData.is_taxable}
-                disabled={localFormData.entry_mode === 'configured'}
-                onChange={(e) => setLocalFormData({ ...localFormData, is_taxable: e.target.checked })}
-                className="size-4"
-              />
-              <span className="text-sm text-foreground">Taxable</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={localFormData.is_pensionable}
-                disabled={localFormData.entry_mode === 'configured'}
-                onChange={(e) => setLocalFormData({ ...localFormData, is_pensionable: e.target.checked })}
-                className="size-4"
-              />
-              <span className="text-sm text-foreground">Pensionable</span>
-            </label>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1">Effective From</label>
-            <input
-              type="month"
-              value={localFormData.effective_from}
-              onChange={(e) => setLocalFormData({ ...localFormData, effective_from: e.target.value })}
-              className="w-full p-2 border border-border rounded-md bg-background text-foreground"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1">Effective To (Optional)</label>
-            <input
-              type="month"
-              value={localFormData.effective_to}
-              onChange={(e) => setLocalFormData({ ...localFormData, effective_to: e.target.value })}
-              className="w-full p-2 border border-border rounded-md bg-background text-foreground"
-            />
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-1">Notes</label>
-          <textarea
-            value={localFormData.notes}
-            onChange={(e) => setLocalFormData({ ...localFormData, notes: e.target.value })}
-            rows={3}
-            placeholder="Reason for allowance..."
-            className="w-full p-2 border border-border rounded-md bg-background text-foreground"
-          />
-        </div>
-
-        <div className="flex gap-3 justify-end pt-4">
-          <button onClick={onCancel} className="btn-secondary" disabled={isSubmitting}>
-            Cancel
-          </button>
-          <button
-            onClick={() => onSubmit(localFormData)}
-            className="btn-primary flex items-center gap-2"
-            disabled={isSubmitting}
-          >
-            {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            {initialData ? 'Update' : 'Create'} Allowance
-          </button>
-        </div>
-      </div>
-    );
-  };
-
-  const StaffDeductionForm = ({
-    initialData,
-    onSubmit,
-    onCancel,
-    isSubmitting,
-    deductionOptions,
-  }: {
-    initialData?: StaffDeduction | null,
-    onSubmit: (data: any) => void,
-    onCancel: () => void,
-    isSubmitting: boolean,
-    deductionOptions: Deduction[],
-  }) => {
-    const [localFormData, setLocalFormData] = useState({
-      entry_mode: (initialData?.entry_mode ?? (initialData?.deduction_id ? 'configured' : 'custom')) as EntryMode,
-      deduction_id: initialData?.deduction_id ?? '',
-      deduction_code: initialData?.deduction_code ?? '',
-      deduction_name: initialData?.deduction_name ?? '',
-      type: initialData?.type ?? 'fixed',
-      calculation_basis: initialData?.calculation_basis ?? 'basic',
-      amount: initialData?.amount ?? 0,
-      percentage: initialData?.percentage ?? 0,
-      frequency: initialData?.frequency ?? 'recurring',
-      effective_from: initialData?.effective_from
-        ? initialData.effective_from.substring(0, 7)
-        : new Date().toISOString().substring(0, 7),
-      effective_to: initialData?.effective_to ? initialData.effective_to.substring(0, 7) : '',
-      notes: initialData?.notes ?? '',
-    });
-
-    useEffect(() => {
-      if (!initialData) {
-        setLocalFormData({
-          entry_mode: 'configured',
-          deduction_id: '',
-          deduction_code: '',
-          deduction_name: '',
-          type: 'fixed',
-          calculation_basis: 'basic',
-          amount: 0,
-          percentage: 0,
-          frequency: 'recurring',
-          effective_from: new Date().toISOString().substring(0, 7),
-          effective_to: '',
-          notes: '',
-        });
-        return;
-      }
-
-      const match = deductionOptions.find((d) => d.code === initialData.deduction_code);
-      setLocalFormData({
-        entry_mode: (initialData.entry_mode ?? (initialData.deduction_id ? 'configured' : 'custom')) as EntryMode,
-        deduction_id: initialData.deduction_id ?? match?.id ?? '',
-        deduction_code: initialData.deduction_code ?? '',
-        deduction_name: initialData.deduction_name ?? '',
-        type: initialData.type ?? 'fixed',
-        calculation_basis: initialData.calculation_basis ?? 'basic',
-        amount: initialData.amount ?? 0,
-        percentage: initialData.percentage ?? 0,
-        frequency: initialData.frequency ?? 'recurring',
-        effective_from: initialData.effective_from
-          ? initialData.effective_from.substring(0, 7)
-          : new Date().toISOString().substring(0, 7),
-        effective_to: initialData.effective_to ? initialData.effective_to.substring(0, 7) : '',
-        notes: initialData.notes ?? '',
-      });
-    }, [initialData, deductionOptions]);
-
-    return (
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-2">Entry Method</label>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => setLocalFormData((prev) => ({ ...prev, entry_mode: 'configured' }))}
-              className={`rounded-md border px-3 py-2 text-sm ${
-                localFormData.entry_mode === 'configured'
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-border bg-background text-muted-foreground'
-              }`}
-            >
-              Configured Item
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                setLocalFormData((prev) => ({
-                  ...prev,
-                  entry_mode: 'custom',
-                  deduction_id: '',
-                }))
-              }
-              className={`rounded-md border px-3 py-2 text-sm ${
-                localFormData.entry_mode === 'custom'
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-border bg-background text-muted-foreground'
-              }`}
-            >
-              Custom Item
-            </button>
-          </div>
-        </div>
-
-        {localFormData.entry_mode === 'configured' ? (
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1">Deduction *</label>
-            <select
-              value={localFormData.deduction_id}
-              onChange={(e) => {
-                const selected = deductionOptions.find((d) => d.id === e.target.value);
-                if (!selected) {
-                  setLocalFormData({
-                    ...localFormData,
-                    deduction_id: e.target.value,
-                  });
-                  return;
-                }
-                setLocalFormData({
-                  ...localFormData,
-                  deduction_id: selected.id,
-                  deduction_code: selected.code,
-                  deduction_name: selected.name,
-                  type: selected.type,
-                  calculation_basis: selected.calculation_basis ?? 'basic',
-                  amount: selected.type === 'fixed' ? (selected.amount ?? 0) : localFormData.amount,
-                  percentage: selected.type === 'percentage' ? (selected.percentage ?? 0) : localFormData.percentage,
-                });
-              }}
-              className="w-full p-2 border border-border rounded-md bg-background text-foreground"
-            >
-              <option value="">-- Select Deduction --</option>
-              {deductionOptions.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.code} - {option.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1">Deduction Name *</label>
-              <input
-                type="text"
-                value={localFormData.deduction_name}
-                onChange={(e) => setLocalFormData({ ...localFormData, deduction_name: e.target.value })}
-                placeholder="e.g. Staff Recovery"
-                className="w-full p-2 border border-border rounded-md bg-background text-foreground"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1">Code (Optional)</label>
-              <input
-                type="text"
-                value={localFormData.deduction_code}
-                onChange={(e) => setLocalFormData({ ...localFormData, deduction_code: e.target.value.toUpperCase() })}
-                placeholder="e.g. RECOVERY"
-                className="w-full p-2 border border-border rounded-md bg-background text-foreground"
-              />
-            </div>
-          </div>
-        )}
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1">Type</label>
-            <select
-              value={localFormData.type}
-              disabled={localFormData.entry_mode === 'configured'}
-              onChange={(e) => setLocalFormData({ ...localFormData, type: e.target.value as 'fixed' | 'percentage' })}
-              className={`w-full p-2 border border-border rounded-md text-foreground ${
-                localFormData.entry_mode === 'configured' ? 'bg-muted' : 'bg-background'
-              }`}
-            >
-              <option value="fixed">Fixed Amount</option>
-              <option value="percentage">Percentage</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1">
-              {localFormData.type === 'fixed' ? 'Amount (₦)' : 'Percentage (%)'}
-            </label>
-            <input
-              type="number"
-              value={localFormData.type === 'fixed' ? localFormData.amount : localFormData.percentage}
-              onChange={(e) =>
-                setLocalFormData({
-                  ...localFormData,
-                  [localFormData.type === 'fixed' ? 'amount' : 'percentage']: e.target.value,
-                })
-              }
-              className="w-full p-2 border border-border rounded-md bg-background text-foreground"
-            />
-          </div>
-        </div>
-
-        {localFormData.type === 'percentage' && (
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1">Calculation Basis</label>
-            <label
-              className={`flex items-center gap-2 rounded-md border border-border px-3 py-2 ${
-                localFormData.entry_mode === 'configured'
-                  ? 'cursor-not-allowed bg-muted text-muted-foreground'
-                  : 'cursor-pointer bg-background text-foreground'
-              }`}
-            >
-              <input
-                type="checkbox"
-                checked={localFormData.calculation_basis === 'gross'}
-                disabled={localFormData.entry_mode === 'configured'}
-                onChange={(e) =>
-                  setLocalFormData({
-                    ...localFormData,
-                    calculation_basis: e.target.checked ? 'gross' : 'basic',
-                  })
-                }
-                className="size-4"
-              />
-              <span className="text-sm">Calculate on Gross Salary</span>
-            </label>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {localFormData.entry_mode === 'configured'
-                ? 'Inherited from the configured deduction.'
-                : 'Unchecked uses Basic Salary.'}
-            </p>
-          </div>
-        )}
-
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-1">Frequency</label>
-          <select
-            value={localFormData.frequency}
-            onChange={(e) => setLocalFormData({ ...localFormData, frequency: e.target.value as 'recurring' | 'one-time' })}
-            className="w-full p-2 border border-border rounded-md bg-background text-foreground"
-          >
-            <option value="recurring">Recurring (Monthly)</option>
-            <option value="one-time">One-Time</option>
-          </select>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1">Effective From</label>
-            <input
-              type="month"
-              value={localFormData.effective_from}
-              onChange={(e) => setLocalFormData({ ...localFormData, effective_from: e.target.value })}
-              className="w-full p-2 border border-border rounded-md bg-background text-foreground"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1">Effective To (Optional)</label>
-            <input
-              type="month"
-              value={localFormData.effective_to}
-              onChange={(e) => setLocalFormData({ ...localFormData, effective_to: e.target.value })}
-              className="w-full p-2 border border-border rounded-md bg-background text-foreground"
-            />
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-1">Notes</label>
-          <textarea
-            value={localFormData.notes}
-            onChange={(e) => setLocalFormData({ ...localFormData, notes: e.target.value })}
-            rows={3}
-            placeholder="Reason for deduction..."
-            className="w-full p-2 border border-border rounded-md bg-background text-foreground"
-          />
-        </div>
-
-        <div className="flex gap-3 justify-end pt-4">
-          <button onClick={onCancel} className="btn-secondary" disabled={isSubmitting}>
-            Cancel
-          </button>
-          <button
-            onClick={() => onSubmit(localFormData)}
-            className="btn-primary flex items-center gap-2"
-            disabled={isSubmitting}
-          >
-            {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            {initialData ? 'Update' : 'Create'} Deduction
-          </button>
-        </div>
-      </div>
-    );
-  };
 
   const handleCreateAllowance = () => {
     setEditingAllowance(null);
@@ -872,17 +960,7 @@ export function StaffAllowancesPage() {
 
   const formatDate = (dateString: string) => {
     if (!dateString) return '-';
-    try {
-      const date = new Date(dateString);
-      if (isNaN(date.getTime())) return dateString;
-      return date.toLocaleDateString('en-NG', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-      });
-    } catch (e) {
-      return dateString;
-    }
+    return normalizeAdjustmentDateValue(dateString).displayValue || dateString;
   };
 
   if (loading) {

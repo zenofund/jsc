@@ -139,42 +139,35 @@ export function ViewPayrollLinesModal({
     return formatExportText(acc);
   };
 
-  const isCooperativeDeduction = (item: any) => {
-    const label = String(item?.name ?? item?.code ?? '').toLowerCase();
-    return /coop|cooperative|co-op/.test(label);
+  const toCsvMoney = (value: unknown) => round2(toNumber(value)).toFixed(2);
+
+  const isCooperativeSourceDeduction = (item: any) => {
+    return (
+      item?.is_cooperative === true ||
+      Boolean(item?.cooperative_id) ||
+      Boolean(item?.member_id) ||
+      Boolean(item?.contribution_type)
+    );
   };
 
-  const isLoanDeduction = (item: any) => {
-    const label = String(item?.name ?? item?.code ?? '').toLowerCase();
-    return /\bloan\b/.test(label);
+  const isLoanSourceDeduction = (item: any) => {
+    return (
+      Boolean(item?.loan_disbursement_id) ||
+      Array.isArray(item?.loan_months) ||
+      Array.isArray(item?.loan_due_months) ||
+      item?.loan_monthly_installment !== undefined
+    );
   };
 
   const includeDeductionInExport = (item: any) => {
-    if (!cooperativeManagementEnabled && isCooperativeDeduction(item)) {
+    if (!cooperativeManagementEnabled && isCooperativeSourceDeduction(item)) {
       return false;
     }
-    if (!loanManagementEnabled && isLoanDeduction(item)) {
+    if (!loanManagementEnabled && isLoanSourceDeduction(item)) {
       return false;
     }
     return true;
   };
-
-  const getCooperativeGroupKey = (item: any) => {
-    const raw = String(item?.name ?? item?.code ?? '').trim();
-    const cleaned = raw
-      .replace(/\b(?:loan|contribution|deduction|payment|installment|charge|contrib)\b/gi, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-    const label = cleaned || raw || 'Cooperative';
-    return `coop:${label}`;
-  };
-
-  const getExportKey = (item: any) => {
-    if (isCooperativeDeduction(item)) return getCooperativeGroupKey(item);
-    return itemKey(item);
-  };
-
-  const toCsvMoney = (value: unknown) => round2(toNumber(value)).toFixed(2);
 
   const lineTotalAllowances = (line: PayrollLine) => {
     const hasExplicit = (line as any).total_allowances !== undefined && (line as any).total_allowances !== null;
@@ -215,27 +208,11 @@ export function ViewPayrollLinesModal({
   };
 
   const buildItemLabels = (items: any[], keyFn: (item: any) => string = itemKey) => {
-    const keyToBase = new Map<string, string>();
-    const baseCounts = new Map<string, number>();
-    for (const item of items) {
-      const key = keyFn(item);
-      if (!key) continue;
-      const base = itemBaseLabel(item);
-      keyToBase.set(key, base);
-      baseCounts.set(base, (baseCounts.get(base) ?? 0) + 1);
-    }
     const keyToLabel = new Map<string, string>();
     for (const item of items) {
       const key = keyFn(item);
       if (!key) continue;
-      const base = keyToBase.get(key) ?? '';
-      const count = baseCounts.get(base) ?? 0;
-      if (count <= 1) {
-        keyToLabel.set(key, base);
-        continue;
-      }
-      const code = String(item?.code ?? '').trim();
-      keyToLabel.set(key, code ? `${base} (${code})` : base);
+      keyToLabel.set(key, itemBaseLabel(item));
     }
     return keyToLabel;
   };
@@ -248,50 +225,18 @@ export function ViewPayrollLinesModal({
   };
 
   const collectExportModel = (allLines: PayrollLine[]) => {
-    const coopDeductionItems: any[] = [];
-    const nonCoopDeductionItems: any[] = [];
+    const allDeductionItems: any[] = [];
 
-    // Separate cooperative from non-cooperative deductions
     for (const line of allLines) {
       const deductions = Array.isArray((line as any).deductions)
         ? (line as any).deductions.filter(includeDeductionInExport)
         : [];
       for (const d of deductions) {
-        if (isCooperativeDeduction(d)) {
-          coopDeductionItems.push({ ...d, _line_id: line.id });
-        } else {
-          nonCoopDeductionItems.push(d);
-        }
+        allDeductionItems.push(d);
       }
     }
 
-    // Build a map of cooperative names to aggregated data
-    const coopNameToItems = new Map<string, any[]>();
-    for (const item of coopDeductionItems) {
-      const coopName = getCooperativeGroupKey(item).replace(/^coop:/, '').trim();
-      if (!coopNameToItems.has(coopName)) {
-        coopNameToItems.set(coopName, []);
-      }
-      coopNameToItems.get(coopName)!.push(item);
-    }
-
-    // Create aggregate cooperative deduction items (one per cooperative)
-    const aggregatedCoopItems = Array.from(coopNameToItems.entries()).map(([coopName, items]) => ({
-      name: coopName,
-      code: coopName,
-      amount: items.reduce((sum, item) => sum + toNumber(item?.amount || 0), 0),
-      _is_aggregated_coop: true,
-    }));
-
-    // Combine deduction items: all non-coop items + aggregated coop items
-    const allDeductionItems = [...nonCoopDeductionItems, ...aggregatedCoopItems];
-
-    const deductionKeyToLabel = buildItemLabels(allDeductionItems, (item: any) => {
-      if (item._is_aggregated_coop) {
-        return `coop:${item.name}`;
-      }
-      return itemKey(item);
-    });
+    const deductionKeyToLabel = buildItemLabels(allDeductionItems, itemKey);
 
     const deductionKeys = Array.from(deductionKeyToLabel.keys()).sort((a, b) => {
       const la = deductionKeyToLabel.get(a) ?? a;
@@ -302,23 +247,9 @@ export function ViewPayrollLinesModal({
     const getItemAmount = (items: any[], key: string) => {
       if (!Array.isArray(items)) return 0;
       let sum = 0;
-      const exportItems = items.filter(includeDeductionInExport);
-      
-      // Check if this key is an aggregated cooperative key
-      if (key.startsWith('coop:')) {
-        const coopName = key.replace(/^coop:/, '').trim();
-        for (const i of exportItems) {
-          const iCoopName = isCooperativeDeduction(i) ? getCooperativeGroupKey(i).replace(/^coop:/, '').trim() : null;
-          if (iCoopName === coopName) {
-            sum += toNumber(i?.amount);
-          }
-        }
-      } else {
-        // Non-cooperative deduction
-        for (const i of exportItems) {
-          if (!isCooperativeDeduction(i) && itemKey(i) === key) {
-            sum += toNumber(i?.amount);
-          }
+      for (const i of items.filter(includeDeductionInExport)) {
+        if (itemKey(i) === key) {
+          sum += toNumber(i?.amount);
         }
       }
       return sum;
@@ -339,24 +270,9 @@ export function ViewPayrollLinesModal({
       { id: 'total_allowances', header: 'Tot. All.', isMoney: true, get: (line) => toCsvMoney(lineTotalAllowances(line)) },
       { id: 'gross_pay', header: 'Gross Pay', isMoney: true, get: (line) => toCsvMoney(line.gross_pay) },
       ...deductionKeys.map((key) => {
-        let header = deductionKeyToLabel.get(key) ?? key;
-        if (key.startsWith('coop:')) {
-          header = header.replace(/^coop:/i, '').trim();
-        } else if (header.includes('PAYE') || header.includes('Paye') || header.toLowerCase() === 'paye tax' || header.toLowerCase() === 'tax') {
-          header = 'Paye';
-        } else if (header.includes('Pension') || header.includes('PENSION')) {
-          header = 'Pension';
-        } else if (header.includes('Union') || header.includes('UNION')) {
-          header = 'Union';
-        } else if (header.includes('NHF')) {
-          header = 'NHF';
-        } else if (header.includes('NHIS') || header.includes('NHIA')) {
-          header = 'NHIA';
-        }
-
         return {
           id: `deduction:${key}`,
-          header: smartHeaderLabel(header),
+          header: smartHeaderLabel(deductionKeyToLabel.get(key) ?? key),
           isMoney: true,
           get: (line: PayrollLine) => toCsvMoney(getItemAmount((line as any).deductions, key)),
         };
