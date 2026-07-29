@@ -15,6 +15,45 @@ import { PageSkeleton } from '../components/PageLoader';
 import { TrendingUp, Plus, CheckCircle, XCircle, Eye, AlertCircle, Calendar, Loader2, MoreVertical } from 'lucide-react';
 import { formatCurrency } from '../utils/format';
 
+function normalizePromotionDate(value: string | null | undefined): string {
+  const rawValue = String(value || '').trim();
+  if (!rawValue) return '';
+
+  const plainDateMatch = rawValue.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (plainDateMatch) {
+    return `${plainDateMatch[1]}-${plainDateMatch[2]}-${plainDateMatch[3]}`;
+  }
+
+  const slashIsoMatch = rawValue.match(/^(\d{4})[\/](\d{1,2})[\/](\d{1,2})$/);
+  if (slashIsoMatch) {
+    return `${slashIsoMatch[1]}-${String(Number(slashIsoMatch[2])).padStart(2, '0')}-${String(Number(slashIsoMatch[3])).padStart(2, '0')}`;
+  }
+
+  const localeDateMatch = rawValue.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
+  if (localeDateMatch) {
+    const first = Number(localeDateMatch[1]);
+    const second = Number(localeDateMatch[2]);
+    const year = localeDateMatch[3];
+    const month = second > 12 ? first : second <= 12 && first > 12 ? second : first;
+    const day = second > 12 ? second : second <= 12 && first > 12 ? first : second;
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  }
+
+  const isoLikeMatch = rawValue.match(/^(\d{4}-\d{2}-\d{2})T/);
+  if (isoLikeMatch) {
+    return isoLikeMatch[1];
+  }
+
+  return rawValue;
+}
+
+function toDateOnly(value: string | null | undefined): Date | null {
+  const normalized = normalizePromotionDate(value);
+  if (!normalized) return null;
+  const parsed = new Date(`${normalized}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 export function PromotionsPage() {
   const { user } = useAuth();
   const { showToast } = useToast();
@@ -214,13 +253,14 @@ export function PromotionsPage() {
       }
       try {
         setDetailsPreviewLoading(true);
-        const effectiveDateKey = String(selectedPromotion.effective_date || '').slice(0, 10);
+        const normalizedEffectiveDate = normalizePromotionDate(selectedPromotion.effective_date);
+        const effectiveDateKey = normalizedEffectiveDate;
         const requests: Promise<any>[] = [
           promotionAPI.previewArrears(
             selectedPromotion.staff_id,
             selectedPromotion.new_grade_level,
             selectedPromotion.new_step,
-            selectedPromotion.effective_date,
+            normalizedEffectiveDate,
             selectedPromotion.old_grade_level,
             selectedPromotion.old_step,
           ),
@@ -445,7 +485,11 @@ export function PromotionsPage() {
 
   const selectedBackdatedCount = useMemo(() => {
     const today = new Date();
-    return selectedPendingPromotions.filter((promotion) => new Date(promotion.effective_date) < today).length;
+    today.setHours(0, 0, 0, 0);
+    return selectedPendingPromotions.filter((promotion) => {
+      const effectiveDate = toDateOnly(promotion.effective_date);
+      return effectiveDate ? effectiveDate < today : false;
+    }).length;
   }, [selectedPendingPromotions]);
 
   useEffect(() => {

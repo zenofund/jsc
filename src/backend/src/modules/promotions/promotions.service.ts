@@ -10,6 +10,7 @@ import { AuditAction } from '@modules/audit/dto/audit.dto';
 export class PromotionsService {
   private readonly logger = new Logger(PromotionsService.name);
   private readonly businessTimeZone = 'Africa/Lagos';
+  private readonly maxPromotionArrearsMonths = 600;
 
   constructor(
     private readonly databaseService: DatabaseService,
@@ -25,6 +26,8 @@ export class PromotionsService {
   private getBusinessDateParts(value: any) {
     const rawValue = String(value || '').trim();
     const plainDateMatch = rawValue.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    const slashIsoMatch = rawValue.match(/^(\d{4})[\/](\d{1,2})[\/](\d{1,2})$/);
+    const slashLocaleMatch = rawValue.match(/^(\d{1,2})[\/](\d{1,2})[\/](\d{4})$/);
 
     if (plainDateMatch) {
       return {
@@ -32,6 +35,41 @@ export class PromotionsService {
         month: Number(plainDateMatch[2]),
         day: Number(plainDateMatch[3]),
       };
+    }
+
+    if (slashIsoMatch) {
+      const year = Number(slashIsoMatch[1]);
+      const month = Number(slashIsoMatch[2]);
+      const day = Number(slashIsoMatch[3]);
+      const validated = new Date(Date.UTC(year, month - 1, day));
+
+      if (
+        validated.getUTCFullYear() === year &&
+        validated.getUTCMonth() === month - 1 &&
+        validated.getUTCDate() === day
+      ) {
+        return { year, month, day };
+      }
+    }
+
+    if (slashLocaleMatch) {
+      const first = Number(slashLocaleMatch[1]);
+      const second = Number(slashLocaleMatch[2]);
+      const year = Number(slashLocaleMatch[3]);
+
+      // Browser locale/date picker integrations may hand us slash dates.
+      // Prefer the only non-ambiguous interpretation; otherwise default to MM/DD/YYYY.
+      const month = second > 12 ? first : second <= 12 && first > 12 ? second : first;
+      const day = second > 12 ? second : second <= 12 && first > 12 ? first : second;
+      const validated = new Date(Date.UTC(year, month - 1, day));
+
+      if (
+        validated.getUTCFullYear() === year &&
+        validated.getUTCMonth() === month - 1 &&
+        validated.getUTCDate() === day
+      ) {
+        return { year, month, day };
+      }
     }
 
     const parsedDate = new Date(value);
@@ -208,6 +246,10 @@ export class PromotionsService {
     const monthsDiff =
       (currentMonth.getUTCFullYear() - effectiveMonth.getUTCFullYear()) * 12 +
       (currentMonth.getUTCMonth() - effectiveMonth.getUTCMonth());
+
+    if (monthsDiff > this.maxPromotionArrearsMonths) {
+      throw new BadRequestException('Invalid promotion effective date');
+    }
 
     const safeMonthsDiff = Math.max(0, monthsDiff);
     const roundedMonthlyDifference = this.roundCurrency(monthlyDifference);
@@ -1237,31 +1279,16 @@ export class PromotionsService {
   }
 
   /**
-   * Calculate total deductions (Global + Staff, excluding TAX)
+   * Calculate total deductions for promotion arrears context.
+   * Only global deductions that apply to the staff member are included.
    */
   private async calculateTotalDeductions(staffId: string, basicSalary: number, gradeLevel?: string | number): Promise<number> {
     const staffMember = await this.getPayrollContextStaff(staffId, gradeLevel);
-    // 1. Get Global Deductions (applies_to_all = true)
     const globalDeductions = await this.databaseService.query(
       `SELECT * FROM deductions WHERE status = 'active' AND applies_to_all = true AND code != 'TAX'`
     );
 
-    // 2. Get Staff Specific Deductions
-    const staffDeductions = await this.databaseService.query(
-      `SELECT sd.*,
-              COALESCE(sd.custom_type, d.type) as deduction_type,
-              COALESCE(sd.custom_calculation_basis, d.calculation_basis, 'basic') as calculation_basis,
-              d.percentage as global_percentage
-       FROM staff_deductions sd
-       LEFT JOIN deductions d ON sd.deduction_id = d.id
-       WHERE sd.status = 'active'
-         AND sd.staff_id = $1
-         AND UPPER(COALESCE(sd.custom_deduction_code, d.code, '')) != 'TAX'`,
-      [staffId]
-    );
-
     let totalDeductions = 0;
-
     const grossSalary = await this.calculateGrossSalary(staffId, basicSalary, gradeLevel);
 
     for (const deduction of globalDeductions) {
@@ -1278,23 +1305,6 @@ export class PromotionsService {
         );
       } else if (deduction.type === 'fixed') {
         totalDeductions += parseFloat(deduction.amount);
-      }
-    }
-
-    // Calculate Staff Specific Deductions
-    for (const deduction of staffDeductions) {
-      const type = deduction.deduction_type;
-      
-      if (type === 'percentage') {
-        totalDeductions += this.calculatePercentageAmount(
-          deduction.percentage,
-          basicSalary,
-          grossSalary,
-          deduction.calculation_basis,
-        );
-      } else if (type === 'fixed') {
-        const amt = deduction.amount ? parseFloat(deduction.amount) : 0;
-        totalDeductions += amt;
       }
     }
 
@@ -1442,21 +1452,6 @@ export class PromotionsService {
       `SELECT * FROM deductions WHERE status = 'active' AND applies_to_all = true AND code != 'TAX'`,
     );
 
-    const staffDeductions = await this.databaseService.query(
-      `SELECT sd.*,
-              COALESCE(sd.custom_type, d.type) as deduction_type,
-              COALESCE(sd.custom_calculation_basis, d.calculation_basis, 'basic') as calculation_basis,
-              d.percentage as global_percentage,
-              COALESCE(sd.custom_deduction_name, d.name) as deduction_name,
-              COALESCE(sd.custom_deduction_code, d.code) as deduction_code
-       FROM staff_deductions sd
-       LEFT JOIN deductions d ON sd.deduction_id = d.id
-       WHERE sd.status = 'active'
-         AND sd.staff_id = $1
-         AND UPPER(COALESCE(sd.custom_deduction_code, d.code, '')) != 'TAX'`,
-      [staffId],
-    );
-
     const items: Array<{ code: string; name: string; amount: number; type: string; source: string; calculation_basis?: string }> = [];
     let total = 0;
     const grossSalary = await this.calculateGrossSalary(staffId, basicSalary, gradeLevel);
@@ -1485,32 +1480,6 @@ export class PromotionsService {
           type: deduction.type,
           calculation_basis: this.normalizeCalculationBasis(deduction.calculation_basis),
           source: 'global',
-        });
-        total += amount;
-      }
-    }
-
-    for (const deduction of staffDeductions) {
-      const type = deduction.deduction_type;
-      let amount = 0;
-      if (type === 'percentage') {
-        amount = this.calculatePercentageAmount(
-          deduction.percentage,
-          basicSalary,
-          grossSalary,
-          deduction.calculation_basis,
-        );
-      } else if (type === 'fixed') {
-        amount = deduction.amount ? parseFloat(deduction.amount) : 0;
-      }
-      if (amount) {
-        items.push({
-          code: deduction.deduction_code,
-          name: deduction.deduction_name,
-          amount,
-          type,
-          calculation_basis: this.normalizeCalculationBasis(deduction.calculation_basis),
-          source: 'staff',
         });
         total += amount;
       }
