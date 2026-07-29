@@ -183,8 +183,8 @@ export function PromotionsPage() {
         monthlyDifference: result.monthlyDifference,
         monthsOwed: result.monthsDiff,
         totalArrears: result.totalArrears,
-        oldSalary: result.oldNetSalary,
-        newSalary: result.newNetSalary,
+        oldSalary: result.oldBasicSalary,
+        newSalary: result.newBasicSalary,
         oldGrossSalary: result.oldGrossSalary,
         newGrossSalary: result.newGrossSalary,
         oldAllowances: result.oldAllowances,
@@ -226,7 +226,7 @@ export function PromotionsPage() {
           ),
         ];
 
-        if (selectedPromotion.status === 'approved' && selectedPromotion.arrears_calculated) {
+        if (selectedPromotion.status === 'approved') {
           requests.push(arrearsAPI.getPendingArrears());
         }
 
@@ -235,8 +235,8 @@ export function PromotionsPage() {
           monthlyDifference: result.monthlyDifference,
           monthsOwed: result.monthsDiff,
           totalArrears: result.totalArrears,
-          oldSalary: result.oldNetSalary,
-          newSalary: result.newNetSalary,
+          oldSalary: result.oldBasicSalary,
+          newSalary: result.newBasicSalary,
           oldGrossSalary: result.oldGrossSalary,
           newGrossSalary: result.newGrossSalary,
           oldAllowances: result.oldAllowances,
@@ -429,6 +429,9 @@ export function PromotionsPage() {
   const filteredPromotions = promotions.filter(p => 
     filter === 'all' ? true : p.status === filter
   );
+  const arrearsEvaluationComplete =
+    selectedPromotion?.status === 'approved' &&
+    (selectedPromotion.arrears_calculated || (!!detailsArrearsPreview && !detailsPreviewLoading));
 
   const selectablePromotionIds = useMemo(
     () => filteredPromotions.filter((promotion) => promotion.status === 'pending').map((promotion) => promotion.id),
@@ -1020,13 +1023,13 @@ export function PromotionsPage() {
                   </h4>
                   <div className="grid grid-cols-2 gap-3 text-sm">
                     <div>
-                      <span className="text-orange-700 dark:text-orange-300">Old Monthly Salary:</span>
+                      <span className="text-orange-700 dark:text-orange-300">Old Basic Salary:</span>
                       <div className="font-semibold text-orange-900 dark:text-orange-200">
                         {formatCurrency(arrearsPreview.oldSalary)}
                       </div>
                     </div>
                     <div>
-                      <span className="text-orange-700 dark:text-orange-300">New Monthly Salary:</span>
+                      <span className="text-orange-700 dark:text-orange-300">New Basic Salary:</span>
                       <div className="font-semibold text-orange-900 dark:text-orange-200">
                         {formatCurrency(arrearsPreview.newSalary)}
                       </div>
@@ -1075,7 +1078,7 @@ export function PromotionsPage() {
                   </div>
                   {arrearsPreview.monthsOwed === 0 && (
                     <div className="mt-2 text-xs text-orange-700 dark:text-orange-300">
-                      No arrears are currently owed for the selected effective date, but the monthly salary difference is shown for review.
+                      No arrears are currently owed for the selected effective date, but the salary difference is shown for review.
                     </div>
                   )}
                   <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1259,7 +1262,7 @@ export function PromotionsPage() {
                 <h4 className="font-medium text-green-900 dark:text-green-400 mb-2">Approval Information</h4>
                 <div className="text-sm text-green-800 dark:text-green-300">
                   <div>Approved on: {selectedPromotion.approval_date ? new Date(selectedPromotion.approval_date).toLocaleString() : 'N/A'}</div>
-                  <div>Arrears Calculated: {selectedPromotion.arrears_calculated ? 'Yes' : 'Pending'}</div>
+                  <div>Arrears Calculated: {detailsPreviewLoading ? 'Checking...' : arrearsEvaluationComplete ? 'Yes' : 'Pending'}</div>
                 </div>
               </div>
             )}
@@ -1289,13 +1292,13 @@ export function PromotionsPage() {
                 <div className="space-y-3 text-sm">
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <span className="text-orange-700 dark:text-orange-300">Old Net:</span>
+                      <span className="text-orange-700 dark:text-orange-300">Old Basic Salary:</span>
                       <div className="font-semibold text-orange-900 dark:text-orange-200">
                         {formatCurrency(detailsArrearsPreview.oldSalary)}
                       </div>
                     </div>
                     <div>
-                      <span className="text-orange-700 dark:text-orange-300">New Net:</span>
+                      <span className="text-orange-700 dark:text-orange-300">New Basic Salary:</span>
                       <div className="font-semibold text-orange-900 dark:text-orange-200">
                         {formatCurrency(detailsArrearsPreview.newSalary)}
                       </div>

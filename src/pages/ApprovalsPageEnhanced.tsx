@@ -266,8 +266,8 @@ export function ApprovalsPageEnhanced() {
             id: p.id,
             type: 'promotion',
             title: `Promotion Request`,
-            subtitle: `${p.staff_name} - Grade ${p.old_grade || 'N/A'} to ${p.new_grade || 'N/A'}`,
-            amount: (p.new_salary || 0) - (p.old_salary || 0),
+            subtitle: `${p.staff_name} - Grade ${p.old_grade_level ?? 'N/A'} to ${p.new_grade_level ?? 'N/A'}`,
+            amount: (p.new_basic_salary || 0) - (p.old_basic_salary || 0),
             status: p.status,
             created_at: p.created_at,
             urgency: calculateUrgency(p.created_at),
@@ -783,19 +783,19 @@ export function ApprovalsPageEnhanced() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="p-3 bg-background rounded border border-border/50">
                   <span className="text-xs text-muted-foreground uppercase tracking-wider block mb-1">Current Grade</span>
-                  <p className="font-medium text-foreground">{data.old_grade || 'N/A'}</p>
-                  <p className="text-xs text-muted-foreground mt-1">{formatCurrency(data.old_salary || 0)}</p>
+                  <p className="font-medium text-foreground">{data.old_grade_level ?? 'N/A'} / Step {data.old_step ?? 'N/A'}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{formatCurrency(data.old_basic_salary || 0)}</p>
                 </div>
                 <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded border border-green-200 dark:border-green-800">
                   <span className="text-xs text-green-700 dark:text-green-300 uppercase tracking-wider block mb-1">New Grade</span>
-                  <p className="font-medium text-foreground">{data.new_grade || 'N/A'}</p>
-                  <p className="text-xs text-green-700 dark:text-green-300 mt-1">{formatCurrency(data.new_salary || 0)}</p>
+                  <p className="font-medium text-foreground">{data.new_grade_level ?? 'N/A'} / Step {data.new_step ?? 'N/A'}</p>
+                  <p className="text-xs text-green-700 dark:text-green-300 mt-1">{formatCurrency(data.new_basic_salary || 0)}</p>
                 </div>
               </div>
               <div>
                 <span className="text-xs text-muted-foreground uppercase tracking-wider">Salary Increase</span>
                 <p className="font-medium text-green-600 dark:text-green-400">
-                  +{formatCurrency((data.new_salary || 0) - (data.old_salary || 0))}
+                  +{formatCurrency((data.new_basic_salary || 0) - (data.old_basic_salary || 0))}
                 </p>
               </div>
             </div>

@@ -166,6 +166,302 @@ export class PromotionsService {
     return (baseAmount * percentage) / 100;
   }
 
+  private normalizePromotionRankValue(value: unknown): number {
+    const normalized = this.canonicalizeGrade(value);
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : Number(value);
+  }
+
+  private assertPromotionAdvances(
+    currentGradeLevel: unknown,
+    currentStep: unknown,
+    newGradeLevel: unknown,
+    newStep: unknown,
+  ) {
+    const currentGrade = this.normalizePromotionRankValue(currentGradeLevel);
+    const targetGrade = this.normalizePromotionRankValue(newGradeLevel);
+    const currentStepNumber = Number(currentStep);
+    const targetStepNumber = Number(newStep);
+
+    if (
+      !Number.isFinite(currentGrade) ||
+      !Number.isFinite(targetGrade) ||
+      !Number.isFinite(currentStepNumber) ||
+      !Number.isFinite(targetStepNumber)
+    ) {
+      throw new BadRequestException('Promotion grade/step is invalid.');
+    }
+
+    if (
+      targetGrade < currentGrade ||
+      (targetGrade === currentGrade && targetStepNumber <= currentStepNumber)
+    ) {
+      throw new BadRequestException('New grade/step must be higher than current grade/step');
+    }
+  }
+
+  private calculatePromotionArrearsBreakdown(effectiveDate: any, monthlyDifference: number) {
+    const effectiveParts = this.getBusinessDateParts(effectiveDate);
+    const effectiveMonth = new Date(Date.UTC(effectiveParts.year, effectiveParts.month - 1, 1));
+    const todayParts = this.getBusinessDateParts(new Date());
+    const currentMonth = new Date(Date.UTC(todayParts.year, todayParts.month - 1, 1));
+    const monthsDiff =
+      (currentMonth.getUTCFullYear() - effectiveMonth.getUTCFullYear()) * 12 +
+      (currentMonth.getUTCMonth() - effectiveMonth.getUTCMonth());
+
+    const safeMonthsDiff = Math.max(0, monthsDiff);
+    const roundedMonthlyDifference = this.roundCurrency(monthlyDifference);
+    let proratedFirstMonth = 0;
+    let fullMonthsAfter = 0;
+    let totalArrears = 0;
+    const details: Array<{ month: string; amount: number }> = [];
+
+    if (roundedMonthlyDifference > 0 && safeMonthsDiff > 0) {
+      const daysInEffectiveMonth = new Date(Date.UTC(effectiveParts.year, effectiveParts.month, 0)).getUTCDate();
+      const eligibleDays = Math.max(0, daysInEffectiveMonth - (effectiveParts.day - 1));
+      const dailyDifference = daysInEffectiveMonth > 0 ? roundedMonthlyDifference / daysInEffectiveMonth : 0;
+      proratedFirstMonth = this.roundCurrency(dailyDifference * eligibleDays);
+      fullMonthsAfter = Math.max(0, safeMonthsDiff - 1);
+      totalArrears = this.roundCurrency(proratedFirstMonth + (roundedMonthlyDifference * fullMonthsAfter));
+
+      for (let index = 0; index < safeMonthsDiff; index += 1) {
+        const monthDate = new Date(Date.UTC(effectiveParts.year, effectiveParts.month - 1 + index, 1));
+        details.push({
+          month: this.buildMonthKey(monthDate.getUTCFullYear(), monthDate.getUTCMonth() + 1),
+          amount: this.roundCurrency(index === 0 ? proratedFirstMonth : roundedMonthlyDifference),
+        });
+      }
+    }
+
+    return {
+      monthlyDifference: roundedMonthlyDifference,
+      monthsDiff: safeMonthsDiff,
+      proratedFirstMonth,
+      fullMonthsAfter,
+      totalArrears,
+      details,
+    };
+  }
+
+  private async resolvePromotionBasicSalaries(promotion: any) {
+    let oldBasicSalary: number;
+    try {
+      oldBasicSalary = await this.salaryLookupService.getBasicSalary(
+        promotion.old_grade_level,
+        promotion.old_step,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Could not lookup old salary for promotion ${promotion.id} (GL${promotion.old_grade_level}/${promotion.old_step}). Using stored value.`,
+      );
+      oldBasicSalary = parseFloat(promotion.old_basic_salary || '0');
+    }
+
+    let newBasicSalary: number;
+    try {
+      newBasicSalary = await this.salaryLookupService.getBasicSalary(
+        promotion.new_grade_level,
+        promotion.new_step,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Could not lookup new salary for promotion ${promotion.id} (GL${promotion.new_grade_level}/${promotion.new_step}). Using stored value.`,
+      );
+      newBasicSalary = parseFloat(promotion.new_basic_salary || '0');
+    }
+
+    return {
+      oldBasicSalary: this.roundCurrency(oldBasicSalary),
+      newBasicSalary: this.roundCurrency(newBasicSalary),
+    };
+  }
+
+  private async findExistingPromotionArrears(
+    promotion: any,
+    oldBasicSalary: number,
+    newBasicSalary: number,
+  ) {
+    return this.databaseService.queryOne(
+      `SELECT *
+       FROM arrears
+       WHERE reason = 'promotion'
+         AND staff_id = $1
+         AND effective_date = $2::date
+         AND old_basic_salary = $3
+         AND new_basic_salary = $4
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [
+        promotion.staff_id,
+        String(promotion.promotion_date || promotion.effective_date || '').slice(0, 10),
+        oldBasicSalary,
+        newBasicSalary,
+      ],
+    );
+  }
+
+  private async evaluatePromotionArrears(promotion: any) {
+    if (!promotion?.promotion_date && !promotion?.effective_date) {
+      return {
+        effectiveDate: null,
+        oldBasicSalary: 0,
+        newBasicSalary: 0,
+        monthlyDifference: 0,
+        monthsDiff: 0,
+        proratedFirstMonth: 0,
+        fullMonthsAfter: 0,
+        totalArrears: 0,
+        details: [],
+        shouldCreate: false,
+        reason: 'missing_effective_date',
+      };
+    }
+
+    const effectiveDate = promotion.promotion_date || promotion.effective_date;
+    const effectiveDateObj = new Date(effectiveDate);
+    if (effectiveDateObj.getFullYear() === 1970) {
+      return {
+        effectiveDate,
+        oldBasicSalary: 0,
+        newBasicSalary: 0,
+        monthlyDifference: 0,
+        monthsDiff: 0,
+        proratedFirstMonth: 0,
+        fullMonthsAfter: 0,
+        totalArrears: 0,
+        details: [],
+        shouldCreate: false,
+        reason: 'invalid_effective_date',
+      };
+    }
+
+    const { oldBasicSalary, newBasicSalary } = await this.resolvePromotionBasicSalaries(promotion);
+    const breakdown = this.calculatePromotionArrearsBreakdown(
+      effectiveDate,
+      newBasicSalary - oldBasicSalary,
+    );
+
+    return {
+      effectiveDate,
+      oldBasicSalary,
+      newBasicSalary,
+      ...breakdown,
+      shouldCreate: breakdown.monthsDiff > 0 && breakdown.monthlyDifference > 0,
+      reason:
+        breakdown.monthsDiff <= 0
+          ? 'not_backdated'
+          : breakdown.monthlyDifference <= 0
+            ? 'non_positive_difference'
+            : 'eligible',
+    };
+  }
+
+  private async createPromotionArrearsRecord(
+    promotion: any,
+    evaluation: {
+      effectiveDate: any;
+      oldBasicSalary: number;
+      newBasicSalary: number;
+      monthsDiff: number;
+      totalArrears: number;
+      details: Array<{ month: string; amount: number }>;
+    },
+    userId?: string,
+    notify = true,
+  ) {
+    const createdBy = userId || promotion.created_by || promotion.approved_by || null;
+    const arrearsRecord = await this.databaseService.queryOne(
+      `INSERT INTO arrears (
+        staff_id, reason, old_salary, new_salary,
+        old_basic_salary, new_basic_salary,
+        effective_date, months_owed, total_arrears,
+        status, details, created_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      RETURNING *`,
+      [
+        promotion.staff_id,
+        'promotion',
+        evaluation.oldBasicSalary,
+        evaluation.newBasicSalary,
+        evaluation.oldBasicSalary,
+        evaluation.newBasicSalary,
+        evaluation.effectiveDate,
+        evaluation.monthsDiff,
+        evaluation.totalArrears,
+        'pending',
+        JSON.stringify(evaluation.details),
+        createdBy,
+      ],
+    );
+
+    if (notify) {
+      const staff = await this.databaseService.queryOne(
+        'SELECT first_name, last_name FROM staff WHERE id = $1',
+        [promotion.staff_id],
+      );
+      const staffName = this.getStaffName(staff);
+
+      await Promise.all(
+        ['admin', 'payroll_officer'].map((role) =>
+          this.notificationsService.createRoleNotification({
+            role,
+            type: NotificationType.ARREARS,
+            category: NotificationCategory.ACTION_REQUIRED,
+            title: 'Arrears approval required',
+            message: staffName
+              ? `Promotion arrears for ${staffName} is pending approval (${evaluation.totalArrears.toFixed(2)}).`
+              : `Promotion arrears is pending approval (${evaluation.totalArrears.toFixed(2)}).`,
+            link: '/arrears',
+            entity_type: 'arrears',
+            entity_id: arrearsRecord?.id,
+            priority: NotificationPriority.HIGH,
+            action_label: 'Review',
+            action_link: '/arrears',
+            created_by: createdBy || undefined,
+            metadata: { arrears_id: arrearsRecord?.id, staff_id: promotion.staff_id, promotion_id: promotion.id },
+          }),
+        ),
+      );
+    }
+
+    return arrearsRecord;
+  }
+
+  private async ensurePromotionArrearsProcessed(promotion: any, userId?: string, notify = true) {
+    const evaluation = await this.evaluatePromotionArrears(promotion);
+
+    if (!evaluation.effectiveDate) {
+      return { outcome: 'skipped', reason: evaluation.reason, evaluation, arrearsRecord: null };
+    }
+
+    const existingArrears = await this.findExistingPromotionArrears(
+      promotion,
+      evaluation.oldBasicSalary,
+      evaluation.newBasicSalary,
+    );
+
+    let arrearsRecord = existingArrears;
+    let outcome: 'inserted' | 'existing' | 'no_due' = 'no_due';
+    if (evaluation.shouldCreate) {
+      if (existingArrears) {
+        outcome = 'existing';
+      } else {
+        arrearsRecord = await this.createPromotionArrearsRecord(promotion, evaluation, userId, notify);
+        outcome = 'inserted';
+      }
+    }
+
+    await this.databaseService.query(
+      `UPDATE promotions
+       SET arrears_calculated = true,
+           updated_at = NOW()
+       WHERE id = $1`,
+      [promotion.id],
+    );
+
+    return { outcome, reason: evaluation.reason, evaluation, arrearsRecord };
+  }
+
   /**
    * Get staff promotion history
    */
@@ -217,6 +513,8 @@ export class PromotionsService {
     if (!staff) {
       throw new NotFoundException(`Staff member with ID ${staffId} does not exist.`);
     }
+
+    this.assertPromotionAdvances(staff.grade_level, staff.step, newGradeLevel, newStep);
     
     // Create promotion record
     const result = await this.databaseService.queryOne(
@@ -290,6 +588,21 @@ export class PromotionsService {
     if (promotion.status === 'approved') {
       return { message: 'Promotion is already approved' };
     }
+
+    const currentStaff = await this.databaseService.queryOne(
+      'SELECT grade_level, step FROM staff WHERE id = $1',
+      [promotion.staff_id],
+    );
+    if (!currentStaff) {
+      throw new NotFoundException(`Staff member for promotion ${id} not found`);
+    }
+
+    this.assertPromotionAdvances(
+      currentStaff.grade_level,
+      currentStaff.step,
+      promotion.new_grade_level,
+      promotion.new_step,
+    );
 
     await this.databaseService.query(
       `UPDATE promotions SET status = 'approved', approved_by = $1, approval_date = NOW(), updated_at = NOW() WHERE id = $2`,
@@ -576,6 +889,8 @@ export class PromotionsService {
 
     if (!staff) return;
 
+    this.assertPromotionAdvances(staff.grade_level, staff.step, promotion.new_grade_level, promotion.new_step);
+
     // Update staff record
     await this.databaseService.query(
       `UPDATE staff 
@@ -589,126 +904,143 @@ export class PromotionsService {
 
     // AUTOMATIC ARREARS CALCULATION
     try {
-      if (!promotion.promotion_date) {
-        this.logger.warn(`Promotion ${promotion.id} has no promotion_date, skipping arrears calculation.`);
-        return;
-      }
+      const result = await this.ensurePromotionArrearsProcessed(promotion, userId, true);
+      this.logger.log(
+        `Evaluated promotion arrears for staff ${staff.id}. Outcome: ${result.outcome}. Reason: ${result.reason}. Months: ${result.evaluation.monthsDiff}. Difference: ${result.evaluation.monthlyDifference}`,
+      );
 
-      const effectiveDateObj = new Date(promotion.promotion_date);
-      // specific check for 1970 (null date converted)
-      if (effectiveDateObj.getFullYear() === 1970) {
-         this.logger.warn(`Promotion ${promotion.id} has invalid promotion_date (1970), skipping arrears calculation.`);
-         return;
-      }
-
-      const effectiveParts = this.getBusinessDateParts(promotion.promotion_date);
-      const todayParts = this.getBusinessDateParts(new Date());
-      const currentMonth = new Date(Date.UTC(todayParts.year, todayParts.month - 1, 1));
-      const effectiveMonth = new Date(Date.UTC(effectiveParts.year, effectiveParts.month - 1, 1));
-      
-      const monthsDiff = (currentMonth.getUTCFullYear() - effectiveMonth.getUTCFullYear()) * 12 + (currentMonth.getUTCMonth() - effectiveMonth.getUTCMonth());
-      
-      if (monthsDiff > 0) {
-        this.logger.log(`Detecting arrears for staff ${staff.id}. Effective: ${promotion.promotion_date}, Months: ${monthsDiff}`);
-        
-        // Calculate Old Basic Salary based on current Grade/Step (don't rely on stored current_basic_salary which might be stale)
-        let oldBasicSalary: number;
-        try {
-          oldBasicSalary = await this.salaryLookupService.getBasicSalary(staff.grade_level, staff.step);
-        } catch (error) {
-          // Fallback to stored salary if lookup fails
-          this.logger.warn(`Could not lookup old salary for staff ${staff.id} (GL${staff.grade_level}/${staff.step}). Using stored value.`);
-          oldBasicSalary = parseFloat(staff.current_basic_salary || '0');
-        }
-
-        const newBasicSalaryFloat = parseFloat(promotion.new_basic_salary);
-
-        // Calculate gross salaries (Basic + Allowances)
-        const oldGrossSalary = await this.calculateGrossSalary(staff.id, oldBasicSalary, staff.grade_level);
-        const newGrossSalary = await this.calculateGrossSalary(staff.id, newBasicSalaryFloat, promotion.new_grade_level);
-
-        // Calculate deductions (excluding TAX)
-        const oldDeductions = await this.calculateTotalDeductions(staff.id, oldBasicSalary, staff.grade_level);
-        const newDeductions = await this.calculateTotalDeductions(staff.id, newBasicSalaryFloat, promotion.new_grade_level);
-
-        // Calculate Net Salary (Before Tax) for arrears purposes
-        const oldNetSalary = oldGrossSalary - oldDeductions;
-        const newNetSalary = newGrossSalary - newDeductions;
-        
-        const monthlyDifference = newNetSalary - oldNetSalary;
-        
-        if (monthlyDifference > 0) {
-          const staffName = this.getStaffName(staff);
-          const daysInEffectiveMonth = new Date(Date.UTC(effectiveParts.year, effectiveParts.month, 0)).getUTCDate();
-          const effectiveDay = effectiveParts.day;
-          const eligibleDays = Math.max(0, daysInEffectiveMonth - (effectiveDay - 1));
-          const dailyDifference = monthlyDifference / daysInEffectiveMonth;
-          const proratedFirstMonth = this.roundCurrency(dailyDifference * eligibleDays);
-          const fullMonthsAfter = Math.max(0, monthsDiff - 1);
-          const roundedMonthlyDifference = this.roundCurrency(monthlyDifference);
-          const totalArrears = this.roundCurrency(proratedFirstMonth + (roundedMonthlyDifference * fullMonthsAfter));
-          
-          const details = [];
-          for (let i = 0; i < monthsDiff; i++) {
-            const monthDate = new Date(Date.UTC(effectiveParts.year, effectiveParts.month - 1 + i, 1));
-            const monthStr = this.buildMonthKey(monthDate.getUTCFullYear(), monthDate.getUTCMonth() + 1);
-            const amount = i === 0 ? proratedFirstMonth : roundedMonthlyDifference;
-            details.push({
-              month: monthStr,
-              amount: this.roundCurrency(amount)
-            });
-          }
-          
-          const arrearsRecord = await this.databaseService.queryOne(
-            `INSERT INTO arrears (
-              staff_id, reason, old_salary, new_salary, 
-              old_basic_salary, new_basic_salary,
-              effective_date, months_owed, total_arrears, 
-              status, details, created_by
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-            RETURNING *`,
-            [
-              staff.id, 'promotion', oldNetSalary, newNetSalary,
-              oldBasicSalary, newBasicSalaryFloat,
-              promotion.promotion_date, monthsDiff, totalArrears,
-              'pending', JSON.stringify(details), userId
-            ]
-          );
-
-          await Promise.all(
-            ['admin', 'payroll_officer'].map((role) =>
-              this.notificationsService.createRoleNotification({
-                role,
-                type: NotificationType.ARREARS,
-                category: NotificationCategory.ACTION_REQUIRED,
-                title: 'Arrears approval required',
-                message: staffName
-                  ? `Promotion arrears for ${staffName} is pending approval (${totalArrears.toFixed(2)}).`
-                  : `Promotion arrears is pending approval (${totalArrears.toFixed(2)}).`,
-                link: '/arrears',
-                entity_type: 'arrears',
-                entity_id: arrearsRecord?.id,
-                priority: NotificationPriority.HIGH,
-                action_label: 'Review',
-                action_link: '/arrears',
-                created_by: userId,
-                metadata: { arrears_id: arrearsRecord?.id, staff_id: staff.id, promotion_id: promotionId },
-              }),
-            ),
-          );
-
-          // Mark promotion as having arrears calculated
-          await this.databaseService.query(
-            `UPDATE promotions SET arrears_calculated = true WHERE id = $1`,
-            [promotionId]
-          );
-          
-          this.logger.log(`Arrears record created for ${staff.staff_number}: ₦${totalArrears} for ${monthsDiff} months`);
-        }
+      if (result.outcome === 'inserted') {
+        this.logger.log(
+          `Arrears record created for ${staff.staff_number}: ₦${result.evaluation.totalArrears} for ${result.evaluation.monthsDiff} months`,
+        );
       }
     } catch (error) {
       this.logger.error(`Failed to calculate/insert arrears: ${error.message}`, error.stack);
     }
+  }
+
+  async backfillApprovedPromotionArrears(options?: {
+    promotionId?: string;
+    limit?: number;
+    execute?: boolean;
+    notify?: boolean;
+  }) {
+    const promotionId = String(options?.promotionId || '').trim();
+    const limit = Math.max(0, Number(options?.limit || 0));
+    const execute = options?.execute === true;
+    const notify = options?.notify !== false;
+    const params: any[] = [];
+    const whereClauses = [`p.status = 'approved'`];
+
+    if (promotionId) {
+      params.push(promotionId);
+      whereClauses.push(`p.id = $${params.length}`);
+    }
+
+    const limitClause = limit > 0 ? `LIMIT ${limit}` : '';
+    const promotions = await this.databaseService.query(
+      `SELECT p.*, s.staff_number,
+              TRIM(CONCAT(COALESCE(s.first_name, ''), ' ', COALESCE(s.last_name, ''))) as staff_name
+       FROM promotions p
+       JOIN staff s ON s.id = p.staff_id
+       WHERE ${whereClauses.join(' AND ')}
+       ORDER BY COALESCE(p.promotion_date, p.effective_date) ASC, p.created_at ASC
+       ${limitClause}`,
+      params,
+    );
+
+    const summary = {
+      evaluated: promotions.length,
+      inserted: 0,
+      missing: 0,
+      existing: 0,
+      noDue: 0,
+      skipped: 0,
+      failed: 0,
+      items: [] as Array<{
+        promotionId: string;
+        staffNumber?: string;
+        staffName?: string;
+        outcome: string;
+        reason: string;
+        totalArrears?: number;
+      }>,
+    };
+
+    for (const promotion of promotions) {
+      try {
+        const evaluation = await this.evaluatePromotionArrears(promotion);
+        const existingArrears = evaluation.effectiveDate
+          ? await this.findExistingPromotionArrears(
+              promotion,
+              evaluation.oldBasicSalary,
+              evaluation.newBasicSalary,
+            )
+          : null;
+
+        let outcome = 'skipped';
+        if (evaluation.shouldCreate) {
+          if (existingArrears) {
+            outcome = 'existing';
+            summary.existing += 1;
+          } else if (execute) {
+            const result = await this.ensurePromotionArrearsProcessed(
+              promotion,
+              promotion.approved_by || promotion.created_by,
+              notify,
+            );
+            outcome = result.outcome;
+            if (result.outcome === 'inserted') {
+              summary.inserted += 1;
+            } else if (result.outcome === 'existing') {
+              summary.existing += 1;
+            } else {
+              summary.noDue += 1;
+            }
+          } else {
+            outcome = 'missing';
+            summary.missing += 1;
+          }
+        } else if (execute) {
+          await this.ensurePromotionArrearsProcessed(
+            promotion,
+            promotion.approved_by || promotion.created_by,
+            false,
+          );
+          outcome = 'no_due';
+          summary.noDue += 1;
+        } else {
+          outcome = evaluation.reason === 'missing_effective_date' || evaluation.reason === 'invalid_effective_date'
+            ? 'skipped'
+            : 'no_due';
+          if (outcome === 'skipped') {
+            summary.skipped += 1;
+          } else {
+            summary.noDue += 1;
+          }
+        }
+
+        summary.items.push({
+          promotionId: promotion.id,
+          staffNumber: promotion.staff_number,
+          staffName: promotion.staff_name,
+          outcome,
+          reason: evaluation.reason,
+          totalArrears: evaluation.totalArrears,
+        });
+      } catch (error) {
+        summary.failed += 1;
+        summary.items.push({
+          promotionId: promotion.id,
+          staffNumber: promotion.staff_number,
+          staffName: promotion.staff_name,
+          outcome: 'failed',
+          reason: error instanceof Error ? error.message : String(error || 'Unknown error'),
+        });
+      }
+    }
+
+    return summary;
   }
 
   /**
@@ -754,6 +1086,13 @@ export class PromotionsService {
       throw new NotFoundException(`Could not determine salary for Grade ${newGradeLevel} Step ${newStep}.`);
     }
 
+    this.assertPromotionAdvances(
+      typeof oldGradeLevel === 'number' ? oldGradeLevel : staff.grade_level,
+      typeof oldStep === 'number' ? oldStep : staff.step,
+      newGradeLevel,
+      newStep,
+    );
+
     const oldContextGrade = typeof oldGradeLevel === 'number' ? oldGradeLevel : staff.grade_level;
     const newContextGrade = newGradeLevel;
     const oldAllowances = await this.calculateAllowanceBreakdown(staffId, oldBasicSalary, oldContextGrade);
@@ -767,29 +1106,9 @@ export class PromotionsService {
     const oldNetSalary = oldGrossSalary - oldDeductions.total;
     const newNetSalary = newGrossSalary - newDeductions.total;
 
-    // Calculate Difference
-    const monthlyDifference = newNetSalary - oldNetSalary;
-    
-    // Calculate Months Owed
-    const effectiveParts = this.getBusinessDateParts(effectiveDate);
-    const effectiveMonth = new Date(Date.UTC(effectiveParts.year, effectiveParts.month - 1, 1));
-    const todayParts = this.getBusinessDateParts(new Date());
-    const currentMonth = new Date(Date.UTC(todayParts.year, todayParts.month - 1, 1));
-    const monthsDiff = (currentMonth.getUTCFullYear() - effectiveMonth.getUTCFullYear()) * 12 + (currentMonth.getUTCMonth() - effectiveMonth.getUTCMonth());
-    
-    const safeMonthsDiff = Math.max(0, monthsDiff);
-    let totalArrears = 0;
-    let proratedFirstMonth = 0;
-    let fullMonthsAfter = 0;
-    if (monthlyDifference > 0 && safeMonthsDiff > 0) {
-      const daysInEffectiveMonth = new Date(Date.UTC(effectiveParts.year, effectiveParts.month, 0)).getUTCDate();
-      const effectiveDay = effectiveParts.day;
-      const eligibleDays = Math.max(0, daysInEffectiveMonth - (effectiveDay - 1));
-      const dailyDifference = monthlyDifference / daysInEffectiveMonth;
-      proratedFirstMonth = this.roundCurrency(dailyDifference * eligibleDays);
-      fullMonthsAfter = Math.max(0, safeMonthsDiff - 1);
-      totalArrears = this.roundCurrency(proratedFirstMonth + (this.roundCurrency(monthlyDifference) * fullMonthsAfter));
-    }
+    const monthlyDifference = this.roundCurrency(newBasicSalary - oldBasicSalary);
+    const { monthsDiff, proratedFirstMonth, fullMonthsAfter, totalArrears } =
+      this.calculatePromotionArrearsBreakdown(effectiveDate, monthlyDifference);
 
     return {
       oldBasicSalary,
@@ -797,7 +1116,7 @@ export class PromotionsService {
       oldNetSalary,
       newNetSalary,
       monthlyDifference,
-      monthsDiff: safeMonthsDiff,
+      monthsDiff,
       proratedFirstMonth,
       fullMonthsAfter,
       totalArrears,
