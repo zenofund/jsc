@@ -268,6 +268,7 @@ export class BankService {
        FROM staff s
        LEFT JOIN departments d ON d.id = s.department_id
        LEFT JOIN bank_groups bg ON bg.id = s.bank_group_id
+       WHERE LOWER(REPLACE(COALESCE(s.status, ''), '-', '_')) = 'active'
        ORDER BY s.last_name ASC, s.first_name ASC, s.staff_number ASC`,
       [],
     );
@@ -309,9 +310,15 @@ export class BankService {
 
     const alreadyAssigned: string[] = [];
     const invalidBank: string[] = [];
+    const inactiveStaff: string[] = [];
     const validStaffIds: string[] = [];
 
     for (const staffMember of staffRows) {
+      if (String(staffMember.status || '').trim().toLowerCase().replace(/-/g, '_') !== 'active') {
+        inactiveStaff.push(staffMember.id);
+        continue;
+      }
+
       if (staffMember.bank_group_id === bankGroup.id) {
         alreadyAssigned.push(staffMember.id);
         continue;
@@ -350,14 +357,16 @@ export class BankService {
       bankName: bankGroup.bank_name,
       requestedCount: uniqueStaffIds.length,
       updatedCount,
-      skippedCount: alreadyAssigned.length + invalidBank.length + notFoundIds.length,
+      skippedCount: alreadyAssigned.length + invalidBank.length + inactiveStaff.length + notFoundIds.length,
       alreadyAssignedCount: alreadyAssigned.length,
       invalidBankCount: invalidBank.length,
+      inactiveCount: inactiveStaff.length,
       notFoundCount: notFoundIds.length,
       updatedStaffIds: validStaffIds,
       skipped: {
         alreadyAssigned,
         invalidBank,
+        inactive: inactiveStaff,
         notFound: notFoundIds,
       },
     };

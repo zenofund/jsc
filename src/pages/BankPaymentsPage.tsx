@@ -602,7 +602,7 @@ export function BankPaymentsPage() {
       setIsSubmitting(true);
       const result = await bankGroupAPI.bulkAssignStaff(selectedBulkBankGroupId, selectedStaffIds);
       const skippedMessage = result.skippedCount
-        ? ` ${result.skippedCount} skipped (${result.alreadyAssignedCount} already assigned, ${result.invalidBankCount} invalid bank, ${result.notFoundCount} missing).`
+        ? ` ${result.skippedCount} skipped (${result.alreadyAssignedCount} already assigned, ${result.invalidBankCount} invalid bank, ${result.inactiveCount || 0} inactive, ${result.notFoundCount} missing).`
         : '';
       showToast('success', `${result.updatedCount} staff assigned to ${result.bankGroupName}.${skippedMessage}`);
       setSelectedStaffIds([]);
