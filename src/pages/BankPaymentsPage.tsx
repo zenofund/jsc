@@ -39,12 +39,61 @@ import {
   Building2,
   AlertTriangle,
   FileText,
+  Users,
 } from 'lucide-react';
 import { formatCurrency } from '../utils/format';
 import { Button } from '../components/ui/button';
 import { PageSkeleton } from '../components/PageLoader';
 
-type TabType = 'overview' | 'payments' | 'reconciliation' | 'exceptions' | 'bank-accounts' | 'bank-groups';
+type TabType =
+  | 'overview'
+  | 'payments'
+  | 'reconciliation'
+  | 'exceptions'
+  | 'bank-accounts'
+  | 'bank-groups'
+  | 'bulk-assign-bank-group';
+
+type BulkAssignableStaff = {
+  id: string;
+  staff_number: string;
+  first_name: string;
+  middle_name?: string | null;
+  last_name: string;
+  bank_name?: string | null;
+  bank_code?: string | null;
+  bank_group_id?: string | null;
+  bank_group_name?: string | null;
+  account_number?: string | null;
+  account_name?: string | null;
+  status?: string | null;
+  department_id?: string | null;
+  department_name?: string | null;
+};
+
+const normalizeBankName = (value: unknown) => String(value ?? '').trim().toLowerCase();
+const normalizeBankCode = (value: unknown) => String(value ?? '').trim();
+
+const bankMatchesSelection = (
+  record: { bank_name?: string | null; bank_code?: string | null },
+  bankCode: string,
+  bankName: string,
+) => {
+  if (!bankCode && !bankName) return true;
+
+  const recordCode = normalizeBankCode(record.bank_code);
+  const recordName = normalizeBankName(record.bank_name);
+  const targetCode = normalizeBankCode(bankCode);
+  const targetName = normalizeBankName(bankName);
+
+  return Boolean(
+    (targetCode && recordCode && targetCode === recordCode) ||
+    (targetName && recordName && targetName === recordName),
+  );
+};
+
+const formatStaffName = (staff: BulkAssignableStaff) =>
+  [staff.last_name, staff.first_name, staff.middle_name].filter(Boolean).join(' ');
 
 export function BankPaymentsPage() {
   const { user } = useAuth();
@@ -60,6 +109,13 @@ export function BankPaymentsPage() {
   const [bankGroups, setBankGroups] = useState<BankGroup[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [exceptions, setExceptions] = useState<PaymentException[]>([]);
+  const [assignableStaff, setAssignableStaff] = useState<BulkAssignableStaff[]>([]);
+  const [bulkAssignLoading, setBulkAssignLoading] = useState(false);
+  const [selectedBulkBankCode, setSelectedBulkBankCode] = useState('');
+  const [selectedBulkBankGroupId, setSelectedBulkBankGroupId] = useState('');
+  const [bulkSearch, setBulkSearch] = useState('');
+  const [bulkCurrentGroupFilter, setBulkCurrentGroupFilter] = useState('all');
+  const [selectedStaffIds, setSelectedStaffIds] = useState<string[]>([]);
   
   // Modal states
   const [showCreatePaymentModal, setShowCreatePaymentModal] = useState(false);
@@ -425,7 +481,141 @@ export function BankPaymentsPage() {
     if (activeTab === 'bank-groups') {
       bankGroupAPI.getAll().then(setBankGroups).catch(console.error);
     }
+    if (activeTab === 'bulk-assign-bank-group') {
+      setBulkAssignLoading(true);
+      bankGroupAPI.getAssignableStaff()
+        .then((staff) => setAssignableStaff(Array.isArray(staff) ? staff : []))
+        .catch((error) => {
+          console.error('Failed to load assignable staff:', error);
+          showToast('error', 'Failed to load staff for bulk bank-group assignment');
+        })
+        .finally(() => setBulkAssignLoading(false));
+    }
   }, [activeTab]);
+
+  const selectedBulkBank = NIGERIAN_BANKS.find((bank) => bank.code === selectedBulkBankCode) || null;
+  const selectedBulkBankName = selectedBulkBank?.name || '';
+  const filteredBulkBankGroups = bankGroups.filter((group) =>
+    bankMatchesSelection(group, selectedBulkBankCode, selectedBulkBankName),
+  );
+  const filteredAssignableStaff = assignableStaff.filter((staff) => {
+    if (!bankMatchesSelection(staff, selectedBulkBankCode, selectedBulkBankName)) {
+      return false;
+    }
+
+    if (bulkCurrentGroupFilter === 'unassigned' && staff.bank_group_id) {
+      return false;
+    }
+
+    if (bulkCurrentGroupFilter !== 'all' && bulkCurrentGroupFilter !== 'unassigned' && staff.bank_group_id !== bulkCurrentGroupFilter) {
+      return false;
+    }
+
+    if (!bulkSearch.trim()) {
+      return true;
+    }
+
+    const haystack = [
+      staff.staff_number,
+      formatStaffName(staff),
+      staff.department_name,
+      staff.account_number,
+      staff.bank_group_name,
+      staff.bank_name,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+
+    return haystack.includes(bulkSearch.trim().toLowerCase());
+  });
+  const selectedStaffSet = new Set(selectedStaffIds);
+  const allFilteredStaffIds = filteredAssignableStaff.map((staff) => staff.id);
+  const allFilteredSelected = allFilteredStaffIds.length > 0 && allFilteredStaffIds.every((id) => selectedStaffSet.has(id));
+  const selectedBulkBankGroup = bankGroups.find((group) => group.id === selectedBulkBankGroupId) || null;
+  const selectedStaffRows = assignableStaff.filter((staff) => selectedStaffSet.has(staff.id));
+  const selectedWillChangeCount = selectedBulkBankGroup
+    ? selectedStaffRows.filter((staff) =>
+        bankMatchesSelection(staff, selectedBulkBankGroup.bank_code || '', selectedBulkBankGroup.bank_name || '')
+        && staff.bank_group_id !== selectedBulkBankGroup.id,
+      ).length
+    : 0;
+  const selectedAlreadyAssignedCount = selectedBulkBankGroup
+    ? selectedStaffRows.filter((staff) => staff.bank_group_id === selectedBulkBankGroup.id).length
+    : 0;
+  const selectedInvalidBankCount = selectedBulkBankGroup
+    ? selectedStaffRows.filter((staff) =>
+        !bankMatchesSelection(staff, selectedBulkBankGroup.bank_code || '', selectedBulkBankGroup.bank_name || ''),
+      ).length
+    : 0;
+
+  const loadAssignableStaff = async () => {
+    setBulkAssignLoading(true);
+    try {
+      const staff = await bankGroupAPI.getAssignableStaff();
+      setAssignableStaff(Array.isArray(staff) ? staff : []);
+    } catch (error) {
+      console.error('Failed to load assignable staff:', error);
+      showToast('error', 'Failed to load staff for bulk bank-group assignment');
+    } finally {
+      setBulkAssignLoading(false);
+    }
+  };
+
+  const handleBulkBankChange = (bankCode: string) => {
+    setSelectedBulkBankCode(bankCode);
+    setSelectedBulkBankGroupId('');
+    setBulkCurrentGroupFilter('all');
+    setSelectedStaffIds([]);
+  };
+
+  const handleToggleBulkStaffSelection = (staffId: string) => {
+    setSelectedStaffIds((current) =>
+      current.includes(staffId)
+        ? current.filter((id) => id !== staffId)
+        : [...current, staffId],
+    );
+  };
+
+  const handleToggleSelectAllFilteredStaff = () => {
+    setSelectedStaffIds((current) => {
+      if (allFilteredSelected) {
+        return current.filter((id) => !allFilteredStaffIds.includes(id));
+      }
+
+      return Array.from(new Set([...current, ...allFilteredStaffIds]));
+    });
+  };
+
+  const handleBulkAssignBankGroup = async () => {
+    if (!selectedBulkBankGroupId) {
+      showToast('error', 'Select a bank group to assign');
+      return;
+    }
+
+    if (!selectedStaffIds.length) {
+      showToast('error', 'Select at least one staff member');
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      const result = await bankGroupAPI.bulkAssignStaff(selectedBulkBankGroupId, selectedStaffIds);
+      const skippedMessage = result.skippedCount
+        ? ` ${result.skippedCount} skipped (${result.alreadyAssignedCount} already assigned, ${result.invalidBankCount} invalid bank, ${result.notFoundCount} missing).`
+        : '';
+      showToast('success', `${result.updatedCount} staff assigned to ${result.bankGroupName}.${skippedMessage}`);
+      setSelectedStaffIds([]);
+      await Promise.all([
+        loadAssignableStaff(),
+        bankGroupAPI.getAll().then(setBankGroups),
+      ]);
+    } catch (error: any) {
+      showToast('error', error.message || 'Failed to bulk assign bank group');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const resetPaymentForm = () => {
     setNewPaymentForm({
@@ -614,6 +804,7 @@ export function BankPaymentsPage() {
     { id: 'reconciliation', label: 'Reconciliation', icon: CheckCircle },
     { id: 'exceptions', label: 'Exceptions', icon: AlertTriangle },
     { id: 'bank-groups', label: 'Bank Groups', icon: Building2 },
+    { id: 'bulk-assign-bank-group', label: 'Bulk-Assign Bank Group', icon: Users },
     { id: 'bank-accounts', label: 'Bank Accounts', icon: Building2 },
   ];
 
@@ -826,6 +1017,186 @@ export function BankPaymentsPage() {
               searchable
               searchPlaceholder="Search bank groups..."
             />
+          )}
+
+          {activeTab === 'bulk-assign-bank-group' && (
+            <div className="space-y-6">
+              <div className="bg-card border border-border rounded-lg p-4 sm:p-6 space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1">Bank</label>
+                    <select
+                      value={selectedBulkBankCode}
+                      onChange={(e) => handleBulkBankChange(e.target.value)}
+                      className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary"
+                    >
+                      <option value="">All Banks</option>
+                      {NIGERIAN_BANKS.map((bank) => (
+                        <option key={bank.code} value={bank.code}>
+                          {bank.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1">Assign To Bank Group</label>
+                    <select
+                      value={selectedBulkBankGroupId}
+                      onChange={(e) => setSelectedBulkBankGroupId(e.target.value)}
+                      className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary"
+                    >
+                      <option value="">{selectedBulkBankCode ? 'Select Bank Group' : 'Select Bank First'}</option>
+                      {filteredBulkBankGroups.map((group) => (
+                        <option key={group.id} value={group.id}>
+                          {group.group_name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1">Current Assignment</label>
+                    <select
+                      value={bulkCurrentGroupFilter}
+                      onChange={(e) => setBulkCurrentGroupFilter(e.target.value)}
+                      className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary"
+                    >
+                      <option value="all">All Staff</option>
+                      <option value="unassigned">Unassigned Only</option>
+                      {filteredBulkBankGroups.map((group) => (
+                        <option key={group.id} value={group.id}>
+                          {group.group_name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1">Search</label>
+                    <input
+                      type="text"
+                      value={bulkSearch}
+                      onChange={(e) => setBulkSearch(e.target.value)}
+                      placeholder="Staff no, name, dept, account..."
+                      className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <p className="text-sm text-muted-foreground">
+                    Only staff whose bank matches the selected bank group can be assigned.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button variant="outline" onClick={handleToggleSelectAllFilteredStaff} disabled={!filteredAssignableStaff.length || bulkAssignLoading}>
+                      {allFilteredSelected ? 'Clear Filtered' : 'Select All Filtered'}
+                    </Button>
+                    <Button variant="outline" onClick={() => setSelectedStaffIds([])} disabled={!selectedStaffIds.length}>
+                      Clear Selected
+                    </Button>
+                    <Button onClick={handleBulkAssignBankGroup} isLoading={isSubmitting} disabled={!selectedBulkBankGroupId || !selectedStaffIds.length}>
+                      Assign Selected
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="bg-card border border-border rounded-lg p-4">
+                  <div className="text-sm text-muted-foreground">Filtered Staff</div>
+                  <div className="text-2xl font-semibold text-foreground">{filteredAssignableStaff.length}</div>
+                </div>
+                <div className="bg-card border border-border rounded-lg p-4">
+                  <div className="text-sm text-muted-foreground">Selected Staff</div>
+                  <div className="text-2xl font-semibold text-foreground">{selectedStaffIds.length}</div>
+                </div>
+                <div className="bg-card border border-border rounded-lg p-4">
+                  <div className="text-sm text-muted-foreground">Will Change</div>
+                  <div className="text-2xl font-semibold text-foreground">{selectedWillChangeCount}</div>
+                </div>
+                <div className="bg-card border border-border rounded-lg p-4">
+                  <div className="text-sm text-muted-foreground">Already In Group</div>
+                  <div className="text-2xl font-semibold text-foreground">{selectedAlreadyAssignedCount}</div>
+                </div>
+              </div>
+
+              {selectedBulkBankGroup && (
+                <div className="bg-card border border-border rounded-lg p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <div>
+                    <div className="font-medium text-foreground">
+                      Assigning to {selectedBulkBankGroup.group_name} ({selectedBulkBankGroup.bank_name})
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {selectedWillChangeCount} will change, {selectedAlreadyAssignedCount} already assigned, {selectedInvalidBankCount} from a different bank.
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="bg-card border border-border rounded-lg overflow-hidden">
+                {bulkAssignLoading ? (
+                  <div className="p-8 text-center text-muted-foreground">Loading staff for bulk assignment...</div>
+                ) : !filteredAssignableStaff.length ? (
+                  <div className="p-8 text-center text-muted-foreground">No staff match the selected filters.</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-border">
+                      <thead className="bg-muted/40">
+                        <tr>
+                          <th className="px-4 py-3 text-left">
+                            <input
+                              type="checkbox"
+                              checked={allFilteredSelected}
+                              onChange={handleToggleSelectAllFilteredStaff}
+                              className="h-4 w-4 rounded border-border"
+                            />
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Staff</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Department</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Bank</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Account Number</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Current Group</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border bg-card">
+                        {filteredAssignableStaff.map((staff) => (
+                          <tr key={staff.id} className="hover:bg-muted/20">
+                            <td className="px-4 py-3 align-top">
+                              <input
+                                type="checkbox"
+                                checked={selectedStaffSet.has(staff.id)}
+                                onChange={() => handleToggleBulkStaffSelection(staff.id)}
+                                className="h-4 w-4 rounded border-border"
+                              />
+                            </td>
+                            <td className="px-4 py-3 align-top">
+                              <div className="font-medium text-foreground">{formatStaffName(staff)}</div>
+                              <div className="text-sm text-muted-foreground">{staff.staff_number}</div>
+                            </td>
+                            <td className="px-4 py-3 align-top text-sm text-foreground">
+                              {staff.department_name || '-'}
+                            </td>
+                            <td className="px-4 py-3 align-top text-sm text-foreground">
+                              <div>{staff.bank_name || '-'}</div>
+                              <div className="text-xs text-muted-foreground">{staff.bank_code || '-'}</div>
+                            </td>
+                            <td className="px-4 py-3 align-top text-sm text-foreground">{staff.account_number || '-'}</td>
+                            <td className="px-4 py-3 align-top text-sm text-foreground">{staff.bank_group_name || 'Unassigned'}</td>
+                            <td className="px-4 py-3 align-top">
+                              <span className="inline-flex rounded-full border border-border px-2 py-1 text-xs font-medium capitalize text-foreground">
+                                {String(staff.status || 'unknown').replace(/_/g, ' ')}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
           )}
 
           {/* Bank Accounts Tab */}

@@ -6,6 +6,7 @@ import { BankService } from './bank.service';
 import {
   CreateBankGroupDto,
   UpdateBankGroupDto,
+  BulkAssignBankGroupDto,
   CreateBankAccountDto,
   UpdateBankAccountDto,
   CreatePaymentBatchDto,
@@ -55,6 +56,20 @@ export class BankController {
       bankCode,
       bankName,
     });
+  }
+
+  @Get('groups/staff-assignments')
+  @Roles('admin', 'super_admin', 'payroll_manager')
+  @ApiOperation({ summary: 'Get staff bank-group assignment list' })
+  getBankGroupAssignableStaff() {
+    return this.bankService.getBankGroupAssignableStaff();
+  }
+
+  @Post('groups/bulk-assign-staff')
+  @Roles('admin', 'super_admin', 'payroll_manager')
+  @ApiOperation({ summary: 'Bulk assign staff to a bank group' })
+  bulkAssignStaffToBankGroup(@Body() dto: BulkAssignBankGroupDto, @Request() req) {
+    return this.bankService.bulkAssignStaffToBankGroup(dto, req.user.userId);
   }
 
   @Get('groups/:id')

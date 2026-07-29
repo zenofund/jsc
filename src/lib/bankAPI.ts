@@ -85,6 +85,19 @@ export const bankGroupAPI = {
       method: 'DELETE',
     });
   },
+
+  async getAssignableStaff(): Promise<any[]> {
+    return makeApiRequest('/bank/groups/staff-assignments', {
+      method: 'GET',
+    });
+  },
+
+  async bulkAssignStaff(bankGroupId: string, staffIds: string[]) {
+    return makeApiRequest('/bank/groups/bulk-assign-staff', {
+      method: 'POST',
+      body: JSON.stringify({ bankGroupId, staffIds }),
+    });
+  },
 };
 
 export const bankAccountAPI = {

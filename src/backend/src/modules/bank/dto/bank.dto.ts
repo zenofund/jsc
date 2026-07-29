@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional, IsNumber, IsBoolean, IsEnum, IsDateString } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsNumber, IsBoolean, IsEnum, IsDateString, IsArray, ArrayNotEmpty } from 'class-validator';
 
 export class CreateBankGroupDto {
   @IsString()
@@ -184,6 +184,17 @@ export class BankGroupQueryDto {
   @IsString()
   @IsOptional()
   bankName?: string;
+}
+
+export class BulkAssignBankGroupDto {
+  @IsString()
+  @IsNotEmpty()
+  bankGroupId: string;
+
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsString({ each: true })
+  staffIds: string[];
 }
 
 export class ProcessPaymentDto {

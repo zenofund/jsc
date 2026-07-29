@@ -3,6 +3,7 @@ import { DatabaseService } from '../../common/database/database.service';
 import {
   CreateBankGroupDto,
   UpdateBankGroupDto,
+  BulkAssignBankGroupDto,
   CreateBankAccountDto,
   UpdateBankAccountDto,
   CreatePaymentBatchDto,
@@ -82,6 +83,29 @@ export class BankService {
   private normalizeOptionalText(value: unknown): string | null {
     const text = String(value ?? '').trim();
     return text || null;
+  }
+
+  private normalizeBankName(value: unknown): string {
+    return String(value ?? '').trim().toLowerCase();
+  }
+
+  private normalizeBankCode(value: unknown): string {
+    return String(value ?? '').trim();
+  }
+
+  private bankDetailsMatch(
+    bankGroup: { bank_name?: string | null; bank_code?: string | null },
+    staffMember: { bank_name?: string | null; bank_code?: string | null },
+  ): boolean {
+    const groupCode = this.normalizeBankCode(bankGroup.bank_code);
+    const staffCode = this.normalizeBankCode(staffMember.bank_code);
+    const groupName = this.normalizeBankName(bankGroup.bank_name);
+    const staffName = this.normalizeBankName(staffMember.bank_name);
+
+    return Boolean(
+      (groupCode && staffCode && groupCode === staffCode) ||
+      (groupName && staffName && groupName === staffName),
+    );
   }
 
   private formatExportText(value: unknown): string {
@@ -222,6 +246,121 @@ export class BankService {
     }
 
     return bankGroup;
+  }
+
+  async getBankGroupAssignableStaff() {
+    return this.databaseService.query(
+      `SELECT
+         s.id,
+         s.staff_number,
+         s.first_name,
+         s.middle_name,
+         s.last_name,
+         s.bank_name,
+         s.bank_code,
+         s.bank_group_id,
+         bg.group_name AS bank_group_name,
+         s.account_number,
+         s.account_name,
+         s.status,
+         s.department_id,
+         d.name AS department_name
+       FROM staff s
+       LEFT JOIN departments d ON d.id = s.department_id
+       LEFT JOIN bank_groups bg ON bg.id = s.bank_group_id
+       ORDER BY s.last_name ASC, s.first_name ASC, s.staff_number ASC`,
+      [],
+    );
+  }
+
+  async bulkAssignStaffToBankGroup(dto: BulkAssignBankGroupDto, userId: string) {
+    const uniqueStaffIds = Array.from(
+      new Set((dto.staffIds || []).map((value) => String(value || '').trim()).filter(Boolean)),
+    );
+
+    if (!uniqueStaffIds.length) {
+      throw new BadRequestException('Select at least one staff member');
+    }
+
+    const bankGroup = await this.databaseService.queryOne(
+      `SELECT id, group_name, bank_name, bank_code, is_active
+       FROM bank_groups
+       WHERE id = $1
+       LIMIT 1`,
+      [dto.bankGroupId],
+    );
+
+    if (!bankGroup) {
+      throw new NotFoundException('Bank group not found');
+    }
+    if (bankGroup.is_active === false) {
+      throw new BadRequestException('Selected bank group is inactive');
+    }
+
+    const staffRows = await this.databaseService.query(
+      `SELECT id, staff_number, first_name, middle_name, last_name, bank_name, bank_code, bank_group_id, status
+       FROM staff
+       WHERE id = ANY($1::uuid[])`,
+      [uniqueStaffIds],
+    );
+
+    const foundIds = new Set(staffRows.map((row: any) => row.id));
+    const notFoundIds = uniqueStaffIds.filter((id) => !foundIds.has(id));
+
+    const alreadyAssigned: string[] = [];
+    const invalidBank: string[] = [];
+    const validStaffIds: string[] = [];
+
+    for (const staffMember of staffRows) {
+      if (staffMember.bank_group_id === bankGroup.id) {
+        alreadyAssigned.push(staffMember.id);
+        continue;
+      }
+
+      if (!this.bankDetailsMatch(bankGroup, staffMember)) {
+        invalidBank.push(staffMember.id);
+        continue;
+      }
+
+      validStaffIds.push(staffMember.id);
+    }
+
+    let updatedCount = 0;
+    if (validStaffIds.length) {
+      const updatedRows = await this.databaseService.transaction(async (client) => {
+        const result = await client.query(
+          `UPDATE staff
+           SET bank_group_id = $1, updated_at = NOW()
+           WHERE id = ANY($2::uuid[])
+           RETURNING id`,
+          [bankGroup.id, validStaffIds],
+        );
+        return result.rows;
+      });
+      updatedCount = updatedRows.length;
+    }
+
+    this.logger.log(
+      `Bulk bank-group assignment by ${userId}: group=${bankGroup.id}, updated=${updatedCount}, requested=${uniqueStaffIds.length}`,
+    );
+
+    return {
+      bankGroupId: bankGroup.id,
+      bankGroupName: bankGroup.group_name,
+      bankName: bankGroup.bank_name,
+      requestedCount: uniqueStaffIds.length,
+      updatedCount,
+      skippedCount: alreadyAssigned.length + invalidBank.length + notFoundIds.length,
+      alreadyAssignedCount: alreadyAssigned.length,
+      invalidBankCount: invalidBank.length,
+      notFoundCount: notFoundIds.length,
+      updatedStaffIds: validStaffIds,
+      skipped: {
+        alreadyAssigned,
+        invalidBank,
+        notFound: notFoundIds,
+      },
+    };
   }
 
   async updateBankGroup(id: string, dto: UpdateBankGroupDto, userId: string) {
