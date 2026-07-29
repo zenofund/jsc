@@ -108,6 +108,7 @@ export function PromotionsPage() {
   const [detailsArrearsPreview, setDetailsArrearsPreview] = useState<typeof arrearsPreview | null>(null);
   const [detailsPreviewLoading, setDetailsPreviewLoading] = useState(false);
   const [detailsStoredArrearsTotal, setDetailsStoredArrearsTotal] = useState<number | null>(null);
+  const [arrearsPreviewLoading, setArrearsPreviewLoading] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -205,10 +206,12 @@ export function PromotionsPage() {
   const calculateArrearsPreview = async () => {
     if (!formData.effective_date || !formData.new_grade_level || !formData.new_step || !formData.staff_id) {
       setArrearsPreview(null);
+      setArrearsPreviewLoading(false);
       return;
     }
 
     try {
+      setArrearsPreviewLoading(true);
       const result = await promotionAPI.previewArrears(
         formData.staff_id,
         formData.new_grade_level,
@@ -237,6 +240,8 @@ export function PromotionsPage() {
       console.error('Failed to calculate arrears preview:', error);
       // Fallback or just clear preview on error
       setArrearsPreview(null);
+    } finally {
+      setArrearsPreviewLoading(false);
     }
   };
 
@@ -254,23 +259,15 @@ export function PromotionsPage() {
       try {
         setDetailsPreviewLoading(true);
         const normalizedEffectiveDate = normalizePromotionDate(selectedPromotion.effective_date);
-        const effectiveDateKey = normalizedEffectiveDate;
-        const requests: Promise<any>[] = [
-          promotionAPI.previewArrears(
-            selectedPromotion.staff_id,
-            selectedPromotion.new_grade_level,
-            selectedPromotion.new_step,
-            normalizedEffectiveDate,
-            selectedPromotion.old_grade_level,
-            selectedPromotion.old_step,
-          ),
-        ];
-
-        if (selectedPromotion.status === 'approved') {
-          requests.push(arrearsAPI.getPendingArrears());
-        }
-
-        const [result, arrearsResponse] = await Promise.all(requests);
+        const effectiveDateKey = normalizedEffectiveDate || String(selectedPromotion.effective_date || '').slice(0, 10);
+        const result = await promotionAPI.previewArrears(
+          selectedPromotion.staff_id,
+          selectedPromotion.new_grade_level,
+          selectedPromotion.new_step,
+          normalizedEffectiveDate || String(selectedPromotion.effective_date || ''),
+          selectedPromotion.old_grade_level,
+          selectedPromotion.old_step,
+        );
         setDetailsArrearsPreview({
           monthlyDifference: result.monthlyDifference,
           monthsOwed: result.monthsDiff,
@@ -287,18 +284,27 @@ export function PromotionsPage() {
           fullMonthsAfter: result.fullMonthsAfter,
         });
 
-        if (Array.isArray(arrearsResponse)) {
-          const matchedArrears = arrearsResponse
-            .filter((arrears: any) =>
-              arrears?.reason === 'promotion' &&
-              String(arrears?.staff_id || '') === String(selectedPromotion.staff_id) &&
-              String(arrears?.effective_date || '').slice(0, 10) === effectiveDateKey
-            )
-            .sort((a: any, b: any) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0];
+        if (selectedPromotion.status === 'approved') {
+          try {
+            const arrearsResponse = await arrearsAPI.getPendingArrears();
+            if (Array.isArray(arrearsResponse)) {
+              const matchedArrears = arrearsResponse
+                .filter((arrears: any) =>
+                  arrears?.reason === 'promotion' &&
+                  String(arrears?.staff_id || '') === String(selectedPromotion.staff_id) &&
+                  String(arrears?.effective_date || '').slice(0, 10) === effectiveDateKey
+                )
+                .sort((a: any, b: any) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0];
 
-          setDetailsStoredArrearsTotal(
-            matchedArrears ? Number(matchedArrears.total_arrears ?? matchedArrears.totalArrears ?? 0) : null,
-          );
+              setDetailsStoredArrearsTotal(
+                matchedArrears ? Number(matchedArrears.total_arrears ?? matchedArrears.totalArrears ?? 0) : null,
+              );
+            } else {
+              setDetailsStoredArrearsTotal(null);
+            }
+          } catch {
+            setDetailsStoredArrearsTotal(null);
+          }
         } else {
           setDetailsStoredArrearsTotal(null);
         }
@@ -1059,12 +1065,19 @@ export function PromotionsPage() {
               </div>
 
               {/* Arrears Preview */}
-              {arrearsPreview && (
+              {(arrearsPreviewLoading || arrearsPreview) && (
                 <div className="p-4 bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-900 rounded-lg">
                   <h4 className="font-medium text-orange-900 dark:text-orange-400 mb-3 flex items-center gap-2">
                     <Calendar className="w-4 h-4" />
                     Arrears Preview
                   </h4>
+                  {arrearsPreviewLoading ? (
+                    <div className="flex items-center gap-2 text-sm text-orange-700 dark:text-orange-300">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Generating preview...
+                    </div>
+                  ) : arrearsPreview ? (
+                    <>
                   <div className="grid grid-cols-2 gap-3 text-sm">
                     <div>
                       <span className="text-orange-700 dark:text-orange-300">Old Basic Salary:</span>
@@ -1189,6 +1202,8 @@ export function PromotionsPage() {
                       {formatCurrency(arrearsPreview.totalArrears)}
                     </div>
                   </div>
+                    </>
+                  ) : null}
                 </div>
               )}
 

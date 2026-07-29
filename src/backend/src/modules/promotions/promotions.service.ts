@@ -210,6 +210,15 @@ export class PromotionsService {
     return Number.isFinite(parsed) ? parsed : Number(value);
   }
 
+  private hasProvidedValue(value: unknown): boolean {
+    return value !== undefined && value !== null && String(value).trim() !== '';
+  }
+
+  private resolveStepValue(value: unknown, fallback: unknown): number {
+    const resolved = this.hasProvidedValue(value) ? Number(value) : Number(fallback);
+    return resolved;
+  }
+
   private assertPromotionAdvances(
     currentGradeLevel: unknown,
     currentStep: unknown,
@@ -1097,23 +1106,26 @@ export class PromotionsService {
    */
   async calculateArrearsPreview(
     staffId: string,
-    newGradeLevel: number,
-    newStep: number,
+    newGradeLevel: number | string,
+    newStep: number | string,
     effectiveDate: string,
-    oldGradeLevel?: number,
-    oldStep?: number,
+    oldGradeLevel?: number | string,
+    oldStep?: number | string,
   ) {
     const staff = await this.databaseService.queryOne('SELECT * FROM staff WHERE id = $1', [staffId]);
     if (!staff) {
       throw new NotFoundException(`Staff member with ID ${staffId} does not exist.`);
     }
 
+    const resolvedOldGradeLevel = this.hasProvidedValue(oldGradeLevel) ? oldGradeLevel : staff.grade_level;
+    const resolvedOldStep = this.resolveStepValue(oldStep, staff.step);
+    const resolvedNewGradeLevel = this.hasProvidedValue(newGradeLevel) ? newGradeLevel : staff.grade_level;
+    const resolvedNewStep = this.resolveStepValue(newStep, staff.step);
+
     // Calculate Old Basic Salary based on current Grade/Step (don't rely on stored current_basic_salary which might be stale)
     let oldBasicSalary: number;
     try {
-      const gradeLevel = typeof oldGradeLevel === 'number' ? oldGradeLevel : staff.grade_level;
-      const stepLevel = typeof oldStep === 'number' ? oldStep : staff.step;
-      oldBasicSalary = await this.salaryLookupService.getBasicSalary(gradeLevel, stepLevel);
+      oldBasicSalary = await this.salaryLookupService.getBasicSalary(resolvedOldGradeLevel, resolvedOldStep);
     } catch (error) {
       // Fallback to stored salary if lookup fails (e.g. old grade not in current structure)
       this.logger.warn(`Could not lookup old salary for staff ${staffId} (GL${staff.grade_level}/${staff.step}). Using stored value.`);
@@ -1123,20 +1135,20 @@ export class PromotionsService {
     // Get new basic salary
     let newBasicSalary: number;
     try {
-      newBasicSalary = await this.salaryLookupService.getBasicSalary(newGradeLevel, newStep);
+      newBasicSalary = await this.salaryLookupService.getBasicSalary(resolvedNewGradeLevel, resolvedNewStep);
     } catch (error) {
-      throw new NotFoundException(`Could not determine salary for Grade ${newGradeLevel} Step ${newStep}.`);
+      throw new NotFoundException(`Could not determine salary for Grade ${resolvedNewGradeLevel} Step ${resolvedNewStep}.`);
     }
 
     this.assertPromotionAdvances(
-      typeof oldGradeLevel === 'number' ? oldGradeLevel : staff.grade_level,
-      typeof oldStep === 'number' ? oldStep : staff.step,
-      newGradeLevel,
-      newStep,
+      resolvedOldGradeLevel,
+      resolvedOldStep,
+      resolvedNewGradeLevel,
+      resolvedNewStep,
     );
 
-    const oldContextGrade = typeof oldGradeLevel === 'number' ? oldGradeLevel : staff.grade_level;
-    const newContextGrade = newGradeLevel;
+    const oldContextGrade = resolvedOldGradeLevel;
+    const newContextGrade = resolvedNewGradeLevel;
     const oldAllowances = await this.calculateAllowanceBreakdown(staffId, oldBasicSalary, oldContextGrade);
     const newAllowances = await this.calculateAllowanceBreakdown(staffId, newBasicSalary, newContextGrade);
     const oldGrossSalary = oldBasicSalary + oldAllowances.total;

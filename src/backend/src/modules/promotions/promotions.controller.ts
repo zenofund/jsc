@@ -20,7 +20,7 @@ export class PromotionsController {
   }
 
   @Post('preview-arrears')
-  @Roles('admin', 'payroll_officer', 'hr_manager')
+  @Roles('admin', 'payroll_officer', 'hr_manager', 'cpo', 'approver')
   @ApiOperation({ summary: 'Preview arrears for a promotion' })
   previewArrears(@Body() body: any) {
     return this.promotionsService.calculateArrearsPreview(
