@@ -111,6 +111,18 @@ const normalizeAdjustmentDateValue = (value?: string | null) => {
   };
 };
 
+const hasEmptyNumericField = (value: unknown) =>
+  value === '' || value === null || value === undefined || (typeof value === 'string' && value.trim() === '');
+
+const parseNumericField = (value: unknown) => {
+  if (hasEmptyNumericField(value)) {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
 const buildAllowanceFormState = (
   initialData?: StaffAllowance | null,
   allowanceOptions: Allowance[] = [],
@@ -824,6 +836,14 @@ export function StaffAllowancesPage() {
       showToast('error', 'Please enter an allowance name');
       return;
     }
+    if (formData.type === 'fixed' && hasEmptyNumericField(formData.amount)) {
+      showToast('error', 'Please enter an amount');
+      return;
+    }
+    if (formData.type === 'percentage' && hasEmptyNumericField(formData.percentage)) {
+      showToast('error', 'Please enter a percentage');
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -837,8 +857,8 @@ export function StaffAllowancesPage() {
         allowance_name: formData.allowance_name,
         type: formData.type,
         calculation_basis: formData.calculation_basis,
-        amount: formData.type === 'fixed' ? Number(formData.amount || 0) : undefined,
-        percentage: formData.type === 'percentage' ? Number(formData.percentage || 0) : undefined,
+        amount: formData.type === 'fixed' ? parseNumericField(formData.amount) : undefined,
+        percentage: formData.type === 'percentage' ? parseNumericField(formData.percentage) : undefined,
         frequency: formData.frequency,
         is_taxable: formData.is_taxable,
         is_pensionable: formData.is_pensionable,
@@ -888,6 +908,14 @@ export function StaffAllowancesPage() {
       showToast('error', 'Please enter a deduction name');
       return;
     }
+    if (formData.type === 'fixed' && hasEmptyNumericField(formData.amount)) {
+      showToast('error', 'Please enter an amount');
+      return;
+    }
+    if (formData.type === 'percentage' && hasEmptyNumericField(formData.percentage)) {
+      showToast('error', 'Please enter a percentage');
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -901,8 +929,8 @@ export function StaffAllowancesPage() {
         deduction_name: formData.deduction_name,
         type: formData.type,
         calculation_basis: formData.calculation_basis,
-        amount: formData.type === 'fixed' ? Number(formData.amount || 0) : undefined,
-        percentage: formData.type === 'percentage' ? Number(formData.percentage || 0) : undefined,
+        amount: formData.type === 'fixed' ? parseNumericField(formData.amount) : undefined,
+        percentage: formData.type === 'percentage' ? parseNumericField(formData.percentage) : undefined,
         frequency: formData.frequency,
         effective_from: formData.effective_from,
         effective_to: formData.effective_to || (formData.frequency === 'one-time' ? formData.effective_from : null),

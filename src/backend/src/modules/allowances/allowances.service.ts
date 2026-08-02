@@ -36,6 +36,29 @@ export class AllowancesService {
     return normalized ? normalized : null;
   }
 
+  private hasEmptyNumericInput(value: any): boolean {
+    return value === undefined || value === null || (typeof value === 'string' && value.trim() === '');
+  }
+
+  private assertStaffAllowanceValue(dto: any, type: 'fixed' | 'percentage' | null, requireValue: boolean) {
+    if (!type) return;
+
+    const fieldName = type === 'fixed' ? 'amount' : 'percentage';
+    const label = type === 'fixed' ? 'Amount' : 'Percentage';
+    const rawValue = dto?.[fieldName];
+
+    if (!requireValue) {
+      if (this.hasOwn(dto, fieldName) && this.hasEmptyNumericInput(rawValue)) {
+        throw new BadRequestException(`${label} is required`);
+      }
+      return;
+    }
+
+    if (this.hasEmptyNumericInput(rawValue)) {
+      throw new BadRequestException(`${label} is required`);
+    }
+  }
+
   private formatDateForLagos(value: any): string | null {
     if (value === undefined || value === null || value === '') return null;
 
@@ -346,6 +369,7 @@ export class AllowancesService {
     }
 
     const definition = await this.resolveStaffAllowanceDefinition(dto);
+    this.assertStaffAllowanceValue(dto, definition.type, true);
 
     const staffAllowance = await this.databaseService.queryOne(
       `INSERT INTO staff_allowances (
@@ -487,6 +511,7 @@ export class AllowancesService {
           isTaxable: existing.custom_is_taxable,
           isPensionable: existing.custom_is_pensionable,
         };
+    this.assertStaffAllowanceValue(dto, definition.type, hasDefinitionInput);
 
     const effectiveFrom = this.toMonthStart(dto.effective_from ?? dto.startMonth);
     const effectiveTo = this.toMonthStart(dto.effective_to ?? dto.endMonth);
