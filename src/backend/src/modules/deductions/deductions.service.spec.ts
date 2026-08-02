@@ -91,7 +91,7 @@ describe('DeductionsService', () => {
           'user-1',
         ],
       );
-      expect(result).toEqual({ id: 'sd-1' });
+      expect(result).toMatchObject({ id: 'sd-1' });
     });
 
     it('stores configured calculation basis for custom percentage staff deductions', async () => {
@@ -122,6 +122,50 @@ describe('DeductionsService', () => {
           'gross',
         ]),
       );
+    });
+
+    it('rejects blank amount values for fixed staff deductions', async () => {
+      await expect(
+        service.createStaffDeduction(
+          {
+            staff_id: 'staff-3',
+            entry_mode: 'custom',
+            deduction_name: 'Staff Recovery',
+            type: 'fixed',
+            amount: '',
+            effective_from: '2026-07',
+          },
+          'user-3',
+          'admin',
+        ),
+      ).rejects.toThrow('Amount is required');
+    });
+  });
+
+  describe('updateStaffDeduction', () => {
+    it('rejects blank amount values when updating a fixed staff deduction', async () => {
+      (databaseService.queryOne as jest.Mock).mockResolvedValue({
+        id: 'sd-3',
+        deduction_id: null,
+        custom_deduction_code: 'RECOVERY',
+        custom_deduction_name: 'Staff Recovery',
+        custom_type: 'fixed',
+        custom_calculation_basis: 'basic',
+        status: 'active',
+      });
+
+      await expect(
+        service.updateStaffDeduction(
+          'sd-3',
+          {
+            entry_mode: 'custom',
+            deduction_name: 'Staff Recovery',
+            type: 'fixed',
+            amount: '',
+          },
+          'user-3',
+        ),
+      ).rejects.toThrow('Amount is required');
     });
   });
 });

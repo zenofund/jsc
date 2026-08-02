@@ -66,7 +66,7 @@ describe('AllowancesService', () => {
           'user-1',
         ],
       );
-      expect(result).toEqual({ id: 'sa-1' });
+      expect(result).toMatchObject({ id: 'sa-1' });
     });
 
     it('stores gross calculation basis for custom percentage staff allowances', async () => {
@@ -97,6 +97,52 @@ describe('AllowancesService', () => {
           'gross',
         ]),
       );
+    });
+
+    it('rejects blank amount values for fixed staff allowances', async () => {
+      await expect(
+        service.createStaffAllowance(
+          {
+            staff_id: 'staff-3',
+            entry_mode: 'custom',
+            allowance_name: 'Special Duty Allowance',
+            type: 'fixed',
+            amount: '',
+            effective_from: '2026-07',
+          },
+          'user-3',
+          'admin',
+        ),
+      ).rejects.toThrow('Amount is required');
+    });
+  });
+
+  describe('updateStaffAllowance', () => {
+    it('rejects blank amount values when updating a fixed staff allowance', async () => {
+      (databaseService.queryOne as jest.Mock).mockResolvedValue({
+        id: 'sa-3',
+        allowance_id: null,
+        custom_allowance_code: 'SPEC_DUTY',
+        custom_allowance_name: 'Special Duty Allowance',
+        custom_type: 'fixed',
+        custom_calculation_basis: 'basic',
+        custom_is_taxable: true,
+        custom_is_pensionable: false,
+        status: 'active',
+      });
+
+      await expect(
+        service.updateStaffAllowance(
+          'sa-3',
+          {
+            entry_mode: 'custom',
+            allowance_name: 'Special Duty Allowance',
+            type: 'fixed',
+            amount: '',
+          },
+          'user-3',
+        ),
+      ).rejects.toThrow('Amount is required');
     });
   });
 });

@@ -17,6 +17,20 @@ export class ArrearsService {
     return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
   }
 
+  private parseCurrencyAmount(value: any) {
+    const rawValue = String(value ?? '').trim();
+    if (!rawValue) {
+      throw new BadRequestException('Amount is required');
+    }
+
+    const parsedValue = Number(rawValue);
+    if (!Number.isFinite(parsedValue)) {
+      throw new BadRequestException('Amount must be a valid number');
+    }
+
+    return this.roundCurrency(parsedValue);
+  }
+
   private getBusinessDateParts(value: any) {
     const rawValue = String(value || '').trim();
     const plainDateMatch = rawValue.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -180,6 +194,7 @@ export class ArrearsService {
       staffId, reason, amount, effectiveDate, 
       monthsOwed = 1, description
     } = data;
+    const normalizedAmount = this.parseCurrencyAmount(amount);
 
     // Get staff details
     const staff = await this.databaseService.queryOne('SELECT * FROM staff WHERE id = $1', [staffId]);
@@ -191,11 +206,11 @@ export class ArrearsService {
     const { year, month } = this.getBusinessDateParts(effectiveDate);
     const details = [{
       month: this.buildMonthKey(year, month),
-      amount: this.roundCurrency(parseFloat(amount)),
+      amount: normalizedAmount,
       description: description || 'Manual Adjustment'
     }];
 
-    const totalArrears = this.roundCurrency(parseFloat(amount));
+    const totalArrears = normalizedAmount;
     const staffName = this.getStaffName(staff);
 
     const arrearsRecord = await this.databaseService.queryOne(

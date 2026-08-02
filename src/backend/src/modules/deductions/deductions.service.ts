@@ -59,6 +59,18 @@ export class DeductionsService {
     }
   }
 
+  private parseNumericInput(value: any, label: string): number | null | undefined {
+    if (value === undefined) return undefined;
+    if (this.hasEmptyNumericInput(value)) return null;
+
+    const parsed = typeof value === 'number' ? value : Number(String(value).trim());
+    if (!Number.isFinite(parsed)) {
+      throw new BadRequestException(`${label} must be a valid number`);
+    }
+
+    return parsed;
+  }
+
   private formatDateForLagos(value: any): string | null {
     if (value === undefined || value === null || value === '') return null;
 
@@ -357,6 +369,9 @@ export class DeductionsService {
 
     const definition = await this.resolveStaffDeductionDefinition(dto);
     this.assertStaffDeductionValue(dto, definition.type, true);
+    const amountValue = definition.type === 'fixed' ? (this.parseNumericInput(dto.amount, 'Amount') ?? null) : null;
+    const percentageValue =
+      definition.type === 'percentage' ? (this.parseNumericInput(dto.percentage, 'Percentage') ?? null) : null;
 
     const staffDeduction = await this.databaseService.queryOne(
       `INSERT INTO staff_deductions (
@@ -372,8 +387,8 @@ export class DeductionsService {
         definition.entryMode === 'custom' ? definition.deductionName : null,
         definition.entryMode === 'custom' ? definition.type : null,
         definition.entryMode === 'custom' ? definition.calculationBasis : null,
-        definition.type === 'fixed' ? (dto.amount ?? null) : null,
-        definition.type === 'percentage' ? (dto.percentage ?? null) : null,
+        amountValue,
+        percentageValue,
         this.toMonthStart(dto.effective_from || dto.startMonth),
         this.toMonthStart(dto.effective_to || dto.endMonth),
         dto.frequency || 'recurring',
@@ -491,6 +506,8 @@ export class DeductionsService {
           calculationBasis: existing.custom_calculation_basis || 'basic',
         };
     this.assertStaffDeductionValue(dto, definition.type, hasDefinitionInput);
+    const amountValue = this.parseNumericInput(dto.amount, 'Amount');
+    const percentageValue = this.parseNumericInput(dto.percentage, 'Percentage');
 
     const effectiveFrom = this.toMonthStart(dto.effective_from ?? dto.startMonth);
     const effectiveTo = this.toMonthStart(dto.effective_to ?? dto.endMonth);
@@ -518,11 +535,11 @@ export class DeductionsService {
         definition.entryMode === 'custom' ? definition.type : null,
         definition.entryMode === 'custom' ? definition.calculationBasis : null,
         hasDefinitionInput
-          ? (definition.type === 'fixed' ? (dto.amount ?? null) : null)
-          : dto.amount,
+          ? (definition.type === 'fixed' ? (amountValue ?? null) : null)
+          : amountValue,
         hasDefinitionInput
-          ? (definition.type === 'percentage' ? (dto.percentage ?? null) : null)
-          : dto.percentage,
+          ? (definition.type === 'percentage' ? (percentageValue ?? null) : null)
+          : percentageValue,
         effectiveFrom,
         dto.frequency,
         dto.status,

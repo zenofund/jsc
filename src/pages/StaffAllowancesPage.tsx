@@ -135,8 +135,8 @@ const buildAllowanceFormState = (
       allowance_name: '',
       type: 'fixed',
       calculation_basis: 'basic',
-      amount: 0,
-      percentage: 0,
+      amount: '',
+      percentage: '',
       frequency: 'recurring',
       is_taxable: true,
       is_pensionable: false,
@@ -154,8 +154,8 @@ const buildAllowanceFormState = (
     allowance_name: initialData.allowance_name ?? '',
     type: (initialData.type ?? 'fixed') as 'fixed' | 'percentage',
     calculation_basis: (initialData.calculation_basis ?? 'basic') as 'basic' | 'gross',
-    amount: initialData.amount ?? 0,
-    percentage: initialData.percentage ?? 0,
+    amount: initialData.amount ?? '',
+    percentage: initialData.percentage ?? '',
     frequency: (initialData.frequency ?? 'recurring') as FrequencyType,
     is_taxable: initialData.is_taxable ?? true,
     is_pensionable: initialData.is_pensionable ?? false,
@@ -177,8 +177,8 @@ const buildDeductionFormState = (
       deduction_name: '',
       type: 'fixed',
       calculation_basis: 'basic',
-      amount: 0,
-      percentage: 0,
+      amount: '',
+      percentage: '',
       frequency: 'recurring',
       effective_from: getCurrentMonthValue(),
       effective_to: '',
@@ -194,8 +194,8 @@ const buildDeductionFormState = (
     deduction_name: initialData.deduction_name ?? '',
     type: (initialData.type ?? 'fixed') as 'fixed' | 'percentage',
     calculation_basis: (initialData.calculation_basis ?? 'basic') as 'basic' | 'gross',
-    amount: initialData.amount ?? 0,
-    percentage: initialData.percentage ?? 0,
+    amount: initialData.amount ?? '',
+    percentage: initialData.percentage ?? '',
     frequency: (initialData.frequency ?? 'recurring') as FrequencyType,
     effective_from: normalizeAdjustmentDateValue(initialData.effective_from).monthValue || getCurrentMonthValue(),
     effective_to: normalizeAdjustmentDateValue(initialData.effective_to).monthValue,
@@ -219,9 +219,18 @@ function StaffAllowanceForm({
   const [localFormData, setLocalFormData] = useState<StaffAllowanceFormData>(() =>
     buildAllowanceFormState(initialData, allowanceOptions),
   );
+  const isValueMissing =
+    localFormData.type === 'fixed'
+      ? hasEmptyNumericField(localFormData.amount)
+      : hasEmptyNumericField(localFormData.percentage);
+  const isSubmitDisabled =
+    isSubmitting ||
+    (localFormData.entry_mode === 'configured'
+      ? !localFormData.allowance_id
+      : !String(localFormData.allowance_name || '').trim()) ||
+    isValueMissing;
 
   useEffect(() => {
-    if (!initialData) return;
     setLocalFormData(buildAllowanceFormState(initialData, allowanceOptions));
   }, [initialData?.id, allowanceOptions]);
 
@@ -472,7 +481,7 @@ function StaffAllowanceForm({
         <button
           onClick={() => onSubmit(localFormData)}
           className="btn-primary flex items-center gap-2"
-          disabled={isSubmitting}
+          disabled={isSubmitDisabled}
         >
           {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
           {initialData ? 'Update' : 'Create'} Allowance
@@ -498,9 +507,18 @@ function StaffDeductionForm({
   const [localFormData, setLocalFormData] = useState<StaffDeductionFormData>(() =>
     buildDeductionFormState(initialData, deductionOptions),
   );
+  const isValueMissing =
+    localFormData.type === 'fixed'
+      ? hasEmptyNumericField(localFormData.amount)
+      : hasEmptyNumericField(localFormData.percentage);
+  const isSubmitDisabled =
+    isSubmitting ||
+    (localFormData.entry_mode === 'configured'
+      ? !localFormData.deduction_id
+      : !String(localFormData.deduction_name || '').trim()) ||
+    isValueMissing;
 
   useEffect(() => {
-    if (!initialData) return;
     setLocalFormData(buildDeductionFormState(initialData, deductionOptions));
   }, [initialData?.id, deductionOptions]);
 
@@ -724,7 +742,7 @@ function StaffDeductionForm({
         <button
           onClick={() => onSubmit(localFormData)}
           className="btn-primary flex items-center gap-2"
-          disabled={isSubmitting}
+          disabled={isSubmitDisabled}
         >
           {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
           {initialData ? 'Update' : 'Create'} Deduction
