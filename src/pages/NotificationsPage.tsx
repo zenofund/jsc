@@ -21,6 +21,7 @@ import { PageSkeleton } from '../components/PageLoader';
 import { useAuth } from '../contexts/AuthContext';
 import toast from 'react-hot-toast';
 import { exportSpreadsheet } from '../utils/exportSpreadsheet';
+import { navigateFromNotificationLink } from '../lib/notification-navigation';
 
 export default function NotificationsPage() {
   const { user } = useAuth();
@@ -214,11 +215,7 @@ export default function NotificationsPage() {
       await handleMarkAsRead(notification.id);
     }
     
-    if (notification.link) {
-      window.location.href = notification.link;
-    } else if (notification.action_link) {
-      window.location.href = notification.action_link;
-    }
+    navigateFromNotificationLink(notification.link || notification.action_link);
   };
 
   // Toggle selection

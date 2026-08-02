@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import type { Notification as AppNotification } from '../types/entities';
 import { notificationAPI } from '../lib/api-client'; // ✅ Changed from notificationAPI import
 import { useAuth } from '../contexts/AuthContext';
+import { resolveNotificationNavigationTarget } from '../lib/notification-navigation';
 
 interface NotificationDropdownProps {
   onNavigate?: (link: string) => void;
@@ -281,11 +282,12 @@ export function NotificationDropdown({ onNavigate }: NotificationDropdownProps) 
       await handleMarkAsRead(notification.id);
     }
     
-    if (notification.link && onNavigate) {
-      onNavigate(notification.link);
+    const target = resolveNotificationNavigationTarget(notification.link || notification.action_link);
+    if (target.type === 'internal' && onNavigate) {
+      onNavigate(target.view);
       setIsOpen(false);
-    } else if (notification.action_link && onNavigate) {
-      onNavigate(notification.action_link);
+    } else if (target.type === 'external') {
+      window.location.href = target.href;
       setIsOpen(false);
     }
   };
