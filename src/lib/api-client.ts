@@ -373,10 +373,45 @@ export const staffAPI = {
     });
   },
 
-  async getActiveStaff() {
-    return makeApiRequest('/staff?status=active', {
-      method: 'GET',
-    });
+  async getActiveStaff(options?: { page?: number; limit?: number; allPages?: boolean }) {
+    const limit = options?.limit ?? 200;
+
+    if (!options?.allPages) {
+      const params = new URLSearchParams({
+        status: 'active',
+        page: String(options?.page ?? 1),
+        limit: String(limit),
+      });
+
+      return makeApiRequest(`/staff?${params.toString()}`, {
+        method: 'GET',
+      });
+    }
+
+    const allStaff: Staff[] = [];
+    let page = 1;
+    let totalPages = 1;
+
+    do {
+      const params = new URLSearchParams({
+        status: 'active',
+        page: String(page),
+        limit: String(limit),
+      });
+
+      const response = await makeApiRequest(`/staff?${params.toString()}`, {
+        method: 'GET',
+      });
+
+      const pageData = Array.isArray(response) ? response : (response?.data || []);
+      const metaTotalPages = Number(response?.meta?.totalPages || 1);
+
+      allStaff.push(...pageData);
+      totalPages = Number.isFinite(metaTotalPages) && metaTotalPages > 0 ? metaTotalPages : 1;
+      page += 1;
+    } while (page <= totalPages);
+
+    return allStaff;
   },
 
   async getNextStaffNumber() {

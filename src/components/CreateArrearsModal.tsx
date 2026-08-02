@@ -56,7 +56,7 @@ export function CreateArrearsModal({
   const loadStaff = async () => {
     setLoadingStaff(true);
     try {
-      const response = await staffAPI.getActiveStaff();
+      const response = await staffAPI.getActiveStaff({ allPages: true });
       // Ensure we have an array
       const data = Array.isArray(response) ? response : (response.data || []);
       setStaffList(data);
