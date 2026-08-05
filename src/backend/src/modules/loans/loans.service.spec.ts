@@ -4,6 +4,7 @@ import { LoansService } from './loans.service';
 import { DatabaseService } from '../../common/database/database.service';
 import { EmailService } from '../email/email.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { AuditService } from '@modules/audit/audit.service';
 
 describe('LoansService', () => {
   let service: LoansService;
@@ -26,7 +27,15 @@ describe('LoansService', () => {
         },
         {
           provide: NotificationsService,
-          useValue: {},
+          useValue: {
+            create: jest.fn(),
+          },
+        },
+        {
+          provide: AuditService,
+          useValue: {
+            log: jest.fn(),
+          },
         },
       ],
     }).compile();

@@ -26,8 +26,8 @@ export class PromotionsService {
   private getBusinessDateParts(value: any) {
     const rawValue = String(value || '').trim();
     const plainDateMatch = rawValue.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    const slashIsoMatch = rawValue.match(/^(\d{4})[\/](\d{1,2})[\/](\d{1,2})$/);
-    const slashLocaleMatch = rawValue.match(/^(\d{1,2})[\/](\d{1,2})[\/](\d{4})$/);
+    const slashIsoMatch = rawValue.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
+    const slashLocaleMatch = rawValue.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
 
     if (plainDateMatch) {
       return {
@@ -93,6 +93,85 @@ export class PromotionsService {
 
   private buildMonthKey(year: number, month: number) {
     return `${year}-${String(month).padStart(2, '0')}`;
+  }
+
+  private canonicalizeBusinessDate(value: any, fallbackDate?: any) {
+    const rawValue = String(value ?? '').trim();
+    if (!rawValue) {
+      throw new BadRequestException('Invalid promotion effective date');
+    }
+
+    const pad2 = (val: number) => String(val).padStart(2, '0');
+
+    const fallbackYear = (() => {
+      try {
+        return this.getBusinessDateParts(fallbackDate ?? new Date()).year;
+      } catch {
+        return new Date().getFullYear();
+      }
+    })();
+
+    const cleaned = rawValue.replace(/[,\u00B7]/g, ' ').replace(/\s+/g, ' ').trim();
+    const monthNameMatch = cleaned.match(
+      /^(?:[A-Za-z]{3,}\.?\s+)?([A-Za-z]{3,})\.?\s+(\d{1,2})(?:\s+(\d{4}))?$/i,
+    );
+
+    if (monthNameMatch) {
+      const monthToken = String(monthNameMatch[1] ?? '').replace(/\./g, '').toLowerCase();
+      const day = Number(monthNameMatch[2]);
+      const year = monthNameMatch[3] ? Number(monthNameMatch[3]) : fallbackYear;
+      const monthMap: Record<string, number> = {
+        jan: 1,
+        january: 1,
+        feb: 2,
+        february: 2,
+        mar: 3,
+        march: 3,
+        apr: 4,
+        april: 4,
+        may: 5,
+        jun: 6,
+        june: 6,
+        jul: 7,
+        july: 7,
+        aug: 8,
+        august: 8,
+        sep: 9,
+        sept: 9,
+        september: 9,
+        oct: 10,
+        october: 10,
+        nov: 11,
+        november: 11,
+        dec: 12,
+        december: 12,
+      };
+      const month = monthMap[monthToken];
+
+      if (!month || !Number.isFinite(day) || !Number.isFinite(year)) {
+        throw new BadRequestException('Invalid promotion effective date');
+      }
+
+      const validated = new Date(Date.UTC(year, month - 1, day));
+      if (
+        validated.getUTCFullYear() !== year ||
+        validated.getUTCMonth() !== month - 1 ||
+        validated.getUTCDate() !== day
+      ) {
+        throw new BadRequestException('Invalid promotion effective date');
+      }
+
+      return `${year}-${pad2(month)}-${pad2(day)}`;
+    }
+
+    try {
+      const parts = this.getBusinessDateParts(rawValue);
+      return `${parts.year}-${pad2(parts.month)}-${pad2(parts.day)}`;
+    } catch (error) {
+      void error;
+    }
+
+    throw new BadRequestException('Invalid promotion effective date');
   }
 
   private getStaffName(staff: any) {
@@ -331,6 +410,7 @@ export class PromotionsService {
     promotion: any,
     oldBasicSalary: number,
     newBasicSalary: number,
+    effectiveDate: string,
   ) {
     return this.databaseService.queryOne(
       `SELECT *
@@ -344,7 +424,7 @@ export class PromotionsService {
        LIMIT 1`,
       [
         promotion.staff_id,
-        String(promotion.promotion_date || promotion.effective_date || '').slice(0, 10),
+        effectiveDate,
         oldBasicSalary,
         newBasicSalary,
       ],
@@ -368,11 +448,16 @@ export class PromotionsService {
       };
     }
 
-    const effectiveDate = promotion.promotion_date || promotion.effective_date;
-    const effectiveDateObj = new Date(effectiveDate);
-    if (effectiveDateObj.getFullYear() === 1970) {
+    const rawEffectiveDate = promotion.promotion_date || promotion.effective_date;
+    let effectiveDate: string;
+    try {
+      effectiveDate = this.canonicalizeBusinessDate(
+        rawEffectiveDate,
+        promotion.approval_date || promotion.created_at || new Date(),
+      );
+    } catch {
       return {
-        effectiveDate,
+        effectiveDate: null,
         oldBasicSalary: 0,
         newBasicSalary: 0,
         monthlyDifference: 0,
@@ -427,7 +512,7 @@ export class PromotionsService {
         old_basic_salary, new_basic_salary,
         effective_date, months_owed, total_arrears,
         status, details, created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8, $9, $10, $11, $12)
       RETURNING *`,
       [
         promotion.staff_id,
@@ -489,6 +574,7 @@ export class PromotionsService {
       promotion,
       evaluation.oldBasicSalary,
       evaluation.newBasicSalary,
+      evaluation.effectiveDate,
     );
 
     let arrearsRecord = existingArrears;
@@ -566,6 +652,8 @@ export class PromotionsService {
     }
 
     this.assertPromotionAdvances(staff.grade_level, staff.step, newGradeLevel, newStep);
+
+    const canonicalEffectiveDate = this.canonicalizeBusinessDate(effectiveDate, new Date());
     
     // Create promotion record
     const result = await this.databaseService.queryOne(
@@ -577,7 +665,12 @@ export class PromotionsService {
       [
         staffId, staff.grade_level, staff.step, staff.current_basic_salary,
         newGradeLevel, newStep, newBasicSalary,
-        effectiveDate, effectiveDate, promotionType || 'regular', remarks, status, userId
+        canonicalEffectiveDate,
+        canonicalEffectiveDate,
+        promotionType || 'regular',
+        remarks,
+        status,
+        userId,
       ]
     );
 
@@ -942,13 +1035,38 @@ export class PromotionsService {
 
     this.assertPromotionAdvances(staff.grade_level, staff.step, promotion.new_grade_level, promotion.new_step);
 
+    let promotionDateForStaff = promotion.promotion_date;
+    try {
+      const canonicalPromotionDate = this.canonicalizeBusinessDate(
+        promotion.promotion_date || promotion.effective_date,
+        promotion.approval_date || promotion.created_at || new Date(),
+      );
+      promotionDateForStaff = canonicalPromotionDate;
+
+      if (
+        String(promotion.promotion_date ?? '').trim() !== canonicalPromotionDate ||
+        String(promotion.effective_date ?? '').trim() !== canonicalPromotionDate
+      ) {
+        await this.databaseService.query(
+          `UPDATE promotions
+           SET promotion_date = $1,
+               effective_date = $1,
+               updated_at = NOW()
+           WHERE id = $2`,
+          [canonicalPromotionDate, promotion.id],
+        );
+      }
+    } catch (error) {
+      void error;
+    }
+
     // Update staff record
     await this.databaseService.query(
       `UPDATE staff 
        SET grade_level = $1, step = $2, current_basic_salary = $3, 
            last_promotion_date = $4, updated_at = NOW()
        WHERE id = $5`,
-      [promotion.new_grade_level, promotion.new_step, promotion.new_basic_salary, promotion.promotion_date, staff.id]
+      [promotion.new_grade_level, promotion.new_step, promotion.new_basic_salary, promotionDateForStaff, staff.id]
     );
 
     this.logger.log(`Staff ${staff.staff_number} promoted to GL ${promotion.new_grade_level} Step ${promotion.new_step}`);
@@ -1026,6 +1144,7 @@ export class PromotionsService {
               promotion,
               evaluation.oldBasicSalary,
               evaluation.newBasicSalary,
+              evaluation.effectiveDate,
             )
           : null;
 
