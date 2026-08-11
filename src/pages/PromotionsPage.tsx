@@ -12,7 +12,7 @@ import { arrearsAPI, promotionAPI, staffAPI, settingsAPI } from '../lib/api-clie
 import { formatStaffLabelWithId, formatStaffName } from '../lib/name-utils';
 import { Promotion, Staff } from '../types/entities';
 import { PageSkeleton } from '../components/PageLoader';
-import { TrendingUp, Plus, CheckCircle, XCircle, Eye, AlertCircle, Calendar, Loader2, MoreVertical } from 'lucide-react';
+import { TrendingUp, Plus, CheckCircle, XCircle, Eye, AlertCircle, Calendar, Loader2, MoreVertical, Trash2 } from 'lucide-react';
 import { formatCurrency } from '../utils/format';
 
 function normalizePromotionDate(value: string | null | undefined): string {
@@ -472,6 +472,45 @@ export function PromotionsPage() {
     }
   };
 
+  const canDeletePromotion = (status: unknown) => {
+    const normalizedStatus = String(status || '').trim().toLowerCase();
+    const allowedRole = ['admin', 'hr_manager', 'payroll_officer'].includes(normalizedUserRole);
+    return allowedRole && (normalizedStatus === 'pending' || normalizedStatus === 'rejected');
+  };
+
+  const handleDeletePromotion = async (promotionId: string) => {
+    const promotion = promotions.find((item) => item.id === promotionId);
+    const staffName = promotion ? getStaffName(promotion.staff_id) : '';
+    const statusLabel = promotion ? String(promotion.status || '').toLowerCase() : 'promotion';
+
+    if (
+      !await confirm(
+        staffName
+          ? `Delete this ${statusLabel} promotion for ${staffName}? This cannot be undone.`
+          : `Delete this ${statusLabel} promotion? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setProcessingPromotionId(promotionId);
+      await promotionAPI.deletePromotion(promotionId);
+      showToast('success', 'Promotion deleted');
+      if (selectedPromotion?.id === promotionId) {
+        setShowDetailsModal(false);
+        setSelectedPromotion(null);
+        setApprovalComment('');
+      }
+      setSelectedPromotionIds((currentSelection) => currentSelection.filter((id) => id !== promotionId));
+      await loadData();
+    } catch {
+      showToast('error', 'Failed to delete promotion');
+    } finally {
+      setProcessingPromotionId(null);
+    }
+  };
+
   const resetForm = () => {
     setFormData({
       staff_id: '',
@@ -680,6 +719,7 @@ export function PromotionsPage() {
       accessor: (row: Promotion) => {
         const canApprovePromotion = row.status === 'pending' && canReviewPromotions;
         const canRejectPromotion = row.status === 'pending' && canReviewPromotions;
+        const canDelete = canDeletePromotion(row.status);
         const isProcessing = processingPromotionId === row.id || bulkActionLoading;
 
         return (
@@ -723,6 +763,15 @@ export function PromotionsPage() {
                 >
                   <XCircle className="w-4 h-4 mr-2 text-red-600" />
                   Reject
+                </DropdownMenuItem>
+              )}
+              {canDelete && (
+                <DropdownMenuItem
+                  onClick={() => handleDeletePromotion(row.id)}
+                  className="text-red-600 focus:text-red-600"
+                >
+                  <Trash2 className="w-4 h-4 mr-2 text-red-600" />
+                  Delete
                 </DropdownMenuItem>
               )}
             </DropdownMenuContent>
@@ -1322,6 +1371,14 @@ export function PromotionsPage() {
               >
                 Close
               </button>
+              {canDeletePromotion(selectedPromotion.status) && (
+                <button
+                  onClick={() => handleDeletePromotion(selectedPromotion.id)}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                >
+                  Delete
+                </button>
+              )}
               {selectedPromotion.status === 'pending' && (user?.role === 'admin' || user?.role === 'hr_manager') && (
                 <>
                   <button

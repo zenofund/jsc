@@ -821,6 +821,12 @@ export const promotionAPI = {
       method: 'GET',
     });
   },
+
+  async deletePromotion(promotionId: string) {
+    return makeApiRequest(`/promotions/${promotionId}`, {
+      method: 'DELETE',
+    });
+  },
 };
 
 // ============================================
