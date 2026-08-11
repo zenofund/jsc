@@ -619,6 +619,70 @@ export class PromotionsService {
   }
 
   /**
+   * Check if a staff member has an existing pending promotion.
+   * Returns the pending promotion if found, null otherwise.
+   */
+  private async getStaffPendingPromotion(staffId: string, excludePromotionId?: string) {
+    const whereClauses = ['staff_id = $1', "status = 'pending'"];
+    const params: any[] = [staffId];
+
+    if (excludePromotionId) {
+      params.push(excludePromotionId);
+      whereClauses.push(`id != $${params.length}`);
+    }
+
+    return this.databaseService.queryOne(
+      `SELECT *
+       FROM promotions
+       WHERE ${whereClauses.join(' AND ')}
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      params,
+    );
+  }
+
+  /**
+   * Delete a promotion. Only pending or rejected promotions can be deleted.
+   */
+  async deletePromotion(id: string, userId: string) {
+    const promotion = await this.databaseService.queryOne(
+      'SELECT * FROM promotions WHERE id = $1',
+      [id],
+    );
+
+    if (!promotion) {
+      throw new NotFoundException(`Promotion with ID ${id} not found`);
+    }
+
+    if (promotion.status !== 'pending' && promotion.status !== 'rejected') {
+      throw new BadRequestException(
+        `Cannot delete a promotion with status '${promotion.status}'. Only pending or rejected promotions can be deleted.`,
+      );
+    }
+
+    await this.databaseService.query('DELETE FROM promotions WHERE id = $1', [id]);
+
+    const staff = await this.databaseService.queryOne(
+      'SELECT first_name, last_name, staff_number FROM staff WHERE id = $1',
+      [promotion.staff_id],
+    );
+    const staffName = this.getStaffName(staff);
+
+    await this.auditService.log({
+      userId,
+      action: AuditAction.DELETE,
+      entity: 'promotions',
+      entityId: id,
+      description: staffName
+        ? `Deleted ${promotion.status} promotion for ${staffName}`
+        : `Deleted ${promotion.status} promotion`,
+      oldValues: promotion,
+    });
+
+    return { message: 'Promotion deleted successfully', id };
+  }
+
+  /**
    * Create promotion request
    */
   async createPromotion(dto: any, userId: string) {
@@ -652,6 +716,14 @@ export class PromotionsService {
     }
 
     this.assertPromotionAdvances(staff.grade_level, staff.step, newGradeLevel, newStep);
+
+    // Prevent duplicate pending promotions for the same staff
+    const existingPending = await this.getStaffPendingPromotion(staffId);
+    if (existingPending) {
+      throw new BadRequestException(
+        `A pending promotion already exists for this staff member. Please review or delete the existing pending promotion (ID: ${existingPending.id}) before creating a new one.`,
+      );
+    }
 
     const canonicalEffectiveDate = this.canonicalizeBusinessDate(effectiveDate, new Date());
     
@@ -1319,18 +1391,78 @@ export class PromotionsService {
   /**
    * Get all promotions
    */
-  async getAll() {
-    try {
-      return await this.databaseService.query(
-        `SELECT p.*, s.first_name, s.last_name, s.staff_number
-         FROM promotions p
-         JOIN staff s ON p.staff_id = s.id
-         ORDER BY p.created_at DESC
-         LIMIT 100`
-      );
-    } catch (error) {
-      return [];
+  async getAll(query?: {
+    page?: number;
+    limit?: number;
+    status?: string;
+    staffId?: string;
+    search?: string;
+  }) {
+    const page = Math.max(1, Number(query?.page || 1));
+    const limit = Math.min(500, Math.max(1, Number(query?.limit || 100)));
+    const offset = (page - 1) * limit;
+    const status = String(query?.status || '').trim();
+    const staffId = String(query?.staffId || '').trim();
+    const search = String(query?.search || '').trim();
+
+    const whereClauses: string[] = [];
+    const params: any[] = [];
+    let paramIndex = 1;
+
+    if (status) {
+      whereClauses.push(`p.status = $${paramIndex}`);
+      params.push(status);
+      paramIndex += 1;
     }
+
+    if (staffId) {
+      whereClauses.push(`p.staff_id = $${paramIndex}`);
+      params.push(staffId);
+      paramIndex += 1;
+    }
+
+    if (search) {
+      whereClauses.push(
+        `(s.first_name ILIKE $${paramIndex} OR s.last_name ILIKE $${paramIndex} OR s.staff_number ILIKE $${paramIndex})`,
+      );
+      params.push(`%${search}%`);
+      paramIndex += 1;
+    }
+
+    const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+    const countResult = await this.databaseService.queryOne<{ total: number }>(
+      `SELECT COUNT(*) as total
+       FROM promotions p
+       JOIN staff s ON p.staff_id = s.id
+       ${whereClause}`,
+      params,
+    );
+    const total = parseInt(countResult?.total?.toString() || '0');
+
+    const data = await this.databaseService.query(
+      `SELECT p.*,
+              s.first_name,
+              s.last_name,
+              s.staff_number,
+              TRIM(CONCAT(COALESCE(s.first_name, ''), ' ', COALESCE(s.last_name, ''))) as staff_name
+       FROM promotions p
+       JOIN staff s ON p.staff_id = s.id
+       ${whereClause}
+       ORDER BY p.created_at DESC
+       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+      [...params, limit, offset],
+    );
+
+    return {
+      data,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: limit > 0 ? Math.ceil(total / limit) : 1,
+      },
+    };
   }
 
   /**

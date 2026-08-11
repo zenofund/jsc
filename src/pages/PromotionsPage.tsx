@@ -238,7 +238,7 @@ export function PromotionsPage() {
   };
 
   const getAllPromotions = async (): Promise<Promotion[]> => {
-    const response = await promotionAPI.getAll();
+    const response = await promotionAPI.getAll({ fetchAll: true, limit: 200 });
     const data = Array.isArray(response) ? response : (response.data || response);
     // Ensure created_at ordering desc
     return [...data].sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());

@@ -73,6 +73,7 @@ describe('PromotionsService', () => {
           step: 1,
           current_basic_salary: 1000,
         })
+        .mockResolvedValueOnce(null)
         .mockResolvedValueOnce({ id: 'promotion-1' });
 
       await service.createPromotion(
@@ -90,9 +91,93 @@ describe('PromotionsService', () => {
       );
 
       expect(databaseService.queryOne).toHaveBeenNthCalledWith(
-        2,
+        3,
         expect.stringContaining('INSERT INTO promotions'),
         expect.arrayContaining(['2026-05-19', '2026-05-19']),
+      );
+    });
+
+    it('rejects a second pending promotion for the same staff', async () => {
+      (databaseService.queryOne as jest.Mock)
+        .mockResolvedValueOnce({
+          id: 'staff-1',
+          staff_number: 'S-001',
+          first_name: 'Ada',
+          last_name: 'Lovelace',
+          grade_level: 10,
+          step: 1,
+          current_basic_salary: 1000,
+        })
+        .mockResolvedValueOnce({
+          id: 'promo-existing',
+          staff_id: 'staff-1',
+          status: 'pending',
+          created_at: '2026-08-01T00:00:00Z',
+        });
+
+      await expect(
+        service.createPromotion(
+          {
+            staffId: 'staff-1',
+            newGradeLevel: 12,
+            newStep: 1,
+            newBasicSalary: 1500,
+            effectiveDate: '2026-09-01',
+            status: 'pending',
+          },
+          'user-1',
+        ),
+      ).rejects.toThrow('A pending promotion already exists for this staff member');
+    });
+  });
+
+  describe('deletePromotion', () => {
+    it('deletes a pending promotion', async () => {
+      (databaseService.queryOne as jest.Mock)
+        .mockResolvedValueOnce({
+          id: 'promo-pending',
+          staff_id: 'staff-1',
+          status: 'pending',
+        })
+        .mockResolvedValueOnce({
+          first_name: 'Ada',
+          last_name: 'Lovelace',
+          staff_number: 'S-001',
+        });
+      (databaseService.query as jest.Mock).mockResolvedValue(undefined);
+
+      const result = await service.deletePromotion('promo-pending', 'user-1');
+
+      expect(result.message).toContain('deleted successfully');
+      expect(databaseService.query).toHaveBeenCalledWith(expect.stringContaining('DELETE FROM promotions'), [
+        'promo-pending',
+      ]);
+    });
+
+    it('deletes a rejected promotion', async () => {
+      (databaseService.queryOne as jest.Mock)
+        .mockResolvedValueOnce({
+          id: 'promo-rejected',
+          staff_id: 'staff-1',
+          status: 'rejected',
+        })
+        .mockResolvedValueOnce(null);
+      (databaseService.query as jest.Mock).mockResolvedValue(undefined);
+
+      await expect(service.deletePromotion('promo-rejected', 'user-1')).resolves.toMatchObject({
+        message: expect.stringContaining('deleted successfully'),
+      });
+    });
+
+    it('refuses to delete an approved promotion', async () => {
+      (databaseService.queryOne as jest.Mock).mockResolvedValueOnce({
+        id: 'promo-approved',
+        staff_id: 'staff-1',
+        status: 'approved',
+      });
+
+      await expect(service.deletePromotion('promo-approved', 'user-1')).rejects.toThrow(
+        'Only pending or rejected promotions can be deleted.',
       );
     });
   });

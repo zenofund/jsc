@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Request, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Request, UseGuards, Delete, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger';
 import { PromotionsService } from './promotions.service';
 import { RolesGuard } from '@common/guards/roles.guard';
@@ -77,7 +77,17 @@ export class PromotionsController {
 
   @Get()
   @ApiOperation({ summary: 'Get all promotions' })
-  getAll() {
-    return this.promotionsService.getAll();
+  getAll(@Query() query: any) {
+    return this.promotionsService.getAll(query);
+  }
+
+  @Delete(':id')
+  @Roles('admin', 'hr_manager', 'payroll_officer')
+  @ApiOperation({ summary: 'Delete a pending or rejected promotion' })
+  @ApiResponse({ status: 200, description: 'Promotion deleted successfully' })
+  @ApiResponse({ status: 400, description: 'Only pending or rejected promotions can be deleted' })
+  @ApiResponse({ status: 404, description: 'Promotion not found' })
+  deletePromotion(@Param('id') id: string, @Request() req) {
+    return this.promotionsService.deletePromotion(id, req.user.userId);
   }
 }

@@ -773,10 +773,47 @@ export const promotionAPI = {
     });
   },
 
-  async getAll() {
-    return makeApiRequest('/promotions', {
-      method: 'GET',
-    });
+  async getAll(options?: { page?: number; limit?: number; fetchAll?: boolean; status?: string; staffId?: string; search?: string }) {
+    const page = options?.page ?? 1;
+    const limit = options?.limit ?? 100;
+    const fetchAll = options?.fetchAll ?? false;
+    const params = new URLSearchParams();
+
+    if (options?.status) params.append('status', String(options.status));
+    if (options?.staffId) params.append('staffId', String(options.staffId));
+    if (options?.search) params.append('search', String(options.search));
+
+    const buildUrl = (targetPage: number) => {
+      const targetParams = new URLSearchParams(params);
+      targetParams.append('page', String(targetPage));
+      targetParams.append('limit', String(limit));
+      return `/promotions?${targetParams.toString()}`;
+    };
+
+    if (!fetchAll) {
+      return makeApiRequest(buildUrl(page), { method: 'GET' });
+    }
+
+    let currentPage = 1;
+    const aggregated: any[] = [];
+    let totalPages = 1;
+
+    do {
+      const resp = await makeApiRequest(buildUrl(currentPage), { method: 'GET' });
+      const data = Array.isArray(resp) ? resp : (resp.data || []);
+      aggregated.push(...data);
+
+      const meta = resp?.meta || resp?.pagination;
+      if (meta && typeof meta.totalPages === 'number') {
+        totalPages = meta.totalPages;
+      } else {
+        totalPages = data.length < limit ? currentPage : currentPage + 1;
+      }
+
+      currentPage += 1;
+    } while (currentPage <= totalPages);
+
+    return { data: aggregated, meta: { total: aggregated.length, page: 1, limit: aggregated.length, totalPages: 1 } };
   },
 
   async getStaffPromotions(staffId: string) {
