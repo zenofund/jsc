@@ -24,6 +24,7 @@ async function seedDatabase() {
     const accountantPassword = await bcrypt.hash('acc123', 10);
     const loaderPassword = await bcrypt.hash('loader123', 10);
     const approverPassword = await bcrypt.hash('approver123', 10);
+    const coopPassword = await bcrypt.hash('coop123', 10);
 
     const users = [
       { email: 'admin@jsc.gov.ng', password: adminPassword, full_name: 'System Administrator', role: 'admin' },
@@ -31,6 +32,7 @@ async function seedDatabase() {
       { email: 'accounts@jsc.gov.ng', password: accountantPassword, full_name: 'Chief Accountant', role: 'cashier' },
       { email: 'loader@jsc.gov.ng', password: loaderPassword, full_name: 'Payroll Loader', role: 'payroll_loader' },
       { email: 'cpo@jsc.gov.ng', password: approverPassword, full_name: 'Chief Payroll Officer', role: 'cpo' },
+      { email: 'coop@jsc.gov.ng', password: coopPassword, full_name: 'Cooperative Manager', role: 'coop_manager' },
     ];
 
     for (const user of users) {
@@ -41,7 +43,7 @@ async function seedDatabase() {
         [user.email, user.password, user.full_name, user.role]
       );
     }
-    console.log('✅ Seeded 3 users');
+    console.log('✅ Seeded 6 users');
 
     // ==================== 2. SEED DEPARTMENTS ====================
     console.log('\n📝 Seeding departments...');
@@ -427,6 +429,7 @@ async function seedDatabase() {
     console.log('  Admin: admin@jsc.gov.ng / admin123');
     console.log('  HR: hr@jsc.gov.ng / hr123');
     console.log('  Accountant: accounts@jsc.gov.ng / acc123');
+    console.log('  Coop Manager: coop@jsc.gov.ng / coop123');
     console.log('\n🚀 Ready to start the server!');
 
   } catch (error) {

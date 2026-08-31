@@ -4,6 +4,7 @@ import { LoansService } from './loans.service';
 import { RolesGuard } from '@common/guards/roles.guard';
 import { FeatureToggleGuard } from '@common/guards/feature-toggle.guard';
 import { Roles } from '@common/decorators/roles.decorator';
+import { NoAdminBypass } from '@common/decorators/no-admin-bypass.decorator';
 import { RequireFeature } from '@common/decorators/require-feature.decorator';
 import {
   CreateLoanTypeDto,
@@ -24,6 +25,8 @@ import { LoanMigrationImportDto } from './dto/migration-import.dto';
 @ApiBearerAuth()
 @Controller('loans')
 @UseGuards(RolesGuard, FeatureToggleGuard)
+@Roles('coop_manager')
+@NoAdminBypass()
 @RequireFeature('loan_management')
 export class LoansController {
   constructor(private readonly loansService: LoansService) {}
@@ -108,7 +111,6 @@ export class LoansController {
   }
 
   @Patch('applications/:id/approve')
-  @Roles('admin', 'payroll_officer')
   @ApiOperation({ summary: 'Approve loan application' })
   approveLoanApplication(
     @Param('id') id: string,
@@ -119,7 +121,6 @@ export class LoansController {
   }
 
   @Patch('applications/:id/reject')
-  @Roles('admin', 'payroll_officer')
   @ApiOperation({ summary: 'Reject loan application' })
   rejectLoanApplication(
     @Param('id') id: string,
@@ -204,8 +205,7 @@ export class LoansController {
   }
 
   @Put('disbursements/:id')
-  @Roles('admin', 'payroll_officer')
-  @ApiOperation({ summary: 'Update a disbursement (admin only)' })
+  @ApiOperation({ summary: 'Update a disbursement' })
   updateDisbursement(
     @Param('id') id: string,
     @Body() dto: UpdateDisbursementDto,
@@ -253,7 +253,6 @@ export class LoansController {
   }
 
   @Delete('repayments/:id')
-  @Roles('admin')
   @ApiOperation({ summary: 'Delete repayment by ID' })
   deleteRepayment(@Param('id') id: string) {
     return this.loansService.deleteRepayment(id);

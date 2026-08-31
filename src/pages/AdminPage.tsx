@@ -29,7 +29,20 @@ export function AdminPage() {
   const { refresh: refreshSystemSettings } = useSystemSettings();
   const confirm = useConfirm();
   // Removed conflicting useToast hook usage
-  const [activeTab, setActiveTab] = useState<'users' | 'settings' | 'app-security'>('users');
+
+  const normalizeRoleForView = (role: any) => {
+    const r = String(role || '').trim().toLowerCase();
+    if (r === 'reviewer') return 'checking';
+    if (r === 'approver') return 'cpo';
+    return r;
+  };
+  const userRole = normalizeRoleForView(user?.role);
+  const isCoopManager = userRole === 'coop_manager';
+  const isAdminUser = userRole === 'admin' || userRole === 'super_admin';
+
+  const [activeTab, setActiveTab] = useState<'users' | 'settings' | 'app-security'>(
+    isCoopManager ? 'settings' : 'users',
+  );
   const [users, setUsers] = useState<User[]>([]);
   const [settings, setSettings] = useState<SystemSettings | null>(null);
   const [allowedGradesInput, setAllowedGradesInput] = useState<string>('');
@@ -132,12 +145,16 @@ export function AdminPage() {
 
   const roleOptions = useMemo(() => {
     const configured = Object.keys(roleTemplates);
+    const addCoopIfMissing = (arr: string[]) =>
+      arr.includes('coop_manager') ? arr : [...arr, 'coop_manager'];
     if (configured.length > 0) {
       // De-duplicate alias roles so UI does not show both reviewer/checking or approver/cpo.
-      return Array.from(new Set(configured.map((role) => normalizeRole(role))))
-        .sort((a, b) => a.localeCompare(b));
+      return addCoopIfMissing(
+        Array.from(new Set(configured.map((role) => normalizeRole(role))))
+          .sort((a, b) => a.localeCompare(b)),
+      );
     }
-    return ['staff', 'payroll_officer', 'checking', 'cpo', 'auditor', 'admin', 'hr_manager', 'cashier'];
+    return addCoopIfMissing(['staff', 'payroll_officer', 'checking', 'cpo', 'auditor', 'admin', 'hr_manager', 'cashier', 'payroll_loader']);
   }, [roleTemplates]);
 
   const groupedPermissions = useMemo(() => {
@@ -231,7 +248,7 @@ export function AdminPage() {
         approval_workflow: workflowStages,
       });
       if (!updatedSettings) return;
-      await settingsAPI.updateSettings(updatedSettings, user!.id, user!.email);
+      await settingsAPI.updateSettings(updatedSettings);
       await refreshSystemSettings();
       setSettings(updatedSettings);
       setIsEditingWorkflow(false);
@@ -249,8 +266,10 @@ export function AdminPage() {
   }, [activeTab]);
 
   useEffect(() => {
-    loadPermissionConfig();
-  }, []);
+    if (!isCoopManager) {
+      loadPermissionConfig();
+    }
+  }, [isCoopManager]);
 
   const loadPermissionConfig = async () => {
     try {
@@ -381,64 +400,77 @@ export function AdminPage() {
   const handleSaveSettings = async () => {
     setIsSubmitting(true);
     try {
-      // Parse allowed grades from input
-      const tokens = allowedGradesInput
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
+      if (isCoopManager) {
+        const coopOnly = {
+          loan_management_enabled: Boolean(settings?.loan_management_enabled),
+          cooperative_management_enabled: Boolean(settings?.cooperative_management_enabled),
+        };
+        const saved = normalizeSettings(
+          await settingsAPI.updateSettings(coopOnly),
+        );
+        await refreshSystemSettings();
+        setSettings(saved);
+        showToast.success('Module activation settings updated successfully');
+      } else {
+        // Parse allowed grades from input
+        const tokens = allowedGradesInput
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
 
-      const validNumericGrades: number[] = [];
-      const validAlphaNumericGrades: string[] = [];
-      const invalidTokens: string[] = [];
+        const validNumericGrades: number[] = [];
+        const validAlphaNumericGrades: string[] = [];
+        const invalidTokens: string[] = [];
 
-      for (const token of tokens) {
-        const normalized = token.toUpperCase().replace(/[\s-]+/g, '');
-        const isNumeric = /^\d+$/.test(normalized);
-        const isAlphaNumeric = /^[A-Z]+\d+$/.test(normalized);
-        if (isNumeric) {
-          const n = Number(normalized);
-          if (n >= 1 && n <= 17) {
-            validNumericGrades.push(n);
-          } else {
-            invalidTokens.push(token);
+        for (const token of tokens) {
+          const normalized = token.toUpperCase().replace(/[\s-]+/g, '');
+          const isNumeric = /^\d+$/.test(normalized);
+          const isAlphaNumeric = /^[A-Z]+\d+$/.test(normalized);
+          if (isNumeric) {
+            const n = Number(normalized);
+            if (n >= 1 && n <= 17) {
+              validNumericGrades.push(n);
+            } else {
+              invalidTokens.push(token);
+            }
+            continue;
           }
-          continue;
+          if (isAlphaNumeric) {
+            validAlphaNumericGrades.push(normalized);
+            continue;
+          }
+          invalidTokens.push(token);
         }
-        if (isAlphaNumeric) {
-          validAlphaNumericGrades.push(normalized);
-          continue;
+
+        const uniqueNumeric = Array.from(new Set(validNumericGrades)).sort((a, b) => a - b);
+        const uniqueAlpha = Array.from(new Set(validAlphaNumericGrades)).sort((a, b) =>
+          a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }),
+        );
+
+        const allowedGrades = [...uniqueNumeric, ...uniqueAlpha];
+
+        if (allowedGrades.length === 0) {
+          setAllowedGradesError('Please enter at least one valid grade level (e.g., 3, 4, CAT1, CAT4)');
+          setIsSubmitting(false);
+          return;
         }
-        invalidTokens.push(token);
-      }
+        if (invalidTokens.length > 0) {
+          setAllowedGradesError(`Invalid grade level(s): ${invalidTokens.join(', ')}`);
+          setIsSubmitting(false);
+          return;
+        }
+        setAllowedGradesError('');
 
-      const uniqueNumeric = Array.from(new Set(validNumericGrades)).sort((a, b) => a - b);
-      const uniqueAlpha = Array.from(new Set(validAlphaNumericGrades)).sort((a, b) =>
-        a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }),
-      );
-
-      const allowedGrades = [...uniqueNumeric, ...uniqueAlpha];
-
-      if (allowedGrades.length === 0) {
-        setAllowedGradesError('Please enter at least one valid grade level (e.g., 3, 4, CAT1, CAT4)');
-        setIsSubmitting(false);
-        return;
+        const updated = normalizeSettings({ ...settings, allowed_grades: allowedGrades }) as any;
+        const saved = normalizeSettings(await settingsAPI.updateSettings(updated));
+        await refreshSystemSettings();
+        setSettings(saved);
+        const allowedGradesSaved = saved?.allowed_grades;
+        if (Array.isArray(allowedGradesSaved)) {
+          setAllowedGradesInput(allowedGradesSaved.join(', '));
+        }
+        showToast.success('Settings updated successfully');
       }
-      if (invalidTokens.length > 0) {
-        setAllowedGradesError(`Invalid grade level(s): ${invalidTokens.join(', ')}`);
-        setIsSubmitting(false);
-        return;
-      }
-      setAllowedGradesError('');
-
-      const updated = normalizeSettings({ ...settings, allowed_grades: allowedGrades }) as any;
-      const saved = normalizeSettings(await settingsAPI.updateSettings(updated, user!.id, user!.email));
-      await refreshSystemSettings();
-      setSettings(saved);
-      const allowedGradesSaved = saved?.allowed_grades;
-      if (Array.isArray(allowedGradesSaved)) {
-        setAllowedGradesInput(allowedGradesSaved.join(', '));
-      }
-      showToast.success('Settings updated successfully');
     } catch (error) {
       showToast.error('Failed to update settings');
     } finally {
@@ -452,7 +484,7 @@ export function AdminPage() {
     try {
       const normalizedSettings = normalizeSettings(settings);
       if (!normalizedSettings) return;
-      const saved = normalizeSettings(await settingsAPI.updateSettings(normalizedSettings, user.id, user.email));
+      const saved = normalizeSettings(await settingsAPI.updateSettings(normalizedSettings));
       await refreshSystemSettings();
       setSettings(saved);
       showToast.success('App security settings updated successfully');
@@ -627,22 +659,28 @@ export function AdminPage() {
 
   const auditColumns: any[] = [];
 
-  const tabs = [
-    { id: 'users', label: 'User Management', icon: Users },
-    { id: 'settings', label: 'System Settings', icon: SettingsIcon },
-    { id: 'app-security', label: 'App Security', icon: Shield },
-  ];
+  const tabs = isCoopManager
+    ? [{ id: 'settings' as const, label: 'Module Activation', icon: SettingsIcon }]
+    : [
+        { id: 'users' as const, label: 'User Management', icon: Users },
+        { id: 'settings' as const, label: 'System Settings', icon: SettingsIcon },
+        { id: 'app-security' as const, label: 'App Security', icon: Shield },
+      ];
 
   return (
     <div>
-      <Breadcrumb items={[{ label: 'System Administration' }]} />
+      <Breadcrumb items={[{ label: isCoopManager ? 'Cooperative Setup' : 'System Administration' }]} />
       
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
         <div>
-          <h1 className="page-title">System Administration</h1>
-          <p className="text-muted-foreground">Manage users, system settings, and audit logs</p>
+          <h1 className="page-title">{isCoopManager ? 'Cooperative & Loan Module Setup' : 'System Administration'}</h1>
+          <p className="text-muted-foreground">
+            {isCoopManager
+              ? 'Activate or deactivate Cooperative and Loan Management modules for the organization.'
+              : 'Manage users, system settings, and audit logs'}
+          </p>
         </div>
-        {activeTab === 'users' && (
+        {!isCoopManager && activeTab === 'users' && (
           <div className="flex items-center gap-2">
             <button
               onClick={() => {
@@ -708,6 +746,57 @@ export function AdminPage() {
              <PageSkeleton mode="grid" />
         ) : (
         settings && (
+        isCoopManager ? (
+          <div className="max-w-2xl">
+            <div className="bg-card border border-border rounded-lg p-6 shadow-sm">
+              <h3 className="font-semibold text-lg text-foreground mb-2 flex items-center gap-2">
+                <SettingsIcon className="w-5 h-5 text-primary" />
+                Module Activation
+              </h3>
+              <p className="text-sm text-muted-foreground mb-6">
+                Use the switches below to activate or deactivate the Cooperative and Loan Management modules across the application.
+              </p>
+              <div className="space-y-5">
+                <label className="flex items-start gap-4 p-3 rounded-lg border border-border bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={settings.loan_management_enabled !== false}
+                    onChange={(e) => setSettings({ ...settings, loan_management_enabled: e.target.checked })}
+                    className="mt-1 w-5 h-5 text-primary rounded focus:ring-2 focus:ring-primary"
+                  />
+                  <span className="flex-1">
+                    <span className="block text-base font-medium text-foreground">Enable Loan Management</span>
+                    <span className="block text-sm text-muted-foreground mt-0.5">
+                      When disabled, loan pages are hidden and new payroll batches stop generating loan repayments.
+                    </span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-4 p-3 rounded-lg border border-border bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={settings.cooperative_management_enabled !== false}
+                    onChange={(e) => setSettings({ ...settings, cooperative_management_enabled: e.target.checked })}
+                    className="mt-1 w-5 h-5 text-primary rounded focus:ring-2 focus:ring-primary"
+                  />
+                  <span className="flex-1">
+                    <span className="block text-base font-medium text-foreground">Enable Cooperative Management</span>
+                    <span className="block text-sm text-muted-foreground mt-0.5">
+                      When disabled, cooperative pages are hidden and new payroll batches stop generating cooperative deductions.
+                    </span>
+                  </span>
+                </label>
+              </div>
+              <button
+                onClick={handleSaveSettings}
+                disabled={isSubmitting}
+                className="mt-8 w-full sm:w-auto px-6 py-2.5 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+              >
+                {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                Save Activation Settings
+              </button>
+            </div>
+          </div>
+        ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-card border border-border rounded-lg p-6">
             <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
@@ -930,6 +1019,8 @@ export function AdminPage() {
                           >
                             <option value="hr_manager">HR Manager</option>
                             <option value="payroll_officer">Payroll Officer</option>
+                            <option value="payroll_loader">Payroll Loader</option>
+                            <option value="coop_manager">Cooperative Manager</option>
                             <option value="checking">Checking</option>
                             <option value="cpo">CPO</option>
                             <option value="auditor">Auditor</option>
@@ -1015,6 +1106,7 @@ export function AdminPage() {
             </dl>
           </div>
         </div>
+        )
         )
         )}
         </>

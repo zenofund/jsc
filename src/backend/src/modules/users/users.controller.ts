@@ -20,7 +20,7 @@ export class UsersController {
   }
 
   @Get('permission-catalog')
-  @Roles('admin')
+  @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Get permission catalog and role templates' })
   @ApiResponse({ status: 200, description: 'Permission catalog retrieved successfully' })
   async getPermissionCatalog() {

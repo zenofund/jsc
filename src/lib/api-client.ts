@@ -1211,10 +1211,10 @@ export const settingsAPI = {
     });
   },
 
-  async updateSettings(settings: any, userId: string, userEmail: string) {
+  async updateSettings(settings: any) {
     return makeApiRequest('/settings', {
       method: 'PUT',
-      body: JSON.stringify({ ...settings, userId, userEmail }),
+      body: JSON.stringify(settings),
     });
   },
 

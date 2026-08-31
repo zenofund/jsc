@@ -43,7 +43,7 @@ export class StaffController {
   }
 
   @Get()
-  @Roles('admin', 'hr_manager', 'payroll_officer', 'payroll_loader')
+  @Roles('admin', 'hr_manager', 'payroll_officer', 'payroll_loader', 'coop_manager')
   @ApiOperation({ summary: 'Get all staff with pagination and filtering' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })

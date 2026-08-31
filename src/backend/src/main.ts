@@ -26,8 +26,13 @@ async function bootstrap() {
     .split(',')
     .map(origin => origin.trim())
     .filter(Boolean);
-  if (nodeEnv === 'development' && !allowedOrigins.includes('http://localhost:5174')) {
-    allowedOrigins.push('http://localhost:5174');
+  if (nodeEnv === 'development') {
+    const devOrigins = ['http://localhost:5173', 'http://localhost:5174', 'http://127.0.0.1:5173', 'http://127.0.0.1:5174'];
+    for (const devOrigin of devOrigins) {
+      if (!allowedOrigins.includes(devOrigin)) {
+        allowedOrigins.push(devOrigin);
+      }
+    }
   }
   app.enableCors({
     origin: allowedOrigins,

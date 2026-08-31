@@ -1,12 +1,11 @@
 import React from 'react';
 import { Modal } from './Modal';
 import { PayrollBatch, PayrollLine } from '../types/entities';
-import { User, Calculator, CalendarClock, Loader2, Download, FileText, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { User, Calculator, CalendarClock, Loader2, Download, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { getProrationBadgeText } from '../lib/proration-calculator';
 import { formatCurrency } from '../utils/format';
 import { payrollAPI } from '../lib/api-client';
 import { getBankByName } from '../constants/banks';
-import { loadPdfMake } from '../utils/loadPdfMake';
 import { exportSpreadsheet } from '../utils/exportSpreadsheet';
 import { useToast } from './Toast';
 import { useSystemSettings } from '../contexts/SystemSettingsContext';
@@ -42,7 +41,7 @@ export function ViewPayrollLinesModal({
 }: ViewPayrollLinesModalProps) {
   const { showToast } = useToast();
   const { loanManagementEnabled, cooperativeManagementEnabled } = useSystemSettings();
-  const [exporting, setExporting] = React.useState<'csv' | 'pdf' | null>(null);
+  const [exporting, setExporting] = React.useState<'csv' | null>(null);
   const [searchTerm, setSearchTerm] = React.useState('');
 
   const getGradeKey = (gradeLevel: unknown) => {
@@ -374,110 +373,6 @@ export function ViewPayrollLinesModal({
     }
   };
 
-  const handleExportPDF = async () => {
-    try {
-      setExporting('pdf');
-      showToast('info', 'Preparing payroll lines PDF export...');
-      const response = await payrollAPI.getPayrollLines(batch.id, { limit: 100000, sort: sortDirection });
-      const allLinesRaw = Array.isArray(response) ? response : (response.data || []);
-      const allLines = [...allLinesRaw].sort((a, b) => compareLines(a, b, sortDirection));
-
-      if (allLines.length === 0) {
-        showToast('warning', 'No payroll lines available to export');
-        return;
-      }
-
-      const { columns, moneyTotals } = collectExportModel(allLines);
-
-      const formatPDFMoney = (amount: number) =>
-        '₦' + round2(amount).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-      const tableBody: any[] = [];
-      tableBody.push(
-        columns.map((c) => ({
-          text: c.header,
-          bold: true,
-          color: 'white',
-          fillColor: '#008000',
-          fontSize: 8,
-          margin: [3, 3, 3, 3],
-        })),
-      );
-
-      allLines.forEach((line, index) => {
-        tableBody.push(
-          columns.map((c) => {
-            const value = c.get(line, index);
-            if (!c.isMoney) {
-              return { text: value || '', fontSize: 7, margin: [3, 2, 3, 2] };
-            }
-            return { text: formatPDFMoney(toNumber(value)), alignment: 'right', fontSize: 7, margin: [3, 2, 3, 2] };
-          }),
-        );
-      });
-
-      tableBody.push(
-        columns.map((c) => {
-          if (c.id === 'staff_name') {
-            return { text: 'TOTAL', bold: true, fontSize: 8, margin: [3, 3, 3, 3] };
-          }
-          if (!c.isMoney) {
-            return { text: '', fontSize: 8, margin: [3, 3, 3, 3] };
-          }
-          return {
-            text: formatPDFMoney(moneyTotals.get(c.id) ?? 0),
-            alignment: 'right',
-            bold: true,
-            fontSize: 8,
-            margin: [3, 3, 3, 3],
-          };
-        }),
-      );
-
-      const docDefinition = {
-        pageOrientation: 'landscape',
-        pageMargins: [20, 20, 20, 20],
-        content: [
-          { text: 'Nigerian Judicial Service Committee', fontSize: 14, bold: true, color: '#008000', margin: [0, 0, 0, 4] },
-          { text: `Payroll Lines - Batch ${batch.batch_number}`, fontSize: 12, bold: true, margin: [0, 0, 0, 2] },
-          { text: `Generated: ${new Date().toLocaleDateString()}`, fontSize: 9, color: '#6b7280', margin: [0, 0, 0, 10] },
-          {
-            table: {
-              headerRows: 1,
-              widths: columns.map((c) => {
-                if (c.id === 'sn') return 'auto';
-                if (c.id === 'staff_name') return '*';
-                return 'auto';
-              }),
-              body: tableBody,
-            },
-            layout: {
-              fillColor: (rowIndex: number) => {
-                if (rowIndex === 0) return '#008000';
-                return rowIndex % 2 === 0 ? '#F9FAFB' : null;
-              },
-              hLineColor: () => '#e5e7eb',
-              vLineColor: () => '#e5e7eb',
-              paddingLeft: () => 2,
-              paddingRight: () => 2,
-              paddingTop: () => 2,
-              paddingBottom: () => 2,
-            },
-          },
-        ],
-      };
-
-      const pdfMake = await loadPdfMake();
-      const filename = `payroll_lines_${batch.batch_number}_${new Date().toISOString().split('T')[0]}.pdf`;
-      pdfMake.createPdf(docDefinition).download(filename);
-      showToast('success', 'Payroll lines PDF export downloaded');
-    } catch (error: any) {
-      console.error('PDF export failed', error);
-      showToast('error', error.message || 'Failed to export payroll lines to PDF');
-    } finally {
-      setExporting(null);
-    }
-  };
 
 
   const toggleSort = () => {
@@ -527,14 +422,6 @@ export function ViewPayrollLinesModal({
                 >
                     {exporting === 'csv' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
                     Export Excel
-                </button>
-                <button
-                    onClick={handleExportPDF}
-                    disabled={exporting !== null || isLoading}
-                    className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 border border-border text-foreground rounded-md hover:bg-accent disabled:opacity-50"
-                >
-                    {exporting === 'pdf' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
-                    Export PDF
                 </button>
               </div>
             </div>

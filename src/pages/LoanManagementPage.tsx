@@ -366,7 +366,7 @@ function ApplicationsTab({
     });
   }, [staffDirectory, staffSearchTerm]);
 
-  const canEditDisbursedApplications = user?.role === 'admin' || user?.role === 'payroll_officer';
+  const canEditDisbursedApplications = user?.role === 'coop_manager';
   const getApplicationLoanType = (application: LoanApplication) =>
     loanTypes.find((loanType) => loanType.id === application.loan_type_id || loanType.name === application.loan_type_name) || null;
   const getApplicationDisbursement = (applicationId: string) =>
@@ -1682,7 +1682,7 @@ function DisbursementsTab({
   });
   const [editData, setEditData] = useState<DisbursementEditForm | null>(null);
   const [isEditing, setIsEditing] = useState(false);
-  const canEditDisbursements = user?.role === 'admin' || user?.role === 'payroll_officer';
+  const canEditDisbursements = user?.role === 'coop_manager';
   const getDisbursementLoanType = (disbursement: LoanDisbursement) =>
     loanTypes.find(
       (loanType) =>

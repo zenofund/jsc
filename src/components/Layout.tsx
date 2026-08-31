@@ -196,18 +196,25 @@ export function Layout({ children }: LayoutProps) {
     },
     {
       group: 'Financial Services',
-      roles: ['admin', 'payroll_officer', 'cashier'],
+      roles: ['admin', 'payroll_officer', 'cashier', 'coop_manager'],
       items: [
         ...(loanManagementEnabled
-          ? [{ name: 'Loan Management', icon: Wallet, view: 'loan-management', roles: ['admin', 'payroll_officer'] }]
+          ? [{ name: 'Loan Management', icon: Wallet, view: 'loan-management', roles: ['coop_manager'] }]
           : []),
         ...(cooperativeManagementEnabled
           ? [
-              { name: 'Cooperative Management', icon: Users, view: 'cooperative-management', roles: ['admin', 'payroll_officer'] },
-              { name: 'Cooperative Reports', icon: Building2, view: 'cooperative-reports', roles: ['admin', 'payroll_officer'] },
+              { name: 'Cooperative Management', icon: Users, view: 'cooperative-management', roles: ['coop_manager'] },
+              { name: 'Cooperative Reports', icon: Building2, view: 'cooperative-reports', roles: ['coop_manager'] },
             ]
           : []),
         { name: 'E-Mandate', icon: Building2, view: 'bank-payments', roles: ['admin', 'payroll_officer', 'cashier'] },
+      ],
+    },
+    {
+      group: 'Cooperative Setup',
+      roles: ['coop_manager'],
+      items: [
+        { name: 'Module Activation', icon: Settings, view: 'admin', roles: ['coop_manager'] },
       ],
     },
     {
@@ -233,7 +240,12 @@ export function Layout({ children }: LayoutProps) {
   ];
 
   const standaloneNavigation = [
-    { name: 'Dashboard', icon: LayoutDashboard, view: 'dashboard', roles: ['admin', 'payroll_officer', 'hr_manager', 'cpo', 'checking', 'auditor', 'cashier', 'payroll_loader'] },
+    {
+      name: 'Dashboard',
+      icon: LayoutDashboard,
+      view: String(user?.role || '').trim().toLowerCase() === 'coop_manager' ? 'coop-dashboard' : 'dashboard',
+      roles: ['admin', 'payroll_officer', 'hr_manager', 'cpo', 'checking', 'auditor', 'cashier', 'payroll_loader', 'coop_manager'],
+    },
     { name: 'Staff Portal', icon: UserCircle, view: 'staff-portal', roles: ['staff'] },
     { name: 'My Requests', icon: FileText, view: 'staff-request-status', roles: ['staff'] },
     { name: 'Approvals', icon: CheckSquare, view: 'approvals', roles: approvalRoles },

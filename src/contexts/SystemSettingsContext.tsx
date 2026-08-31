@@ -35,23 +35,32 @@ function persistCachedSettings(settings: SystemSettings) {
 export function SystemSettingsProvider({ children }: { children: React.ReactNode }) {
   const [settings, setSettings] = useState<SystemSettings | null>(() => loadCachedSettings());
   const [loading, setLoading] = useState(settings === null);
-  const [loadedOnce, setLoadedOnce] = useState(settings !== null);
+  const loadedOnceRef = React.useRef(settings !== null);
+  const inflightRef = React.useRef<Promise<void> | null>(null);
 
   const refresh = useCallback(async () => {
-    const shouldShowLoading = !loadedOnce && settings === null;
-    try {
-      const data = await settingsAPI.getSettings();
-      setSettings(data);
-      persistCachedSettings(data);
-    } catch (error) {
-      console.error('Failed to load system settings:', error);
-    } finally {
-      setLoadedOnce(true);
-      if (shouldShowLoading) {
-        setLoading(false);
+    if (inflightRef.current) return inflightRef.current;
+    const shouldShowLoading = !loadedOnceRef.current && settings === null;
+    const doRefresh = (async () => {
+      try {
+        const data = await settingsAPI.getSettings();
+        setSettings(data);
+        persistCachedSettings(data);
+      } catch (error) {
+        console.error('Failed to load system settings:', error);
+      } finally {
+        loadedOnceRef.current = true;
+        inflightRef.current = null;
+        if (shouldShowLoading) {
+          setLoading(false);
+        }
       }
-    }
-  }, [loadedOnce, settings]);
+    })();
+    inflightRef.current = doRefresh;
+    return doRefresh;
+  }, []);
+
+  const loadedOnce = loadedOnceRef.current;
 
   useEffect(() => {
     refresh();

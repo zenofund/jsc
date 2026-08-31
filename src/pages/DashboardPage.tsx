@@ -34,6 +34,10 @@ export function DashboardPage() {
       (window as any).navigateTo?.('cashier-dashboard');
       return;
     }
+    if (user?.role === 'coop_manager') {
+      (window as any).navigateTo?.('coop-dashboard');
+      return;
+    }
     // Redirect Reviewers, Approvers, and Auditors to their dedicated dashboard
     if (['checking', 'cpo', 'auditor', 'audit'].includes(normalizedRole)) {
       (window as any).navigateTo?.('approvals');

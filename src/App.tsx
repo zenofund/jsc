@@ -12,6 +12,7 @@ import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { HRDashboardPage } from './pages/HRDashboardPage';
 import { CashierDashboardPage } from './pages/CashierDashboardPage';
+import { CooperativeDashboardPage } from './pages/CooperativeDashboardPage';
 import { StaffListPage } from './pages/StaffListPage';
 import { PayrollPage } from './pages/PayrollPage';
 import { ArrearsPage } from './pages/ArrearsPage';
@@ -55,6 +56,9 @@ const getDefaultViewForUser = (user: { role?: string | null }) => {
   if (role === 'cashier') {
     return 'cashier-dashboard' as const;
   }
+  if (role === 'coop_manager') {
+    return 'coop-dashboard' as const;
+  }
   if (['checking', 'cpo', 'auditor', 'audit'].includes(normalizedRole)) {
     return 'approvals' as const;
   }
@@ -88,8 +92,17 @@ function AppContent() {
 
 function AuthenticatedAppContent({ user }: { user: any }) {
   const { settings, loanManagementEnabled, cooperativeManagementEnabled } = useSystemSettings();
-  const [currentView, setCurrentView] = useState<'dashboard' | 'hr-dashboard' | 'cashier-dashboard' | 'staff' | 'staff-portal' | 'staff-request-status' | 'staff-requests' | 'payroll' | 'promotions' | 'arrears' | 'approvals' | 'payslips' | 'reports' | 'setup' | 'admin' | 'loan-management' | 'department-management' | 'staff-allowances' | 'staff-adjustment-approvals' | 'leave-management' | 'bank-payments' | 'notifications' | 'cooperative-reports' | 'cooperative-management' | 'custom-report-builder' | 'reports-list' | 'smtp-settings' | 'change-password' | 'audit-log' | 'tax-configuration'>('dashboard');
+  const [currentView, setCurrentView] = useState<'dashboard' | 'coop-dashboard' | 'hr-dashboard' | 'cashier-dashboard' | 'staff' | 'staff-portal' | 'staff-request-status' | 'staff-requests' | 'payroll' | 'promotions' | 'arrears' | 'approvals' | 'payslips' | 'reports' | 'setup' | 'admin' | 'loan-management' | 'department-management' | 'staff-allowances' | 'staff-adjustment-approvals' | 'leave-management' | 'bank-payments' | 'notifications' | 'cooperative-reports' | 'cooperative-management' | 'custom-report-builder' | 'reports-list' | 'smtp-settings' | 'change-password' | 'audit-log' | 'tax-configuration'>('dashboard');
   const [geoFenceBanner, setGeoFenceBanner] = useState<string | null>(null);
+
+  const normalizeRole = (role: any) => {
+    const r = String(role || '').trim().toLowerCase();
+    if (r === 'reviewer') return 'checking';
+    if (r === 'approver') return 'cpo';
+    return r;
+  };
+  const userRole = normalizeRole(user?.role);
+  const isCoopManager = userRole === 'coop_manager';
 
   // Set initial view based on user role
   useEffect(() => {
@@ -120,6 +133,16 @@ function AuthenticatedAppContent({ user }: { user: any }) {
   }, [user, currentView]);
 
   useEffect(() => {
+    const coopViews = ['loan-management', 'cooperative-management', 'cooperative-reports'] as const;
+    const tryingCoopView = coopViews.includes(currentView as any);
+
+    // 1. Role gate: only Coop Manager can ever see these views
+    if (tryingCoopView && !isCoopManager) {
+      setCurrentView(getDefaultViewForUser(user));
+      return;
+    }
+
+    // 2. Feature toggle gate: Coop Manager themselves are blocked if the module is toggled off
     if (currentView === 'loan-management' && !loanManagementEnabled) {
       setCurrentView(getDefaultViewForUser(user));
       return;
@@ -127,7 +150,7 @@ function AuthenticatedAppContent({ user }: { user: any }) {
     if ((currentView === 'cooperative-management' || currentView === 'cooperative-reports') && !cooperativeManagementEnabled) {
       setCurrentView(getDefaultViewForUser(user));
     }
-  }, [cooperativeManagementEnabled, currentView, loanManagementEnabled, user]);
+  }, [cooperativeManagementEnabled, currentView, isCoopManager, loanManagementEnabled, user]);
 
   useEffect(() => {
     const handleGeoFenceDenied = (event: Event) => {
@@ -175,6 +198,7 @@ function AuthenticatedAppContent({ user }: { user: any }) {
       ) : (
         <>
       {currentView === 'dashboard' && <DashboardPage />}
+      {currentView === 'coop-dashboard' && isCoopManager && <CooperativeDashboardPage />}
       {currentView === 'hr-dashboard' && <HRDashboardPage />}
       {currentView === 'cashier-dashboard' && <CashierDashboardPage />}
       {currentView === 'staff-portal' && <StaffPortalPage />}
@@ -190,15 +214,15 @@ function AuthenticatedAppContent({ user }: { user: any }) {
       {currentView === 'reports' && <ReportsPage />}
       {currentView === 'setup' && <PayrollSetupPage />}
       {currentView === 'admin' && <AdminPage />}
-      {currentView === 'loan-management' && loanManagementEnabled && <LoanManagementPage />}
+      {currentView === 'loan-management' && isCoopManager && loanManagementEnabled && <LoanManagementPage />}
       {currentView === 'department-management' && <DepartmentManagementPage />}
       {currentView === 'staff-allowances' && <StaffAllowancesPage />}
       {currentView === 'staff-adjustment-approvals' && <StaffAdjustmentApprovalPage />}
       {currentView === 'leave-management' && <LeaveManagementPage />}
       {currentView === 'bank-payments' && <BankPaymentsPage />}
       {currentView === 'notifications' && <NotificationsPage />}
-      {currentView === 'cooperative-reports' && cooperativeManagementEnabled && <CooperativeReportsPage />}
-      {currentView === 'cooperative-management' && cooperativeManagementEnabled && <CooperativeManagementPage />}
+      {currentView === 'cooperative-reports' && isCoopManager && cooperativeManagementEnabled && <CooperativeReportsPage />}
+      {currentView === 'cooperative-management' && isCoopManager && cooperativeManagementEnabled && <CooperativeManagementPage />}
       {currentView === 'custom-report-builder' && <CustomReportBuilderPage />}
       {currentView === 'reports-list' && <ReportsListPage />}
       {currentView === 'smtp-settings' && <SmtpSettingsPage />}

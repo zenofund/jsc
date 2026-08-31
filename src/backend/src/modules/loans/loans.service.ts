@@ -520,8 +520,8 @@ export class LoansService implements OnModuleInit {
       throw new BadRequestException('Can only update draft or disbursed applications');
     }
 
-    if (isDisbursedApplication && !['admin', 'payroll_officer'].includes(String(userRole || ''))) {
-      throw new ForbiddenException('Only admin and payroll officers can edit disbursed applications');
+    if (isDisbursedApplication && String(userRole || '').trim().toLowerCase() !== 'coop_manager') {
+      throw new ForbiddenException('Only cooperative managers can edit disbursed applications');
     }
 
     const loanType = await this.findOneLoanType(application.loan_type_id);
