@@ -914,42 +914,6 @@ export function AdminPage() {
                   Comma-separated list; supports numeric (1–17) and alphanumeric (e.g., CAT1, CAT4).
                 </p>
               </div>
-              <div className="rounded-lg border border-border bg-muted/20 p-4 space-y-4">
-                <div>
-                  <h4 className="text-sm font-medium text-foreground">Module Availability</h4>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Disable these modules to remove them from the app and stop future payroll deductions tied to them.
-                  </p>
-                </div>
-                <label className="flex items-start gap-3">
-                  <input
-                    type="checkbox"
-                    checked={settings.loan_management_enabled !== false}
-                    onChange={(e) => setSettings({ ...settings, loan_management_enabled: e.target.checked })}
-                    className="mt-0.5 w-4 h-4 text-primary rounded focus:ring-2 focus:ring-primary"
-                  />
-                  <span>
-                    <span className="block text-sm text-foreground">Enable Loan Management</span>
-                    <span className="block text-xs text-muted-foreground">
-                      When disabled, loan pages are hidden and new payroll batches stop generating loan repayments.
-                    </span>
-                  </span>
-                </label>
-                <label className="flex items-start gap-3">
-                  <input
-                    type="checkbox"
-                    checked={settings.cooperative_management_enabled !== false}
-                    onChange={(e) => setSettings({ ...settings, cooperative_management_enabled: e.target.checked })}
-                    className="mt-0.5 w-4 h-4 text-primary rounded focus:ring-2 focus:ring-primary"
-                  />
-                  <span>
-                    <span className="block text-sm text-foreground">Enable Cooperative Management</span>
-                    <span className="block text-xs text-muted-foreground">
-                      When disabled, cooperative pages are hidden and new payroll batches stop generating cooperative deductions.
-                    </span>
-                  </span>
-                </label>
-              </div>
             </div>
             <button
               onClick={handleSaveSettings}
