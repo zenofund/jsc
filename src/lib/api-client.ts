@@ -1142,8 +1142,10 @@ export const reportAPI = {
     });
   },
 
-  async getVarianceReport(month1: string, month2: string): Promise<any> {
-    return makeApiRequest(`/reports/variance?month1=${month1}&month2=${month2}`, {
+  async getVarianceReport(month1: string, month2: string, bankGroupId?: string): Promise<any> {
+    const params = new URLSearchParams({ month1, month2 });
+    if (bankGroupId) params.append('bank_group_id', bankGroupId);
+    return makeApiRequest(`/reports/variance?${params.toString()}`, {
       method: 'GET',
     });
   },

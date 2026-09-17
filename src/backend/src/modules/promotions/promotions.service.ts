@@ -5,6 +5,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationCategory, NotificationPriority, NotificationType } from '../notifications/dto/notification.dto';
 import { AuditService } from '@modules/audit/audit.service';
 import { AuditAction } from '@modules/audit/dto/audit.dto';
+import { PayeCalculatorService } from '@common/tax/paye-calculator.service';
 
 @Injectable()
 export class PromotionsService {
@@ -17,6 +18,7 @@ export class PromotionsService {
     private readonly salaryLookupService: SalaryLookupService,
     private readonly notificationsService: NotificationsService,
     private readonly auditService: AuditService,
+    private readonly payeCalculator: PayeCalculatorService,
   ) {}
 
   private roundCurrency(value: number) {
@@ -1390,8 +1392,39 @@ export class PromotionsService {
 
     const monthlyDifference = this.roundCurrency(newGrossSalary - oldGrossSalary);
     const basicMonthlyDifference = this.roundCurrency(newBasicSalary - oldBasicSalary);
-    const { monthsDiff, proratedFirstMonth, fullMonthsAfter, totalArrears, basicTotalArrears } =
+    const breakdown =
       this.calculatePromotionArrearsBreakdown(effectiveDate, monthlyDifference, basicMonthlyDifference);
+    const arrearsDeductions = await this.calculatePromotionArrearsDeductionBreakdown(
+      newDeductions.items,
+      breakdown.totalArrears,
+      breakdown.basicTotalArrears,
+    );
+    const taxSettings = await this.databaseService.queryOne(
+      `SELECT tax_configuration FROM system_settings WHERE key = 'general_settings'`,
+    );
+    const taxConfig = taxSettings?.tax_configuration || {};
+    const isContractStaff = String(staff.employment_type || '').trim().toLowerCase() === 'contract';
+    const regularReliefs = this.getPayeReliefAmounts(newDeductions.items);
+    const regularTax = this.payeCalculator.calculate(
+      newGrossSalary,
+      newAllowances.items,
+      taxConfig,
+      isContractStaff,
+      regularReliefs.pension,
+      regularReliefs.nhf,
+      regularReliefs.nhia,
+    );
+    const arrearsTax = this.payeCalculator.calculate(
+      this.roundCurrency(newGrossSalary + breakdown.totalArrears),
+      [...newAllowances.items, { code: 'ARREAR', name: 'Promotion Arrears', amount: breakdown.totalArrears, is_taxable: true }],
+      taxConfig,
+      isContractStaff,
+      regularReliefs.pension + arrearsDeductions.payeReliefs.pension,
+      regularReliefs.nhf + arrearsDeductions.payeReliefs.nhf,
+      regularReliefs.nhia + arrearsDeductions.payeReliefs.nhia,
+    );
+    const payeOnPromotionArrears = this.roundCurrency(Math.max(0, arrearsTax.monthly_tax - regularTax.monthly_tax));
+    const totalArrearsDeductions = this.roundCurrency(arrearsDeductions.total + payeOnPromotionArrears);
 
     return {
       oldBasicSalary,
@@ -1400,17 +1433,22 @@ export class PromotionsService {
       oldNetSalary,
       newNetSalary,
       monthlyDifference,
-      monthsDiff,
-      proratedFirstMonth,
-      fullMonthsAfter,
-      totalArrears,
+      monthsDiff: breakdown.monthsDiff,
+      proratedFirstMonth: breakdown.proratedFirstMonth,
+      fullMonthsAfter: breakdown.fullMonthsAfter,
+      totalArrears: breakdown.totalArrears,
       oldGrossSalary,
       newGrossSalary,
       oldAllowances,
       newAllowances,
       oldDeductions,
       newDeductions,
-      basicTotalArrears,
+      basicTotalArrears: breakdown.basicTotalArrears,
+      arrearsDeductions,
+      regularPaye: regularTax.monthly_tax,
+      payeOnPromotionArrears,
+      totalArrearsDeductions,
+      estimatedNetArrears: this.roundCurrency(breakdown.totalArrears - totalArrearsDeductions),
     };
   }
 
@@ -1618,7 +1656,7 @@ export class PromotionsService {
     staffId: string,
     basicSalary: number,
     gradeLevel?: string | number,
-  ): Promise<{ total: number; items: Array<{ code: string; name: string; amount: number; type: string; source: string; calculation_basis?: string }> }> {
+  ): Promise<{ total: number; items: Array<{ code: string; name: string; amount: number; type: string; source: string; calculation_basis?: string; is_taxable?: boolean }> }> {
     const staffMember = await this.getPayrollContextStaff(staffId, gradeLevel);
     const globalAllowances = await this.databaseService.query(
       `SELECT * FROM allowances WHERE status = 'active' AND applies_to_all = true`,
@@ -1628,6 +1666,7 @@ export class PromotionsService {
       `SELECT sa.*,
               COALESCE(sa.custom_type, a.type) as allowance_type,
               COALESCE(sa.custom_calculation_basis, a.calculation_basis, 'basic') as calculation_basis,
+              COALESCE(sa.custom_is_taxable, a.is_taxable, true) as is_taxable,
               a.percentage as global_percentage,
               COALESCE(sa.custom_allowance_name, a.name) as allowance_name,
               COALESCE(sa.custom_allowance_code, a.code) as allowance_code
@@ -1637,7 +1676,7 @@ export class PromotionsService {
       [staffId],
     );
 
-    const items: Array<{ code: string; name: string; amount: number; type: string; source: string; calculation_basis?: string }> = [];
+    const items: Array<{ code: string; name: string; amount: number; type: string; source: string; calculation_basis?: string; is_taxable?: boolean }> = [];
     let total = 0;
 
     for (const allowance of globalAllowances) {
@@ -1659,6 +1698,7 @@ export class PromotionsService {
           type: allowance.type,
           calculation_basis: this.normalizeCalculationBasis(allowance.calculation_basis),
           source: 'global',
+          is_taxable: allowance.is_taxable !== false,
         });
         total += amount;
       }
@@ -1681,6 +1721,7 @@ export class PromotionsService {
           type,
           calculation_basis: this.normalizeCalculationBasis(allowance.calculation_basis),
           source: 'staff',
+          is_taxable: allowance.is_taxable !== false,
         });
         total += amount;
       }
@@ -1711,6 +1752,7 @@ export class PromotionsService {
           type: allowance.type,
           calculation_basis: 'gross',
           source: 'global',
+          is_taxable: allowance.is_taxable !== false,
         });
         total += amount;
       }
@@ -1737,6 +1779,7 @@ export class PromotionsService {
           type,
           calculation_basis: 'gross',
           source: 'staff',
+          is_taxable: allowance.is_taxable !== false,
         });
         total += amount;
       }
@@ -1745,17 +1788,79 @@ export class PromotionsService {
     return { total, items };
   }
 
+  private getPayeReliefAmounts(items: any[]) {
+    return (items || []).reduce((result, item: any) => {
+      if (item.is_paye_relief !== true) return result;
+      const code = String(item.code || '').toUpperCase();
+      const name = String(item.name || '').toUpperCase();
+      if (code === 'PENSION' || name.includes('PENSION')) result.pension += this.roundCurrency(item.amount);
+      if (code === 'NHF' || name.includes('NHF') || name.includes('HOUSING FUND')) result.nhf += this.roundCurrency(item.amount);
+      if (code === 'NHIA' || code === 'NHIS' || name.includes('NHIA') || name.includes('NHIS') || name.includes('HEALTH INSURANCE')) result.nhia += this.roundCurrency(item.amount);
+      return result;
+    }, { pension: 0, nhf: 0, nhia: 0 });
+  }
+
+  private async calculatePromotionArrearsDeductionBreakdown(
+    deductionItems: any[],
+    grossArrears: number,
+    basicArrears: number,
+  ) {
+    const items: any[] = [];
+    const seen = new Set<string>();
+    const payeReliefs = { pension: 0, nhf: 0, nhia: 0 };
+    for (const deduction of deductionItems || []) {
+      if (deduction.applies_to_promotion_arrears !== true) continue;
+      const code = String(deduction.code || '').toUpperCase();
+      if (!code || seen.has(code)) continue;
+      seen.add(code);
+      const basis = deduction.promotion_arrears_basis === 'gross' ? 'gross' : 'basic';
+      const base = basis === 'gross' ? grossArrears : basicArrears;
+      const amount = deduction.type === 'percentage'
+        ? this.roundCurrency((base * Number(deduction.percentage || 0)) / 100)
+        : this.roundCurrency(Number(deduction.amount || 0));
+      if (amount <= 0) continue;
+      const item = {
+        code: `${deduction.code}_ARREARS`,
+        name: `${deduction.name} (Promotion Arrears)`,
+        amount,
+        type: deduction.type,
+        source: deduction.source,
+        calculation_basis: basis,
+        is_paye_relief: deduction.is_paye_relief === true,
+      };
+      items.push(item);
+      const relief = this.getPayeReliefAmounts([{ ...deduction, amount }]);
+      payeReliefs.pension += relief.pension;
+      payeReliefs.nhf += relief.nhf;
+      payeReliefs.nhia += relief.nhia;
+    }
+    return { total: this.roundCurrency(items.reduce((sum, item) => sum + item.amount, 0)), items, payeReliefs };
+  }
+
   private async calculateDeductionBreakdown(
     staffId: string,
     basicSalary: number,
     gradeLevel?: string | number,
-  ): Promise<{ total: number; items: Array<{ code: string; name: string; amount: number; type: string; source: string; calculation_basis?: string }> }> {
+  ): Promise<{ total: number; items: Array<{ code: string; name: string; amount: number; type: string; source: string; calculation_basis?: string; applies_to_promotion_arrears?: boolean; promotion_arrears_basis?: string; is_paye_relief?: boolean }> }> {
     const staffMember = await this.getPayrollContextStaff(staffId, gradeLevel);
     const globalDeductions = await this.databaseService.query(
       `SELECT * FROM deductions WHERE status = 'active' AND applies_to_all = true AND code != 'TAX'`,
     );
+    const staffDeductions = await this.databaseService.query(
+      `SELECT sd.*,
+              COALESCE(sd.custom_deduction_name, d.name) as deduction_name,
+              COALESCE(sd.custom_deduction_code, d.code) as deduction_code,
+              COALESCE(sd.custom_type, d.type) as type,
+              COALESCE(sd.custom_calculation_basis, d.calculation_basis, 'basic') as calculation_basis,
+              d.applies_to_promotion_arrears, d.promotion_arrears_basis, d.is_paye_relief,
+              d.excluded_grades, d.excluded_employment_types
+       FROM staff_deductions sd
+       LEFT JOIN deductions d ON sd.deduction_id = d.id
+       WHERE sd.status = 'active' AND sd.staff_id = $1`,
+      [staffId],
+    );
 
-    const items: Array<{ code: string; name: string; amount: number; type: string; source: string; calculation_basis?: string }> = [];
+    const items: Array<{ code: string; name: string; amount: number; type: string; source: string; calculation_basis?: string; applies_to_promotion_arrears?: boolean; promotion_arrears_basis?: string; is_paye_relief?: boolean }> = [];
     let total = 0;
     const grossSalary = await this.calculateGrossSalary(staffId, basicSalary, gradeLevel);
 
@@ -1783,9 +1888,34 @@ export class PromotionsService {
           type: deduction.type,
           calculation_basis: this.normalizeCalculationBasis(deduction.calculation_basis),
           source: 'global',
+          applies_to_promotion_arrears: deduction.applies_to_promotion_arrears === true,
+          promotion_arrears_basis: deduction.promotion_arrears_basis,
+          is_paye_relief: deduction.is_paye_relief === true,
         });
         total += amount;
       }
+    }
+
+    for (const deduction of staffDeductions) {
+      if (staffMember && this.isExcludedFromGlobalItem(deduction, staffMember)) continue;
+      let amount = 0;
+      if (deduction.type === 'fixed') amount = Number(deduction.amount || 0);
+      if (deduction.type === 'percentage') {
+        amount = this.calculatePercentageAmount(deduction.percentage, basicSalary, grossSalary, deduction.calculation_basis);
+      }
+      if (amount <= 0) continue;
+      items.push({
+        code: deduction.deduction_code || deduction.code,
+        name: deduction.deduction_name || deduction.name,
+        amount,
+        type: deduction.type,
+        calculation_basis: this.normalizeCalculationBasis(deduction.calculation_basis),
+        source: 'staff',
+        applies_to_promotion_arrears: deduction.applies_to_promotion_arrears === true,
+        promotion_arrears_basis: deduction.promotion_arrears_basis,
+        is_paye_relief: deduction.is_paye_relief === true,
+      });
+      total += amount;
     }
 
     return { total, items };

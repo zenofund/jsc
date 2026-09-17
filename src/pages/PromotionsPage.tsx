@@ -104,6 +104,11 @@ export function PromotionsPage() {
     newAllowances: { total: number; items: Array<{ code: string; name: string; amount: number; type: string; source: string }> };
     oldDeductions: { total: number; items: Array<{ code: string; name: string; amount: number; type: string; source: string }> };
     newDeductions: { total: number; items: Array<{ code: string; name: string; amount: number; type: string; source: string }> };
+    arrearsDeductions: { total: number; items: Array<{ code: string; name: string; amount: number; type: string; source: string; calculation_basis?: string }> };
+    regularPaye: number;
+    payeOnPromotionArrears: number;
+    totalArrearsDeductions: number;
+    estimatedNetArrears: number;
     proratedFirstMonth: number;
     fullMonthsAfter: number;
   } | null>(null);
@@ -163,6 +168,11 @@ export function PromotionsPage() {
       newAllowances: buildEmptyBreakdown(),
       oldDeductions: buildEmptyBreakdown(),
       newDeductions: buildEmptyBreakdown(),
+      arrearsDeductions: buildEmptyBreakdown(),
+      regularPaye: 0,
+      payeOnPromotionArrears: 0,
+      totalArrearsDeductions: 0,
+      estimatedNetArrears: Number(arrears?.total_arrears ?? arrears?.totalArrears ?? 0),
       proratedFirstMonth: Number(Array.isArray(arrears?.details) ? arrears.details[0]?.amount ?? 0 : 0),
       fullMonthsAfter: Math.max(0, Number(arrears?.months_owed ?? 0) - 1),
     };
@@ -292,6 +302,11 @@ export function PromotionsPage() {
         newAllowances: result.newAllowances,
         oldDeductions: result.oldDeductions,
         newDeductions: result.newDeductions,
+        arrearsDeductions: result.arrearsDeductions,
+        regularPaye: result.regularPaye,
+        payeOnPromotionArrears: result.payeOnPromotionArrears,
+        totalArrearsDeductions: result.totalArrearsDeductions,
+        estimatedNetArrears: result.estimatedNetArrears,
         proratedFirstMonth: result.proratedFirstMonth,
         fullMonthsAfter: result.fullMonthsAfter,
       });
@@ -385,6 +400,11 @@ export function PromotionsPage() {
           newAllowances: result.newAllowances,
           oldDeductions: result.oldDeductions,
           newDeductions: result.newDeductions,
+          arrearsDeductions: result.arrearsDeductions,
+          regularPaye: result.regularPaye,
+          payeOnPromotionArrears: result.payeOnPromotionArrears,
+          totalArrearsDeductions: result.totalArrearsDeductions,
+          estimatedNetArrears: result.estimatedNetArrears,
           proratedFirstMonth: result.proratedFirstMonth,
           fullMonthsAfter: result.fullMonthsAfter,
         });
@@ -1334,9 +1354,38 @@ export function PromotionsPage() {
                     </div>
                   </div>
                   <div className="mt-3 pt-3 border-t border-orange-200 dark:border-orange-800">
-                    <span className="text-orange-700 dark:text-orange-300 text-sm">Total Arrears:</span>
+                    <span className="text-orange-700 dark:text-orange-300 text-sm">Gross Promotion Arrears:</span>
                     <div className="text-xl font-bold text-orange-900 dark:text-orange-100">
                       {formatCurrency(arrearsPreview.totalArrears)}
+                    </div>
+                  </div>
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                    <div className="rounded-lg border border-orange-200 dark:border-orange-900 bg-white/60 dark:bg-orange-950/40 p-3">
+                      <div className="text-xs text-orange-800 dark:text-orange-300 mb-2">Arrears Deductions (Admin Policy)</div>
+                      <div className="space-y-1">
+                        {(arrearsPreview.arrearsDeductions?.items || []).map((item, idx) => (
+                          <div key={`${item.code}-${idx}`} className="flex items-center justify-between">
+                            <span className="text-orange-900 dark:text-orange-100">{item.name} [{item.calculation_basis}]</span>
+                            <span className="text-orange-900 dark:text-orange-100">{formatCurrency(item.amount)}</span>
+                          </div>
+                        ))}
+                        {(arrearsPreview.arrearsDeductions?.items || []).length === 0 && (
+                          <div className="text-orange-700 dark:text-orange-300">No configured arrears deductions</div>
+                        )}
+                        <div className="pt-1 mt-1 border-t border-orange-200 dark:border-orange-800 flex items-center justify-between font-medium">
+                          <span>Configured deductions</span>
+                          <span>{formatCurrency(arrearsPreview.arrearsDeductions?.total || 0)}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-orange-200 dark:border-orange-900 bg-white/60 dark:bg-orange-950/40 p-3">
+                      <div className="text-xs text-orange-800 dark:text-orange-300 mb-2">PAYE and Estimated Net Arrears</div>
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between"><span>Regular monthly PAYE</span><span>{formatCurrency(arrearsPreview.regularPaye || 0)}</span></div>
+                        <div className="flex items-center justify-between"><span>PAYE on promotion arrears</span><span>{formatCurrency(arrearsPreview.payeOnPromotionArrears || 0)}</span></div>
+                        <div className="flex items-center justify-between font-medium"><span>Total arrears deductions</span><span>{formatCurrency(arrearsPreview.totalArrearsDeductions || 0)}</span></div>
+                        <div className="pt-1 mt-1 border-t border-orange-200 dark:border-orange-800 flex items-center justify-between font-bold"><span>Estimated net arrears</span><span>{formatCurrency(arrearsPreview.estimatedNetArrears || 0)}</span></div>
+                      </div>
                     </div>
                   </div>
                     </>
@@ -1622,11 +1671,28 @@ export function PromotionsPage() {
                     </>
                   )}
                   <div className="pt-2 border-t border-orange-200 dark:border-orange-900">
-                    <span className="text-orange-700 dark:text-orange-300">Total Arrears:</span>
+                    <span className="text-orange-700 dark:text-orange-300">Gross Promotion Arrears:</span>
                     <div className="text-lg font-bold text-orange-900 dark:text-orange-100">
                       {formatCurrency(detailsStoredArrearsTotal ?? detailsArrearsPreview.totalArrears)}
                     </div>
                   </div>
+                  {!detailsUsesStoredArrears && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                      <div className="rounded-lg border border-orange-200 dark:border-orange-900 bg-white/60 dark:bg-orange-950/40 p-3">
+                        <div className="text-xs text-orange-800 dark:text-orange-300 mb-2">Arrears Deductions (Admin Policy)</div>
+                        {(detailsArrearsPreview.arrearsDeductions?.items || []).map((item, idx) => (
+                          <div key={`${item.code}-${idx}`} className="flex items-center justify-between"><span>{item.name} [{item.calculation_basis}]</span><span>{formatCurrency(item.amount)}</span></div>
+                        ))}
+                        <div className="pt-1 mt-1 border-t border-orange-200 dark:border-orange-800 flex items-center justify-between font-medium"><span>Total</span><span>{formatCurrency(detailsArrearsPreview.arrearsDeductions?.total || 0)}</span></div>
+                      </div>
+                      <div className="rounded-lg border border-orange-200 dark:border-orange-900 bg-white/60 dark:bg-orange-950/40 p-3">
+                        <div className="text-xs text-orange-800 dark:text-orange-300 mb-2">PAYE and Estimated Net Arrears</div>
+                        <div className="flex items-center justify-between"><span>PAYE on promotion arrears</span><span>{formatCurrency(detailsArrearsPreview.payeOnPromotionArrears || 0)}</span></div>
+                        <div className="flex items-center justify-between font-medium"><span>Total arrears deductions</span><span>{formatCurrency(detailsArrearsPreview.totalArrearsDeductions || 0)}</span></div>
+                        <div className="pt-1 mt-1 border-t border-orange-200 dark:border-orange-800 flex items-center justify-between font-bold"><span>Estimated net arrears</span><span>{formatCurrency(detailsArrearsPreview.estimatedNetArrears || 0)}</span></div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="text-sm text-orange-700 dark:text-orange-300">No preview available</div>

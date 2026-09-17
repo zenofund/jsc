@@ -4,6 +4,7 @@ import { DatabaseService } from '@common/database/database.service';
 import { SalaryLookupService } from '../salary-structures/salary-lookup.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AuditService } from '@modules/audit/audit.service';
+import { PayeCalculatorService } from '@common/tax/paye-calculator.service';
 
 describe('PromotionsService', () => {
   let service: PromotionsService;
@@ -43,6 +44,7 @@ describe('PromotionsService', () => {
             log: jest.fn(),
           },
         },
+        PayeCalculatorService,
       ],
     }).compile();
 

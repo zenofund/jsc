@@ -80,6 +80,26 @@ export class ReportsService {
     return [];
   }
 
+  private toPayrollArray(value: any) {
+    return this.toDeductionsArray(value);
+  }
+
+  private amount(value: any) {
+    const parsed = Number(value || 0);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  private parseObject(value: any) {
+    if (!value) return {};
+    if (typeof value === 'object') return value;
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
   private async getModuleAvailability() {
     return this.settingsService.getModuleAvailability().catch(() => ({
       loan_management_enabled: true,
@@ -352,40 +372,173 @@ export class ReportsService {
   /**
    * Get Variance Report
    */
-  async getVarianceReport(month1: string, month2: string) {
-    const batch1 = await this.databaseService.queryOne(
-      `SELECT * FROM payroll_batches WHERE payroll_month = $1 LIMIT 1`,
-      [month1]
+  async getVarianceReport(month1: string, month2: string, bankGroupId?: string) {
+    const eligibleStatuses = `('approved', 'ready_for_payment', 'paid')`;
+    const findBatch = (month: string) => this.databaseService.queryOne(
+      `SELECT * FROM payroll_batches
+       WHERE payroll_month = $1 AND status IN ${eligibleStatuses}
+       ORDER BY CASE status WHEN 'paid' THEN 1 WHEN 'ready_for_payment' THEN 2 ELSE 3 END,
+                updated_at DESC NULLS LAST
+       LIMIT 1`,
+      [month],
     );
-    const batch2 = await this.databaseService.queryOne(
-      `SELECT * FROM payroll_batches WHERE payroll_month = $1 LIMIT 1`,
-      [month2]
-    );
+    const [batch1, batch2] = await Promise.all([findBatch(month1), findBatch(month2)]);
 
-    const data1 = batch1 || { total_staff: 0, total_net: 0 };
-    const data2 = batch2 || { total_staff: 0, total_net: 0 };
-
-    const net1 = parseFloat(data1.total_net || 0);
-    const net2 = parseFloat(data2.total_net || 0);
-    const diff = net2 - net1;
-    const pct = net1 === 0 ? (net2 === 0 ? 0 : 100) : (diff / net1) * 100;
-
-    return {
-      month1: {
-        month: month1,
-        total_staff: data1.total_staff || 0,
-        total_net: net1
-      },
-      month2: {
-        month: month2,
-        total_staff: data2.total_staff || 0,
-        total_net: net2
-      },
-      variance: {
-        staff_change: (data2.total_staff || 0) - (data1.total_staff || 0),
-        amount_change: diff,
-        percentage_change: pct
+    const loadLines = async (batch: any) => batch
+      ? this.databaseService.query(
+        `SELECT pl.*, s.staff_number, s.first_name, s.middle_name, s.last_name
+         FROM payroll_lines pl
+         LEFT JOIN staff s ON pl.staff_id = s.id
+         WHERE pl.payroll_batch_id = $1`,
+        [batch.id],
+      )
+      : [];
+    const [rawLines1, rawLines2] = await Promise.all([loadLines(batch1), loadLines(batch2)]);
+    const allLines = [...rawLines1, ...rawLines2];
+    const bankGroups = Array.from(new Map(allLines.map((line: any) => {
+      const id = line.bank_group_id || `name:${line.bank_group_name || 'unassigned'}`;
+      return [String(id), { id: line.bank_group_id || null, name: line.bank_group_name || 'Unassigned Bank Group' }];
+    })).values()).sort((a: any, b: any) => a.name.localeCompare(b.name));
+    const matchesBankGroup = (line: any) => !bankGroupId || String(line.bank_group_id || '') === String(bankGroupId);
+    const lines1 = rawLines1.filter(matchesBankGroup);
+    const lines2 = rawLines2.filter(matchesBankGroup);
+    const normalize = (line: any) => {
+      const allowances = this.toPayrollArray(line.allowances);
+      const deductions = this.toPayrollArray(line.deductions);
+      const taxDetails = this.parseObject(line.tax_details);
+      const allowanceMap: Record<string, number> = {};
+      const deductionMap: Record<string, number> = {};
+      const allowanceLabels: Record<string, any> = {};
+      const deductionLabels: Record<string, any> = {};
+      allowances.forEach((item: any) => {
+        const code = String(item?.code || item?.name || 'Allowance');
+        const key = `allowance:${code}`;
+        allowanceMap[key] = (allowanceMap[key] || 0) + this.amount(item?.amount);
+        allowanceLabels[key] = { key, code, label: String(item?.name || item?.code || 'Allowance') };
+      });
+      let paye = 0;
+      deductions.forEach((item: any) => {
+        const code = String(item?.code || item?.name || 'Deduction');
+        const name = String(item?.name || item?.code || 'Deduction');
+        const value = this.amount(item?.amount);
+        if (['TAX', 'PAYE'].includes(code.toUpperCase()) || String(item?.remittance_key || '').toUpperCase() === 'PAYE' || name.toLowerCase().includes('paye')) {
+          paye += value;
+        } else {
+          const key = `deduction:${code}`;
+          deductionMap[key] = (deductionMap[key] || 0) + value;
+          deductionLabels[key] = { key, code, label: name };
+        }
+      });
+      paye = paye || this.amount(taxDetails.monthly_tax || taxDetails.total_tax || taxDetails.paye);
+      if (!paye) {
+        paye = this.amount(taxDetails.regular_monthly_tax) + this.amount(taxDetails.paye_on_promotion_arrears);
       }
+      const key = String(line.staff_id || line.staff_number || `${line.first_name}-${line.last_name}`);
+      return {
+        key,
+        staff_id: line.staff_id,
+        staff_number: line.staff_number || line.staff_id,
+        staff_name: line.staff_name || [line.first_name, line.middle_name, line.last_name].filter(Boolean).join(' ').trim(),
+        grade_level: line.grade_level,
+        step: line.step,
+        bank_group_id: line.bank_group_id || null,
+        bank_group: line.bank_group_name || 'Unassigned Bank Group',
+        basic: this.amount(line.basic_salary),
+        gross: this.amount(line.gross_pay),
+        deductions: this.amount(line.total_deductions),
+        paye,
+        net: this.amount(line.net_pay),
+        allowances: allowanceMap,
+        deductionsByCode: deductionMap,
+        allowanceLabels,
+        deductionLabels,
+        promotionArrears: allowances.filter((item: any) => String(item?.code || '').toUpperCase().includes('ARREAR'))
+          .reduce((sum: number, item: any) => sum + this.amount(item?.amount), 0),
+      };
+    };
+    const left = new Map(lines1.map((line: any) => [normalize(line).key, normalize(line)]));
+    const right = new Map(lines2.map((line: any) => [normalize(line).key, normalize(line)]));
+    const keys = Array.from(new Set([...left.keys(), ...right.keys()]));
+    const allowanceColumns = new Map<string, any>();
+    const deductionColumns = new Map<string, any>();
+    [...left.values(), ...right.values()].forEach((line: any) => {
+      Object.values(line.allowanceLabels).forEach((item: any) => allowanceColumns.set(item.key, item));
+      Object.values(line.deductionLabels).forEach((item: any) => deductionColumns.set(item.key, item));
+    });
+    const componentDelta = (a: any, b: any, mapName: string) => {
+      const mapA = a?.[mapName] || {};
+      const mapB = b?.[mapName] || {};
+      return Array.from(new Set([...Object.keys(mapA), ...Object.keys(mapB)])).map((key) => ({
+        key,
+        month1: this.amount(mapA[key]),
+        month2: this.amount(mapB[key]),
+        variance: this.amount(mapB[key]) - this.amount(mapA[key]),
+      })).filter((item) => item.month1 !== 0 || item.month2 !== 0);
+    };
+    const rows = keys.map((key, index) => {
+      const a: any = left.get(key);
+      const b: any = right.get(key);
+      const source = b || a;
+      const allowanceVariance = componentDelta(a, b, 'allowances');
+      const deductionVariance = componentDelta(a, b, 'deductionsByCode');
+      const details = [
+        !a ? `New staff in ${month2}` : '',
+        !b ? `Exited after ${month1}` : '',
+        allowanceVariance.some((item) => item.variance !== 0) ? 'Allowance change' : '',
+        deductionVariance.some((item) => item.variance !== 0) ? 'Deduction change' : '',
+        (b?.promotionArrears || a?.promotionArrears) ? 'Promotion arrears' : '',
+      ].filter(Boolean);
+      const variance = (field: string) => this.amount(b?.[field]) - this.amount(a?.[field]);
+      const hasChange = ['basic', 'gross', 'deductions', 'paye', 'net'].some((field) => variance(field) !== 0) ||
+        allowanceVariance.some((item) => item.variance !== 0) || deductionVariance.some((item) => item.variance !== 0);
+      return {
+        sn: index + 1,
+        staff_id: source.staff_id,
+        staff_number: source.staff_number,
+        staff_name: source.staff_name || 'Unknown',
+        grade_level: source.grade_level,
+        step: source.step,
+        bank_group_id: source.bank_group_id,
+        bank_group: source.bank_group,
+        change_type: !a ? 'new_staff' : !b ? 'exited_staff' : hasChange ? 'changed' : 'unchanged',
+        variation_details: details.length ? details.join('; ') : 'No change',
+        basic_month1: this.amount(a?.basic), basic_month2: this.amount(b?.basic), basic_variance: variance('basic'),
+        gross_month1: this.amount(a?.gross), gross_month2: this.amount(b?.gross), gross_variance: variance('gross'),
+        paye_month1: this.amount(a?.paye), paye_month2: this.amount(b?.paye), paye_variance: variance('paye'),
+        deductions_month1: this.amount(a?.deductions), deductions_month2: this.amount(b?.deductions), deductions_variance: variance('deductions'),
+        net_month1: this.amount(a?.net), net_month2: this.amount(b?.net), net_variance: variance('net'),
+        promotion_arrears_month1: this.amount(a?.promotionArrears), promotion_arrears_month2: this.amount(b?.promotionArrears), promotion_arrears_variance: variance('promotionArrears'),
+        allowance_values_month1: a?.allowances || {}, allowance_values_month2: b?.allowances || {},
+        deduction_values_month1: a?.deductionsByCode || {}, deduction_values_month2: b?.deductionsByCode || {},
+        allowance_variances: allowanceVariance, deduction_variances: deductionVariance,
+      };
+    });
+    const total = (field: string) => rows.reduce((sum, row: any) => sum + this.amount(row[field]), 0);
+    const summary = {
+      additions: rows.filter((row) => row.change_type === 'new_staff').length,
+      exits: rows.filter((row) => row.change_type === 'exited_staff').length,
+      changed_staff: rows.filter((row) => row.change_type === 'changed').length,
+      unchanged_staff: rows.filter((row) => row.change_type === 'unchanged').length,
+      total_basic: { month1: total('basic_month1'), month2: total('basic_month2'), variance: total('basic_variance') },
+      total_gross: { month1: total('gross_month1'), month2: total('gross_month2'), variance: total('gross_variance') },
+      total_paye: { month1: total('paye_month1'), month2: total('paye_month2'), variance: total('paye_variance') },
+      total_deductions: { month1: total('deductions_month1'), month2: total('deductions_month2'), variance: total('deductions_variance') },
+      total_net: { month1: total('net_month1'), month2: total('net_month2'), variance: total('net_variance') },
+    };
+    const net1 = summary.total_net.month1;
+    const net2 = summary.total_net.month2;
+    const amountChange = net2 - net1;
+    return {
+      month1: { month: month1, status: batch1?.status || null, batch_number: batch1?.batch_number || null, total_staff: lines1.length, total_basic: summary.total_basic.month1, total_gross: summary.total_gross.month1, total_deductions: summary.total_deductions.month1, total_paye: summary.total_paye.month1, total_net: net1 },
+      month2: { month: month2, status: batch2?.status || null, batch_number: batch2?.batch_number || null, total_staff: lines2.length, total_basic: summary.total_basic.month2, total_gross: summary.total_gross.month2, total_deductions: summary.total_deductions.month2, total_paye: summary.total_paye.month2, total_net: net2 },
+      variance: { staff_change: lines2.length - lines1.length, amount_change: amountChange, percentage_change: net1 === 0 ? (net2 === 0 ? 0 : 100) : (amountChange / net1) * 100 },
+      summary,
+      bank_group_id: bankGroupId || null,
+      bank_groups: bankGroups,
+      allowance_columns: Array.from(allowanceColumns.values()),
+      deduction_columns: Array.from(deductionColumns.values()),
+      rows,
+      warnings: [!batch1 ? `No approved, ready for payment, or paid batch found for ${month1}` : '', !batch2 ? `No approved, ready for payment, or paid batch found for ${month2}` : ''].filter(Boolean),
     };
   }
 

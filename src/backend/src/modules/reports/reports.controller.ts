@@ -57,8 +57,9 @@ export class ReportsController {
   getVarianceReport(
     @Query('month1') month1: string,
     @Query('month2') month2: string,
+    @Query('bank_group_id') bankGroupId?: string,
   ) {
-    return this.reportsService.getVarianceReport(month1, month2);
+    return this.reportsService.getVarianceReport(month1, month2, bankGroupId);
   }
 
   @Get('remittance/:month')

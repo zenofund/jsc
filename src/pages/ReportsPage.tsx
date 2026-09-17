@@ -30,6 +30,7 @@ export function ReportsPage() {
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().substring(0, 7));
   const [month1, setMonth1] = useState(new Date(new Date().setMonth(new Date().getMonth() - 1)).toISOString().substring(0, 7));
   const [month2, setMonth2] = useState(new Date().toISOString().substring(0, 7));
+  const [varianceBankGroup, setVarianceBankGroup] = useState('');
   const [remittanceType, setRemittanceType] = useState<'pension' | 'tax' | 'cooperative'>('pension');
   const [payeScheduleState, setPayeScheduleState] = useState('FCT');
   const [staffDepartment, setStaffDepartment] = useState('');
@@ -78,7 +79,7 @@ export function ReportsPage() {
       return;
     }
     loadReport();
-  }, [activeTab, selectedMonth, month1, month2, remittanceType, staffDepartment, isCashier, cooperativeManagementEnabled, bankScheduleGrouping]);
+  }, [activeTab, selectedMonth, month1, month2, varianceBankGroup, remittanceType, staffDepartment, isCashier, cooperativeManagementEnabled, bankScheduleGrouping]);
 
   useEffect(() => {
     if (settings?.organization_name) {
@@ -130,7 +131,7 @@ export function ReportsPage() {
         const data = await reportAPI.getPayrollBankSchedule(selectedMonth, bankScheduleGrouping);
         setReportData(data);
       } else if (activeTab === 'variance') {
-        const data = await reportAPI.getVarianceReport(month1, month2);
+        const data = await reportAPI.getVarianceReport(month1, month2, varianceBankGroup || undefined);
         setReportData(data);
       } else if (activeTab === 'remittance') {
         const data = await reportAPI.getRemittanceReport(selectedMonth, remittanceType);
@@ -326,43 +327,68 @@ export function ReportsPage() {
           rows,
         });
       } else if (activeTab === 'variance') {
-        const rows = [
-          {
-            metric: 'Total Staff',
-            month_1: reportData.month1?.total_staff || 0,
-            month_2: reportData.month2?.total_staff || 0,
-            change: reportData.variance?.staff_change || 0,
-          },
-          {
-            metric: 'Total Net Pay',
-            month_1: formatAmount(reportData.month1?.total_net),
-            month_2: formatAmount(reportData.month2?.total_net),
-            change: formatAmount(reportData.variance?.amount_change),
-          },
-          {
-            metric: 'Percentage Change',
-            month_1: '',
-            month_2: '',
-            change: `${(reportData.variance?.percentage_change || 0).toFixed(2)}%`,
-          },
+        const allowanceColumns = reportData.allowance_columns || [];
+        const deductionColumns = reportData.deduction_columns || [];
+        const financialFields = [
+          ['basic', 'Salary'], ['gross', 'Gross Emoluments'], ['paye', 'Tax This Month'],
+          ['deductions', 'Total Deduction'], ['net', 'Net Pay'], ['promotion_arrears', 'Promotion Arrears'],
         ];
+        const columns: any[] = [
+          { key: 'sn', label: 'S/N' }, { key: 'staff_name', label: 'Employee Name' },
+          { key: 'grade_level', label: 'GL' }, { key: 'step', label: 'Step' },
+          { key: 'staff_number', label: 'Ref. No' }, { key: 'bank_group', label: 'Bank Group' },
+          { key: 'variation_details', label: 'Variation Details' },
+        ];
+        financialFields.forEach(([key, label]) => {
+          columns.push({ key: `${key}_month1`, label: `${label} (${month1})` });
+          columns.push({ key: `${key}_month2`, label: `${label} (${month2})` });
+          columns.push({ key: `${key}_variance`, label: `${label} Variance` });
+        });
+        const componentColumns = [
+          ...allowanceColumns.map((item: any) => ({ ...item, kind: 'allowance' })),
+          ...deductionColumns.map((item: any) => ({ ...item, kind: 'deduction' })),
+        ];
+        componentColumns.forEach((item: any) => {
+          const prefix = item.kind === 'allowance' ? 'allowance_values' : 'deduction_values';
+          columns.push({ key: `${prefix}_month1_${item.key}`, label: `${item.label} (${month1})` });
+          columns.push({ key: `${prefix}_month2_${item.key}`, label: `${item.label} (${month2})` });
+          columns.push({ key: `${prefix}_variance_${item.key}`, label: `${item.label} Variance` });
+        });
+        const rows = (reportData.rows || []).map((row: any) => {
+          const exportRow: any = { ...row };
+          financialFields.forEach(([key]) => {
+            exportRow[`${key}_month1`] = formatAmount(row[`${key}_month1`]);
+            exportRow[`${key}_month2`] = formatAmount(row[`${key}_month2`]);
+            exportRow[`${key}_variance`] = formatAmount(row[`${key}_variance`]);
+          });
+          componentColumns.forEach((item: any) => {
+            const source = item.kind === 'allowance' ? 'allowance_values' : 'deduction_values';
+            const variance = item.kind === 'allowance' ? 'allowance_variances' : 'deduction_variances';
+            const delta = (row[variance] || []).find((entry: any) => entry.key === item.key);
+            exportRow[`${source}_month1_${item.key}`] = formatAmount(row[`${source}_month1`]?.[item.key]);
+            exportRow[`${source}_month2_${item.key}`] = formatAmount(row[`${source}_month2`]?.[item.key]);
+            exportRow[`${source}_variance_${item.key}`] = formatAmount(delta?.variance || 0);
+          });
+          return exportRow;
+        });
 
         exportSpreadsheet({
-          title: `Variance Report: ${month1} vs ${month2}`,
+          title: `Variation Control: ${month1} vs ${month2}`,
           fileName: `variance_report_${month1}_vs_${month2}.xls`,
           meta: [
             { label: 'Organization', value: organizationName },
+            { label: 'Bank Group', value: reportData.bank_group_id ? (reportData.bank_groups || []).find((group: any) => String(group.id) === String(reportData.bank_group_id))?.name || reportData.bank_group_id : 'All Bank Groups' },
+            { label: `${month1} Batch`, value: reportData.month1?.batch_number || 'Not available' },
+            { label: `${month2} Batch`, value: reportData.month2?.batch_number || 'Not available' },
+            { label: 'Additions', value: String(reportData.summary?.additions || 0) },
+            { label: 'Exits', value: String(reportData.summary?.exits || 0) },
+            { label: 'Changed Staff', value: String(reportData.summary?.changed_staff || 0) },
             { label: 'Total Staff Change', value: String(reportData.variance?.staff_change || 0) },
             { label: 'Total Net Pay Change', value: formatAmount(reportData.variance?.amount_change) },
             { label: 'Percentage Change', value: `${(reportData.variance?.percentage_change || 0).toFixed(2)}%` },
             { label: 'Generated At', value: new Date().toLocaleString() },
           ],
-          columns: [
-            { key: 'metric', label: 'Metric' },
-            { key: 'month_1', label: month1 },
-            { key: 'month_2', label: month2 },
-            { key: 'change', label: 'Change' },
-          ],
+          columns,
           rows,
         });
 
@@ -1202,6 +1228,7 @@ export function ReportsPage() {
                   searchPlaceholder="Search payroll..."
                 />
               </div>
+
             </>
           ) : (
             <div className="bg-card rounded-lg border border-border p-12 text-center">
@@ -1304,7 +1331,7 @@ export function ReportsPage() {
         <div className="space-y-6">
           {/* Month Selectors */}
           <div className="bg-card rounded-lg border border-border p-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm mb-1 text-card-foreground">
                   Compare Month 1
@@ -1326,6 +1353,19 @@ export function ReportsPage() {
                   onChange={(e) => setMonth2(e.target.value)}
                   className="w-full px-3 py-2 border border-border rounded-lg bg-input-background dark:bg-gray-800 text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 />
+              </div>
+              <div>
+                <label className="block text-sm mb-1 text-card-foreground">Bank Group</label>
+                <select
+                  value={varianceBankGroup}
+                  onChange={(e) => setVarianceBankGroup(e.target.value)}
+                  className="w-full px-3 py-2 border border-border rounded-lg bg-input-background dark:bg-gray-800 text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                >
+                  <option value="">All Bank Groups</option>
+                  {(reportData?.bank_groups || []).filter((group: any) => group.id).map((group: any) => (
+                    <option key={group.id} value={group.id}>{group.name}</option>
+                  ))}
+                </select>
               </div>
             </div>
           </div>
@@ -1368,6 +1408,26 @@ export function ReportsPage() {
                 </div>
               </div>
 
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {[
+                  ['Additions', reportData.summary?.additions],
+                  ['Exits', reportData.summary?.exits],
+                  ['Changed Staff', reportData.summary?.changed_staff],
+                  ['Unchanged Staff', reportData.summary?.unchanged_staff],
+                ].map(([label, value]) => (
+                  <div key={String(label)} className="bg-card rounded-lg border border-border p-4">
+                    <div className="text-xs text-muted-foreground">{label}</div>
+                    <div className="text-xl font-semibold text-foreground mt-1">{value || 0}</div>
+                  </div>
+                ))}
+              </div>
+
+              {(reportData.warnings || []).length > 0 && (
+                <div className="bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 text-sm text-yellow-900 dark:text-yellow-200">
+                  {reportData.warnings.map((warning: string) => <div key={warning}>{warning}</div>)}
+                </div>
+              )}
+
               {/* Detailed Variance */}
               <div className="bg-card rounded-lg border border-border p-6">
                 <h3 className="font-semibold text-card-foreground mb-4">Variance Analysis</h3>
@@ -1390,6 +1450,68 @@ export function ReportsPage() {
                       {(reportData.variance?.percentage_change || 0) >= 0 ? '+' : ''}{(reportData.variance?.percentage_change || 0).toFixed(2)}%
                     </span>
                   </div>
+                  {[
+                    ['Gross Emoluments', reportData.summary?.total_gross],
+                    ['Tax This Month', reportData.summary?.total_paye],
+                    ['Total Deduction', reportData.summary?.total_deductions],
+                    ['Promotion Arrears', { month1: (reportData.rows || []).reduce((sum: number, row: any) => sum + (row.promotion_arrears_month1 || 0), 0), month2: (reportData.rows || []).reduce((sum: number, row: any) => sum + (row.promotion_arrears_month2 || 0), 0), variance: (reportData.rows || []).reduce((sum: number, row: any) => sum + (row.promotion_arrears_variance || 0), 0) }],
+                  ].map(([label, values]: any) => (
+                    <div key={label} className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
+                      <span className="text-foreground">{label}</span>
+                      <span className="font-medium text-foreground">{formatCurrency(values?.variance || 0)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="bg-card rounded-lg border border-border p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-semibold text-card-foreground">Employee Variation Control</h3>
+                  <span className="text-xs text-muted-foreground">{(reportData.rows || []).length} records</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border text-left text-muted-foreground">
+                        <th className="p-2">S/N</th><th className="p-2">Employee Name</th><th className="p-2">GL</th><th className="p-2">Step</th><th className="p-2">Ref. No</th><th className="p-2">Bank Group</th><th className="p-2">Variation Details</th><th className="p-2 text-right">Gross Variance</th><th className="p-2 text-right">Tax Variance</th><th className="p-2 text-right">Deduction Variance</th><th className="p-2 text-right">Net Variance</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(reportData.rows || []).map((row: any) => (
+                        <tr key={`${row.staff_id || row.staff_number}-${row.sn}`} className="border-b border-border/60">
+                          <td className="p-2">{row.sn}</td><td className="p-2 whitespace-nowrap">{row.staff_name}</td><td className="p-2">{row.grade_level ?? ''}</td><td className="p-2">{row.step ?? ''}</td><td className="p-2">{row.staff_number}</td><td className="p-2">{row.bank_group}</td><td className="p-2">{row.variation_details}</td>
+                          <td className="p-2 text-right">{formatCurrency(row.gross_variance || 0)}</td><td className="p-2 text-right">{formatCurrency(row.paye_variance || 0)}</td><td className="p-2 text-right">{formatCurrency(row.deductions_variance || 0)}</td><td className="p-2 text-right font-medium">{formatCurrency(row.net_variance || 0)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="bg-card rounded-lg border border-border p-6">
+                <h3 className="font-semibold text-card-foreground mb-4">Payroll Component Variations</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border text-left text-muted-foreground">
+                        <th className="p-2">Component</th><th className="p-2">Type</th><th className="p-2 text-right">{month1}</th><th className="p-2 text-right">{month2}</th><th className="p-2 text-right">Variance</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...(reportData.allowance_columns || []).map((item: any) => ({ ...item, type: 'Allowance', source: 'allowance_values', varianceSource: 'allowance_variances' })),
+                        ...(reportData.deduction_columns || []).map((item: any) => ({ ...item, type: 'Deduction', source: 'deduction_values', varianceSource: 'deduction_variances' }))]
+                        .map((item: any) => {
+                          const values = (reportData.rows || []).reduce((totals: any, row: any) => {
+                            const delta = (row[item.varianceSource] || []).find((entry: any) => entry.key === item.key);
+                            totals.month1 += row[`${item.source}_month1`]?.[item.key] || 0;
+                            totals.month2 += row[`${item.source}_month2`]?.[item.key] || 0;
+                            totals.variance += delta?.variance || 0;
+                            return totals;
+                          }, { month1: 0, month2: 0, variance: 0 });
+                          return <tr key={`${item.type}-${item.key}`} className="border-b border-border/60"><td className="p-2">{item.label}</td><td className="p-2">{item.type}</td><td className="p-2 text-right">{formatCurrency(values.month1)}</td><td className="p-2 text-right">{formatCurrency(values.month2)}</td><td className="p-2 text-right font-medium">{formatCurrency(values.variance)}</td></tr>;
+                        })}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </>

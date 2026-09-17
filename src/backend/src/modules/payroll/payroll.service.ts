@@ -13,6 +13,7 @@ import { SettingsService } from '../settings/settings.service';
 import { CreatePayrollBatchDto } from './dto/create-payroll-batch.dto';
 import { ApprovePayrollDto } from './dto/approve-payroll.dto';
 import { v4 as uuidv4 } from 'uuid';
+import { PayeCalculatorService } from '@common/tax/paye-calculator.service';
 
 @Injectable()
 export class PayrollService {
@@ -28,6 +29,7 @@ export class PayrollService {
     private cooperativesService: CooperativesService,
     private loansService: LoansService,
     private settingsService: SettingsService,
+    private payeCalculator: PayeCalculatorService,
   ) {}
 
   async onModuleInit() {
@@ -899,7 +901,7 @@ export class PayrollService {
       nhfDeductionAmount += arrearsNhfDeduction;
       nhisDeductionAmount += arrearsNhiaDeduction;
 
-      const regularTaxDetails = this.calculatePAYE(
+      const regularTaxDetails = this.payeCalculator.calculate(
         regularGrossPay,
         allowancesArray.filter((allowance) => allowance.code !== 'ARREAR'),
         taxConfig,
@@ -976,7 +978,7 @@ export class PayrollService {
       }
 
       // Calculate tax (Now passing actual deduction amounts for relief)
-      const taxDetails: any = this.calculatePAYE(
+      const taxDetails: any = this.payeCalculator.calculate(
         grossPay, 
         allowancesArray, 
         taxConfig, 
@@ -1179,141 +1181,6 @@ export class PayrollService {
       total_deductions: totalDeductions,
       total_net: totalNet,
       processing_time_ms: duration,
-    };
-  }
-
-  /**
-   * Calculate Nigerian PAYE Tax (Progressive)
-   */
-  private calculatePAYE(
-    grossPay: number, 
-    allowances: any[], 
-    taxConfig: any, 
-    isContractStaff: boolean = false,
-    pensionDeduction: number = 0,
-    nhfDeduction: number = 0,
-    nhisDeduction: number = 0
-  ) {
-    const round2 = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
-    const nonTaxableAllowances = allowances
-      .filter((a) => !a.is_taxable)
-      .reduce((sum, a) => sum + a.amount, 0);
-    const monthlyTaxableIncome = isContractStaff
-      ? grossPay
-      : grossPay - nonTaxableAllowances;
-    const safeMonthlyTaxableIncome = Math.max(0, monthlyTaxableIncome);
-    const annualTaxableIncome = round2(safeMonthlyTaxableIncome * 12);
-
-    let pensionRelief = 0;
-    let nhfRelief = 0;
-    let nhisRelief = 0;
-    let rentRelief = 0;
-    let grossIncomeRelief = 0;
-
-    if (!isContractStaff) {
-      pensionRelief = round2(pensionDeduction * 12);
-      nhfRelief = round2(nhfDeduction * 12);
-      const nhisReliefEnabled =
-        taxConfig?.include_nhis_relief ??
-        taxConfig?.apply_nhis_relief ??
-        taxConfig?.nhis_relief_enabled ??
-        taxConfig?.nhia_relief_enabled ??
-        true;
-      nhisRelief = nhisReliefEnabled ? round2(nhisDeduction * 12) : 0;
-      const housingAllowance = allowances.find(
-        (a) => a.code === 'HOUSING' || a.name.toLowerCase().includes('housing')
-      )?.amount || 0;
-      rentRelief = round2(
-        (housingAllowance * 12 * (taxConfig.rent_relief_percentage || 0)) / 100
-      );
-      grossIncomeRelief = round2(
-        (annualTaxableIncome * (taxConfig.gross_income_relief_percentage || 0)) / 100
-      );
-    }
-
-    const totalReliefs = round2(grossIncomeRelief + pensionRelief + nhfRelief + nhisRelief + rentRelief);
-    const taxableIncomeAfterReliefs = Math.max(0, round2(annualTaxableIncome - totalReliefs));
-
-    const configuredBrackets = Array.isArray(taxConfig?.tax_brackets)
-      ? taxConfig.tax_brackets
-      : [];
-    const taxBrackets = configuredBrackets;
-
-    if (!Array.isArray(taxBrackets) || taxBrackets.length === 0) {
-      this.logger.error('Tax brackets configuration missing or invalid');
-      throw new BadRequestException('System tax configuration is missing or invalid. Please contact administrator.');
-    }
-
-    const normalizedBrackets = taxBrackets.map((bracket: any) => {
-      const limit = typeof bracket.limit === 'number'
-        ? bracket.limit
-        : typeof bracket.max === 'number'
-          ? bracket.max
-          : typeof bracket.upper_limit === 'number'
-            ? bracket.upper_limit
-            : null;
-      return {
-        limit,
-        rate: Number(bracket.rate) || 0,
-        min: typeof bracket.min === 'number'
-          ? bracket.min
-          : typeof bracket.lower_limit === 'number'
-            ? bracket.lower_limit
-            : undefined,
-        max: typeof bracket.max === 'number'
-          ? bracket.max
-          : typeof bracket.upper_limit === 'number'
-            ? bracket.upper_limit
-            : undefined,
-      };
-    });
-
-    const orderedBrackets = [...normalizedBrackets].sort((a, b) => {
-      const aLimit = a.limit ?? Number.POSITIVE_INFINITY;
-      const bLimit = b.limit ?? Number.POSITIVE_INFINITY;
-      return aLimit - bLimit;
-    });
-
-    let annualTax = 0;
-    let remainingIncome = taxableIncomeAfterReliefs;
-    let consumedIncome = 0;
-    const taxBreakdown = [];
-
-    for (const bracket of orderedBrackets) {
-      if (remainingIncome <= 0) {
-        break;
-      }
-      const bandLimit = typeof bracket.limit === 'number' ? bracket.limit : null;
-      const bandConsumption = Math.min(remainingIncome, bandLimit ?? remainingIncome);
-      if (bandConsumption <= 0) {
-        continue;
-      }
-      const taxForBracket = round2((bandConsumption * bracket.rate) / 100);
-      annualTax = round2(annualTax + taxForBracket);
-      const breakdownStart = round2(consumedIncome);
-      const breakdownEnd = bandLimit !== null ? round2(consumedIncome + bandConsumption) : null;
-      taxBreakdown.push({
-        bracket: breakdownEnd !== null
-          ? `${breakdownStart.toLocaleString()} - ${breakdownEnd.toLocaleString()}`
-          : `${breakdownStart.toLocaleString()} - above`,
-        rate: bracket.rate,
-        taxable_amount: round2(bandConsumption),
-        tax: taxForBracket,
-      });
-      remainingIncome = round2(remainingIncome - bandConsumption);
-      consumedIncome = round2(consumedIncome + bandConsumption);
-    }
-
-    const monthlyTax = round2(annualTax / 12);
-
-    return {
-      taxable_income: round2(safeMonthlyTaxableIncome),
-      annual_taxable_income: annualTaxableIncome,
-      total_reliefs: totalReliefs,
-      taxable_income_after_reliefs: taxableIncomeAfterReliefs,
-      annual_tax: annualTax,
-      monthly_tax: monthlyTax,
-      tax_breakdown: taxBreakdown,
     };
   }
 

@@ -10,6 +10,7 @@ import { NotificationsModule } from '@modules/notifications/notifications.module
 import { CooperativesModule } from '@modules/cooperatives/cooperatives.module';
 import { LoansModule } from '@modules/loans/loans.module';
 import { SettingsModule } from '@modules/settings/settings.module';
+import { TaxModule } from '@common/tax/tax.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { SettingsModule } from '@modules/settings/settings.module';
     CooperativesModule,
     LoansModule,
     SettingsModule,
+    TaxModule,
   ],
   controllers: [PayrollController],
   providers: [PayrollService],
