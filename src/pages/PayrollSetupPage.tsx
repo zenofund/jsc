@@ -99,6 +99,9 @@ export function PayrollSetupPage() {
     amount: 0,
     percentage: 0,
     is_statutory: false,
+    applies_to_promotion_arrears: false,
+    promotion_arrears_basis: 'basic' as 'basic' | 'gross',
+    is_paye_relief: false,
     appliesToAll: true,
     status: 'active' as 'active' | 'inactive',
     excluded_grades: [] as string[],
@@ -404,6 +407,9 @@ export function PayrollSetupPage() {
       amount: 0,
       percentage: 0,
       is_statutory: false,
+      applies_to_promotion_arrears: false,
+      promotion_arrears_basis: 'basic',
+      is_paye_relief: false,
       status: 'active',
       appliesToAll: true,
       excluded_grades: [],
@@ -965,7 +971,10 @@ export function PayrollSetupPage() {
                                     calculation_basis: deduction.calculation_basis || 'basic',
                                     amount: deduction.amount || 0,
                                     percentage: deduction.percentage || 0,
-                                    is_statutory: deduction.is_statutory,
+                                     is_statutory: deduction.is_statutory,
+                                     applies_to_promotion_arrears: deduction.applies_to_promotion_arrears ?? false,
+                                     promotion_arrears_basis: deduction.promotion_arrears_basis || 'basic',
+                                     is_paye_relief: deduction.is_paye_relief ?? false,
                                     appliesToAll: deduction.applies_to_all ?? true,
                                     status: deduction.status,
                                     excluded_grades: deduction.excluded_grades ? (typeof deduction.excluded_grades === 'string' ? JSON.parse(deduction.excluded_grades) : deduction.excluded_grades) : [],
@@ -1307,6 +1316,30 @@ export function PayrollSetupPage() {
               </div>
 
 
+
+              <div className="rounded border border-border bg-muted/30 p-3 space-y-3">
+                <div className="text-sm font-medium text-card-foreground">Promotion arrears policy</div>
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={deductionForm.applies_to_promotion_arrears}
+                    onChange={(e) => setDeductionForm({ ...deductionForm, applies_to_promotion_arrears: e.target.checked })} className="w-4 h-4" />
+                  <span className="text-sm text-card-foreground">Apply this deduction to promotion arrears</span>
+                </label>
+                {deductionForm.applies_to_promotion_arrears && <>
+                  <div>
+                    <label className="block text-sm mb-1 text-card-foreground">Arrears calculation basis</label>
+                    <select value={deductionForm.promotion_arrears_basis}
+                      onChange={(e) => setDeductionForm({ ...deductionForm, promotion_arrears_basis: e.target.value as 'basic' | 'gross' })}
+                      className="w-full px-3 py-2 rounded border border-border bg-input-background text-foreground">
+                      <option value="basic">Basic arrears</option><option value="gross">Gross arrears</option>
+                    </select>
+                  </div>
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" checked={deductionForm.is_paye_relief}
+                      onChange={(e) => setDeductionForm({ ...deductionForm, is_paye_relief: e.target.checked })} className="w-4 h-4" />
+                    <span className="text-sm text-card-foreground">Treat as PAYE relief</span>
+                  </label>
+                </>}
+              </div>
 
               <div>
                 <label className="block text-sm mb-1 text-card-foreground">Status *</label>

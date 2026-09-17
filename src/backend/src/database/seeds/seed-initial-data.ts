@@ -103,15 +103,15 @@ async function seedDatabase() {
     console.log('\n📝 Seeding global deductions...');
     
     const deductions = [
-      { code: 'PENSION', name: 'Pension Contribution', type: 'percentage', percentage: 10, is_statutory: true, calculation_basis: 'gross' },
-      { code: 'NHF', name: 'National Housing Fund', type: 'percentage', percentage: 2.5, is_statutory: true, calculation_basis: 'gross' },
-      { code: 'UNION', name: 'Union Dues', type: 'fixed', amount: 5000, is_statutory: false, calculation_basis: 'basic' },
+      { code: 'PENSION', name: 'Pension Contribution', type: 'percentage', percentage: 10, is_statutory: true, calculation_basis: 'gross', applies_to_promotion_arrears: true, promotion_arrears_basis: 'gross', is_paye_relief: true },
+      { code: 'NHF', name: 'National Housing Fund', type: 'percentage', percentage: 2.5, is_statutory: true, calculation_basis: 'gross', applies_to_promotion_arrears: true, promotion_arrears_basis: 'gross', is_paye_relief: true },
+      { code: 'UNION', name: 'Union Dues', type: 'fixed', amount: 5000, is_statutory: false, calculation_basis: 'basic', applies_to_promotion_arrears: true, promotion_arrears_basis: 'basic', is_paye_relief: false },
     ];
 
     for (const deduction of deductions) {
       await client.query(
-        `INSERT INTO deductions (code, name, type, calculation_basis, amount, percentage, is_statutory, status, created_by) 
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', $8) 
+        `INSERT INTO deductions (code, name, type, calculation_basis, amount, percentage, is_statutory, applies_to_promotion_arrears, promotion_arrears_basis, is_paye_relief, status, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active', $11)
          ON CONFLICT (code) DO NOTHING`,
         [
           deduction.code,
@@ -121,6 +121,9 @@ async function seedDatabase() {
           deduction.amount || null,
           deduction.percentage || null,
           deduction.is_statutory,
+          deduction.applies_to_promotion_arrears,
+          deduction.promotion_arrears_basis,
+          deduction.is_paye_relief,
           adminUserId
         ]
       );

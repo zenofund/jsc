@@ -93,6 +93,7 @@ export function PromotionsPage() {
   // Arrears preview state
   const [arrearsPreview, setArrearsPreview] = useState<{
     monthlyDifference: number;
+    basicMonthlyDifference: number;
     monthsOwed: number;
     totalArrears: number;
     oldSalary: number;
@@ -145,16 +146,19 @@ export function PromotionsPage() {
   const buildPreviewFromStoredArrears = (arrears: any) => {
     const oldSalary = Number(arrears?.old_basic_salary ?? arrears?.old_salary ?? 0);
     const newSalary = Number(arrears?.new_basic_salary ?? arrears?.new_salary ?? 0);
-    const monthlyDifference = newSalary - oldSalary;
+    const oldGrossSalary = Number(arrears?.old_salary ?? oldSalary);
+    const newGrossSalary = Number(arrears?.new_salary ?? newSalary);
+    const monthlyDifference = newGrossSalary - oldGrossSalary;
 
     return {
       monthlyDifference,
+      basicMonthlyDifference: newSalary - oldSalary,
       monthsOwed: Number(arrears?.months_owed ?? 0),
       totalArrears: Number(arrears?.total_arrears ?? arrears?.totalArrears ?? 0),
       oldSalary,
       newSalary,
-      oldGrossSalary: oldSalary,
-      newGrossSalary: newSalary,
+      oldGrossSalary,
+      newGrossSalary,
       oldAllowances: buildEmptyBreakdown(),
       newAllowances: buildEmptyBreakdown(),
       oldDeductions: buildEmptyBreakdown(),
@@ -277,6 +281,7 @@ export function PromotionsPage() {
 
       setArrearsPreview({
         monthlyDifference: result.monthlyDifference,
+        basicMonthlyDifference: result.basicMonthlyDifference,
         monthsOwed: result.monthsDiff,
         totalArrears: result.totalArrears,
         oldSalary: result.oldBasicSalary,
@@ -368,7 +373,8 @@ export function PromotionsPage() {
           selectedPromotion.old_step,
         );
         setDetailsArrearsPreview({
-          monthlyDifference: result.monthlyDifference,
+        monthlyDifference: result.monthlyDifference,
+          basicMonthlyDifference: result.basicMonthlyDifference,
           monthsOwed: result.monthsDiff,
           totalArrears: result.totalArrears,
           oldSalary: result.oldBasicSalary,
@@ -1217,7 +1223,7 @@ export function PromotionsPage() {
                       </div>
                     </div>
                     <div>
-                      <span className="text-orange-700 dark:text-orange-300">Monthly Difference:</span>
+                      <span className="text-orange-700 dark:text-orange-300">Monthly Gross Difference:</span>
                       <div className="font-semibold text-orange-900 dark:text-orange-200">
                         {formatCurrency(arrearsPreview.monthlyDifference)}
                       </div>
@@ -1230,6 +1236,12 @@ export function PromotionsPage() {
                     </div>
                   </div>
                   <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <span className="text-orange-700 dark:text-orange-300">Monthly Basic Difference:</span>
+                      <div className="font-semibold text-orange-900 dark:text-orange-200">
+                        {formatCurrency(arrearsPreview.basicMonthlyDifference)}
+                      </div>
+                    </div>
                     <div>
                       <span className="text-orange-700 dark:text-orange-300">Old Gross:</span>
                       <div className="font-semibold text-orange-900 dark:text-orange-200">

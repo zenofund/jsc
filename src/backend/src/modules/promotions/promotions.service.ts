@@ -326,7 +326,11 @@ export class PromotionsService {
     }
   }
 
-  private calculatePromotionArrearsBreakdown(effectiveDate: any, monthlyDifference: number) {
+  private calculatePromotionArrearsBreakdown(
+    effectiveDate: any,
+    monthlyDifference: number,
+    basicMonthlyDifference = monthlyDifference,
+  ) {
     const effectiveParts = this.getBusinessDateParts(effectiveDate);
     const effectiveMonth = new Date(Date.UTC(effectiveParts.year, effectiveParts.month - 1, 1));
     const todayParts = this.getBusinessDateParts(new Date());
@@ -344,21 +348,30 @@ export class PromotionsService {
     let proratedFirstMonth = 0;
     let fullMonthsAfter = 0;
     let totalArrears = 0;
-    const details: Array<{ month: string; amount: number }> = [];
+    let basicProratedFirstMonth = 0;
+    let basicTotalArrears = 0;
+    const details: Array<{ month: string; amount: number; basic_amount?: number }> = [];
 
     if (roundedMonthlyDifference > 0 && safeMonthsDiff > 0) {
       const daysInEffectiveMonth = new Date(Date.UTC(effectiveParts.year, effectiveParts.month, 0)).getUTCDate();
       const eligibleDays = Math.max(0, daysInEffectiveMonth - (effectiveParts.day - 1));
       const dailyDifference = daysInEffectiveMonth > 0 ? roundedMonthlyDifference / daysInEffectiveMonth : 0;
       proratedFirstMonth = this.roundCurrency(dailyDifference * eligibleDays);
+      const roundedBasicDifference = this.roundCurrency(basicMonthlyDifference);
+      const basicDailyDifference = daysInEffectiveMonth > 0 ? roundedBasicDifference / daysInEffectiveMonth : 0;
+      basicProratedFirstMonth = this.roundCurrency(basicDailyDifference * eligibleDays);
       fullMonthsAfter = Math.max(0, safeMonthsDiff - 1);
       totalArrears = this.roundCurrency(proratedFirstMonth + (roundedMonthlyDifference * fullMonthsAfter));
+      basicTotalArrears = this.roundCurrency(
+        basicProratedFirstMonth + (roundedBasicDifference * fullMonthsAfter),
+      );
 
       for (let index = 0; index < safeMonthsDiff; index += 1) {
         const monthDate = new Date(Date.UTC(effectiveParts.year, effectiveParts.month - 1 + index, 1));
         details.push({
           month: this.buildMonthKey(monthDate.getUTCFullYear(), monthDate.getUTCMonth() + 1),
           amount: this.roundCurrency(index === 0 ? proratedFirstMonth : roundedMonthlyDifference),
+          basic_amount: this.roundCurrency(index === 0 ? basicProratedFirstMonth : roundedBasicDifference),
         });
       }
     }
@@ -369,6 +382,8 @@ export class PromotionsService {
       proratedFirstMonth,
       fullMonthsAfter,
       totalArrears,
+      basicProratedFirstMonth,
+      basicTotalArrears,
       details,
     };
   }
@@ -472,15 +487,35 @@ export class PromotionsService {
     }
 
     const { oldBasicSalary, newBasicSalary } = await this.resolvePromotionBasicSalaries(promotion);
+    const oldAllowances = await this.calculateAllowanceBreakdown(
+      promotion.staff_id,
+      oldBasicSalary,
+      promotion.old_grade_level,
+    );
+    const newAllowances = await this.calculateAllowanceBreakdown(
+      promotion.staff_id,
+      newBasicSalary,
+      promotion.new_grade_level,
+    );
+    const oldGrossSalary = this.roundCurrency(oldBasicSalary + oldAllowances.total);
+    const newGrossSalary = this.roundCurrency(newBasicSalary + newAllowances.total);
+    const basicMonthlyDifference = this.roundCurrency(newBasicSalary - oldBasicSalary);
+    const grossMonthlyDifference = this.roundCurrency(newGrossSalary - oldGrossSalary);
     const breakdown = this.calculatePromotionArrearsBreakdown(
       effectiveDate,
-      newBasicSalary - oldBasicSalary,
+      grossMonthlyDifference,
+      basicMonthlyDifference,
     );
 
     return {
       effectiveDate,
       oldBasicSalary,
       newBasicSalary,
+      oldGrossSalary,
+      newGrossSalary,
+      oldAllowances,
+      newAllowances,
+      basicMonthlyDifference,
       ...breakdown,
       shouldCreate: breakdown.monthsDiff > 0 && breakdown.monthlyDifference > 0,
       reason:
@@ -498,9 +533,11 @@ export class PromotionsService {
       effectiveDate: any;
       oldBasicSalary: number;
       newBasicSalary: number;
+      oldGrossSalary?: number;
+      newGrossSalary?: number;
       monthsDiff: number;
       totalArrears: number;
-      details: Array<{ month: string; amount: number }>;
+      details: Array<{ month: string; amount: number; basic_amount?: number }>;
     },
     userId?: string,
     notify = true,
@@ -517,8 +554,8 @@ export class PromotionsService {
       [
         promotion.staff_id,
         'promotion',
-        evaluation.oldBasicSalary,
-        evaluation.newBasicSalary,
+        evaluation.oldGrossSalary ?? evaluation.oldBasicSalary,
+        evaluation.newGrossSalary ?? evaluation.newBasicSalary,
         evaluation.oldBasicSalary,
         evaluation.newBasicSalary,
         evaluation.effectiveDate,
@@ -1342,8 +1379,8 @@ export class PromotionsService {
     const newContextGrade = resolvedNewGradeLevel;
     const oldAllowances = await this.calculateAllowanceBreakdown(staffId, oldBasicSalary, oldContextGrade);
     const newAllowances = await this.calculateAllowanceBreakdown(staffId, newBasicSalary, newContextGrade);
-    const oldGrossSalary = oldBasicSalary + oldAllowances.total;
-    const newGrossSalary = newBasicSalary + newAllowances.total;
+    const oldGrossSalary = this.roundCurrency(oldBasicSalary + oldAllowances.total);
+    const newGrossSalary = this.roundCurrency(newBasicSalary + newAllowances.total);
     
     const oldDeductions = await this.calculateDeductionBreakdown(staffId, oldBasicSalary, oldContextGrade);
     const newDeductions = await this.calculateDeductionBreakdown(staffId, newBasicSalary, newContextGrade);
@@ -1351,13 +1388,15 @@ export class PromotionsService {
     const oldNetSalary = oldGrossSalary - oldDeductions.total;
     const newNetSalary = newGrossSalary - newDeductions.total;
 
-    const monthlyDifference = this.roundCurrency(newBasicSalary - oldBasicSalary);
-    const { monthsDiff, proratedFirstMonth, fullMonthsAfter, totalArrears } =
-      this.calculatePromotionArrearsBreakdown(effectiveDate, monthlyDifference);
+    const monthlyDifference = this.roundCurrency(newGrossSalary - oldGrossSalary);
+    const basicMonthlyDifference = this.roundCurrency(newBasicSalary - oldBasicSalary);
+    const { monthsDiff, proratedFirstMonth, fullMonthsAfter, totalArrears, basicTotalArrears } =
+      this.calculatePromotionArrearsBreakdown(effectiveDate, monthlyDifference, basicMonthlyDifference);
 
     return {
       oldBasicSalary,
       newBasicSalary,
+      basicMonthlyDifference,
       oldNetSalary,
       newNetSalary,
       monthlyDifference,
@@ -1371,6 +1410,7 @@ export class PromotionsService {
       newAllowances,
       oldDeductions,
       newDeductions,
+      basicTotalArrears,
     };
   }
 

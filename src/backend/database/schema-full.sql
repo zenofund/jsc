@@ -160,6 +160,9 @@ CREATE TABLE deductions (
     amount DECIMAL(15, 2),
     percentage DECIMAL(5, 2),
     is_statutory BOOLEAN DEFAULT FALSE,
+    applies_to_promotion_arrears BOOLEAN NOT NULL DEFAULT FALSE,
+    promotion_arrears_basis VARCHAR(10) DEFAULT 'basic' CHECK (promotion_arrears_basis IN ('basic', 'gross')),
+    is_paye_relief BOOLEAN NOT NULL DEFAULT FALSE,
     status VARCHAR(20) DEFAULT 'active',
     created_by UUID REFERENCES users(id),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()

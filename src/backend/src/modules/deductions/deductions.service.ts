@@ -230,8 +230,8 @@ export class DeductionsService {
 
     const deduction = await this.databaseService.queryOne(
       `INSERT INTO deductions (
-        code, name, type, calculation_basis, amount, percentage, applies_to_all, is_statutory, status, created_by, excluded_grades, excluded_employment_types
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9, $10, $11)
+        code, name, type, calculation_basis, amount, percentage, applies_to_all, is_statutory, applies_to_promotion_arrears, promotion_arrears_basis, is_paye_relief, status, created_by, excluded_grades, excluded_employment_types
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'active', $12, $13, $14)
       RETURNING *`,
       [
         dto.code,
@@ -242,6 +242,9 @@ export class DeductionsService {
         dto.percentage || null,
         dto.appliesToAll ?? dto.applies_to_all ?? true,
         dto.is_statutory ?? false,
+        dto.applies_to_promotion_arrears ?? dto.appliesToPromotionArrears ?? false,
+        this.normalizeCalculationBasis(dto.promotion_arrears_basis ?? dto.promotionArrearsBasis ?? dto.calculation_basis),
+        dto.is_paye_relief ?? dto.isPayeRelief ?? false,
         userId,
         dto.excluded_grades !== undefined ? JSON.stringify(dto.excluded_grades || []) : '[]',
         dto.excluded_employment_types !== undefined ? JSON.stringify(dto.excluded_employment_types || []) : '[]',
@@ -314,11 +317,14 @@ export class DeductionsService {
            percentage = COALESCE($6, percentage),
            status = COALESCE($7, status),
            is_statutory = COALESCE($8, is_statutory),
-           applies_to_all = COALESCE($10, applies_to_all),
-           excluded_grades = COALESCE($11, excluded_grades),
-           excluded_employment_types = COALESCE($12, excluded_employment_types),
+           applies_to_promotion_arrears = COALESCE($10, applies_to_promotion_arrears),
+           promotion_arrears_basis = COALESCE($11, promotion_arrears_basis),
+           is_paye_relief = COALESCE($12, is_paye_relief),
+           applies_to_all = COALESCE($13, applies_to_all),
+           excluded_grades = COALESCE($14, excluded_grades),
+           excluded_employment_types = COALESCE($15, excluded_employment_types),
            updated_at = NOW()
-       WHERE id = $9
+        WHERE id = $9
        RETURNING *`,
       [
         dto.code, 
@@ -332,9 +338,14 @@ export class DeductionsService {
         dto.status, 
         dto.is_statutory ?? dto.isStatutory,
         id,
-        dto.appliesToAll ?? dto.applies_to_all ?? null,
-        dto.excluded_grades !== undefined ? JSON.stringify(dto.excluded_grades || []) : null,
-        dto.excluded_employment_types !== undefined ? JSON.stringify(dto.excluded_employment_types || []) : null
+         dto.applies_to_promotion_arrears ?? dto.appliesToPromotionArrears ?? null,
+         this.hasOwn(dto, 'promotion_arrears_basis') || this.hasOwn(dto, 'promotionArrearsBasis')
+           ? this.normalizeCalculationBasis(dto.promotion_arrears_basis ?? dto.promotionArrearsBasis)
+           : null,
+         dto.is_paye_relief ?? dto.isPayeRelief ?? null,
+         dto.appliesToAll ?? dto.applies_to_all ?? null,
+         dto.excluded_grades !== undefined ? JSON.stringify(dto.excluded_grades || []) : null,
+         dto.excluded_employment_types !== undefined ? JSON.stringify(dto.excluded_employment_types || []) : null
       ],
     );
 

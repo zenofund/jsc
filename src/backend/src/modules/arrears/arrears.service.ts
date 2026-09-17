@@ -75,9 +75,11 @@ export class ArrearsService {
     monthsOwed: number,
     firstMonthAmount: number,
     recurringAmount: number,
+    basicFirstMonthAmount = firstMonthAmount,
+    basicRecurringAmount = recurringAmount,
   ) {
     const { year, month } = this.getBusinessDateParts(effectiveDate);
-    const details: Array<{ month: string; amount: number }> = [];
+    const details: Array<{ month: string; amount: number; basic_amount?: number }> = [];
 
     for (let index = 0; index < monthsOwed; index += 1) {
       const monthDate = new Date(Date.UTC(year, month - 1 + index, 1));
@@ -86,6 +88,7 @@ export class ArrearsService {
       details.push({
         month: this.buildMonthKey(monthDate.getUTCFullYear(), monthDate.getUTCMonth() + 1),
         amount: this.roundCurrency(amount),
+        basic_amount: this.roundCurrency(index === 0 ? basicFirstMonthAmount : basicRecurringAmount),
       });
     }
 
@@ -510,14 +513,21 @@ export class ArrearsService {
       const monthlyDifference = this.roundCurrency(
         Number(arrears.new_salary || 0) - Number(arrears.old_salary || 0),
       );
+      const basicMonthlyDifference = this.roundCurrency(
+        Number(arrears.new_basic_salary || 0) - Number(arrears.old_basic_salary || 0),
+      );
       const dailyDifference = daysInEffectiveMonth > 0 ? monthlyDifference / daysInEffectiveMonth : 0;
+      const basicDailyDifference = daysInEffectiveMonth > 0 ? basicMonthlyDifference / daysInEffectiveMonth : 0;
       const firstMonthAmount = this.roundCurrency(dailyDifference * eligibleDays);
+      const basicFirstMonthAmount = this.roundCurrency(basicDailyDifference * eligibleDays);
 
       details = this.buildMonthlyBreakdown(
         arrears.effective_date,
         monthsOwed,
         firstMonthAmount,
         monthlyDifference,
+        basicFirstMonthAmount,
+        basicMonthlyDifference,
       );
       totalArrears = this.roundCurrency(
         details.reduce((sum, item) => sum + Number(item.amount || 0), 0),
