@@ -109,11 +109,15 @@ export class StaffService implements OnModuleInit {
     const normalizedBankName = String(bankName || '').trim().toLowerCase();
     const normalizedBankCode = String(bankCode || '').trim();
 
-    if (normalizedBankName && normalizedBankName !== String(bankGroup.bank_name || '').trim().toLowerCase()) {
-      throw new BadRequestException('Selected bank group does not belong to the chosen bank');
-    }
-    if (normalizedBankCode && normalizedBankCode !== String(bankGroup.bank_code || '').trim()) {
+    const bankGroupCode = String(bankGroup.bank_code || '').trim();
+    const bankCodesMatch = Boolean(normalizedBankCode && bankGroupCode && normalizedBankCode === bankGroupCode);
+
+    // Bank codes are the authoritative identity; names may be aliases across bank lists.
+    if (normalizedBankCode && !bankCodesMatch) {
       throw new BadRequestException('Selected bank group does not belong to the chosen bank code');
+    }
+    if (normalizedBankName && !normalizedBankCode && normalizedBankName !== String(bankGroup.bank_name || '').trim().toLowerCase()) {
+      throw new BadRequestException('Selected bank group does not belong to the chosen bank');
     }
 
     return bankGroup;

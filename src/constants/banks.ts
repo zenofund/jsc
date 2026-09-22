@@ -22,6 +22,7 @@ export const NIGERIAN_BANKS: NigerianBank[] = [
   { name: 'Globus Bank', code: '00103', nibssCode: '000027' },
   { name: 'Guaranty Trust Bank (GTBank)', code: '058', nibssCode: '000013' },
   { name: 'Heritage Bank', code: '030', nibssCode: '000020' },
+  { name: 'Jaiz Bank', code: '301' },
   { name: 'Keystone Bank', code: '082', nibssCode: '000002' },
   { name: 'Polaris Bank', code: '076', nibssCode: '000008' },
   { name: 'Providus Bank', code: '101', nibssCode: '000023' },

@@ -11,7 +11,6 @@ import { PayeCalculatorService } from '@common/tax/paye-calculator.service';
 export class PromotionsService {
   private readonly logger = new Logger(PromotionsService.name);
   private readonly businessTimeZone = 'Africa/Lagos';
-  private readonly maxPromotionArrearsMonths = 600;
 
   constructor(
     private readonly databaseService: DatabaseService,
@@ -32,11 +31,18 @@ export class PromotionsService {
     const slashLocaleMatch = rawValue.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
 
     if (plainDateMatch) {
-      return {
-        year: Number(plainDateMatch[1]),
-        month: Number(plainDateMatch[2]),
-        day: Number(plainDateMatch[3]),
-      };
+      const year = Number(plainDateMatch[1]);
+      const month = Number(plainDateMatch[2]);
+      const day = Number(plainDateMatch[3]);
+      const validated = new Date(Date.UTC(year, month - 1, day));
+      if (
+        validated.getUTCFullYear() === year &&
+        validated.getUTCMonth() === month - 1 &&
+        validated.getUTCDate() === day
+      ) {
+        return { year, month, day };
+      }
+      throw new BadRequestException('Invalid promotion effective date');
     }
 
     if (slashIsoMatch) {
@@ -334,16 +340,15 @@ export class PromotionsService {
     basicMonthlyDifference = monthlyDifference,
   ) {
     const effectiveParts = this.getBusinessDateParts(effectiveDate);
+    if (effectiveParts.year < 1900 || effectiveParts.year > 2100) {
+      throw new BadRequestException('Promotion effective date must be between 1900 and 2100.');
+    }
     const effectiveMonth = new Date(Date.UTC(effectiveParts.year, effectiveParts.month - 1, 1));
     const todayParts = this.getBusinessDateParts(new Date());
     const currentMonth = new Date(Date.UTC(todayParts.year, todayParts.month - 1, 1));
     const monthsDiff =
       (currentMonth.getUTCFullYear() - effectiveMonth.getUTCFullYear()) * 12 +
       (currentMonth.getUTCMonth() - effectiveMonth.getUTCMonth());
-
-    if (monthsDiff > this.maxPromotionArrearsMonths) {
-      throw new BadRequestException('Invalid promotion effective date');
-    }
 
     const safeMonthsDiff = Math.max(0, monthsDiff);
     const roundedMonthlyDifference = this.roundCurrency(monthlyDifference);
@@ -352,7 +357,7 @@ export class PromotionsService {
     let totalArrears = 0;
     let basicProratedFirstMonth = 0;
     let basicTotalArrears = 0;
-    const details: Array<{ month: string; amount: number; basic_amount?: number }> = [];
+    const details: Array<{ month: string; amount: number; gross_amount: number; basic_amount?: number }> = [];
 
     if (roundedMonthlyDifference > 0 && safeMonthsDiff > 0) {
       const daysInEffectiveMonth = new Date(Date.UTC(effectiveParts.year, effectiveParts.month, 0)).getUTCDate();
@@ -373,6 +378,7 @@ export class PromotionsService {
         details.push({
           month: this.buildMonthKey(monthDate.getUTCFullYear(), monthDate.getUTCMonth() + 1),
           amount: this.roundCurrency(index === 0 ? proratedFirstMonth : roundedMonthlyDifference),
+          gross_amount: this.roundCurrency(index === 0 ? proratedFirstMonth : roundedMonthlyDifference),
           basic_amount: this.roundCurrency(index === 0 ? basicProratedFirstMonth : roundedBasicDifference),
         });
       }
@@ -380,10 +386,12 @@ export class PromotionsService {
 
     return {
       monthlyDifference: roundedMonthlyDifference,
+      grossMonthlyDifference: roundedMonthlyDifference,
       monthsDiff: safeMonthsDiff,
       proratedFirstMonth,
       fullMonthsAfter,
       totalArrears,
+      grossTotalArrears: totalArrears,
       basicProratedFirstMonth,
       basicTotalArrears,
       details,
@@ -539,7 +547,7 @@ export class PromotionsService {
       newGrossSalary?: number;
       monthsDiff: number;
       totalArrears: number;
-      details: Array<{ month: string; amount: number; basic_amount?: number }>;
+      details: Array<{ month: string; amount: number; gross_amount?: number; basic_amount?: number }>;
     },
     userId?: string,
     notify = true,
@@ -1379,6 +1387,15 @@ export class PromotionsService {
 
     const oldContextGrade = resolvedOldGradeLevel;
     const newContextGrade = resolvedNewGradeLevel;
+    const canonicalEffectiveDate = this.canonicalizeBusinessDate(effectiveDate, new Date());
+    const effectiveParts = this.getBusinessDateParts(canonicalEffectiveDate);
+    if (effectiveParts.year < 1900 || effectiveParts.year > 2100) {
+      throw new BadRequestException('Promotion effective date must be between 1900 and 2100.');
+    }
+    const employmentDate = staff.employment_date ? this.canonicalizeBusinessDate(staff.employment_date, new Date()) : null;
+    if (employmentDate && canonicalEffectiveDate < employmentDate) {
+      throw new BadRequestException('Promotion effective date cannot be earlier than the staff employment date.');
+    }
     const oldAllowances = await this.calculateAllowanceBreakdown(staffId, oldBasicSalary, oldContextGrade);
     const newAllowances = await this.calculateAllowanceBreakdown(staffId, newBasicSalary, newContextGrade);
     const oldGrossSalary = this.roundCurrency(oldBasicSalary + oldAllowances.total);
@@ -1393,7 +1410,7 @@ export class PromotionsService {
     const monthlyDifference = this.roundCurrency(newGrossSalary - oldGrossSalary);
     const basicMonthlyDifference = this.roundCurrency(newBasicSalary - oldBasicSalary);
     const breakdown =
-      this.calculatePromotionArrearsBreakdown(effectiveDate, monthlyDifference, basicMonthlyDifference);
+      this.calculatePromotionArrearsBreakdown(canonicalEffectiveDate, monthlyDifference, basicMonthlyDifference);
     const arrearsDeductions = await this.calculatePromotionArrearsDeductionBreakdown(
       newDeductions.items,
       breakdown.totalArrears,
@@ -1429,14 +1446,17 @@ export class PromotionsService {
     return {
       oldBasicSalary,
       newBasicSalary,
+      effectiveDate: canonicalEffectiveDate,
       basicMonthlyDifference,
       oldNetSalary,
       newNetSalary,
       monthlyDifference,
+      grossMonthlyDifference: monthlyDifference,
       monthsDiff: breakdown.monthsDiff,
       proratedFirstMonth: breakdown.proratedFirstMonth,
       fullMonthsAfter: breakdown.fullMonthsAfter,
       totalArrears: breakdown.totalArrears,
+      grossTotalArrears: breakdown.totalArrears,
       oldGrossSalary,
       newGrossSalary,
       oldAllowances,
@@ -1444,6 +1464,7 @@ export class PromotionsService {
       oldDeductions,
       newDeductions,
       basicTotalArrears: breakdown.basicTotalArrears,
+      arrearsCalculationBasis: 'gross',
       arrearsDeductions,
       regularPaye: regularTax.monthly_tax,
       payeOnPromotionArrears,

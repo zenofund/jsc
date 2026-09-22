@@ -890,6 +890,7 @@ export function PayrollSetupPage() {
                     <th className="px-6 py-4 text-left text-xs text-muted-foreground uppercase">Amount/Rate</th>
                     <th className="px-6 py-4 text-left text-xs text-muted-foreground uppercase">Statutory</th>
                     <th className="px-6 py-4 text-left text-xs text-muted-foreground uppercase">Global</th>
+                    <th className="px-6 py-4 text-left text-xs text-muted-foreground uppercase">Promotion Arrears</th>
                     <th className="px-6 py-4 text-left text-xs text-muted-foreground uppercase">Exclusions</th>
                     <th className="px-6 py-4 text-left text-xs text-muted-foreground uppercase">Status</th>
                     <th className="px-6 py-4 text-left text-xs text-muted-foreground uppercase">Actions</th>
@@ -898,7 +899,7 @@ export function PayrollSetupPage() {
                 <tbody className="divide-y divide-border">
                   {deductions.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-6 py-12 text-center text-muted-foreground">
+                      <td colSpan={10} className="px-6 py-12 text-center text-muted-foreground">
                         No deductions configured
                       </td>
                     </tr>
@@ -927,6 +928,15 @@ export function PayrollSetupPage() {
                             <Check className="w-4 h-4 text-green-600" />
                           ) : (
                             <X className="w-4 h-4 text-red-600" />
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-card-foreground">
+                          {deduction.applies_to_promotion_arrears ? (
+                            <span className="text-xs bg-green-100 text-green-800 dark:bg-green-950/40 dark:text-green-300 px-2 py-1 rounded-full">
+                              Yes · {deduction.promotion_arrears_basis === 'gross' ? 'Gross' : 'Basic'}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">No</span>
                           )}
                         </td>
                         <td className="px-6 py-4 text-sm text-card-foreground">
@@ -1315,32 +1325,6 @@ export function PayrollSetupPage() {
                 </div>
               </div>
 
-
-
-              <div className="rounded border border-border bg-muted/30 p-3 space-y-3">
-                <div className="text-sm font-medium text-card-foreground">Promotion arrears policy</div>
-                <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={deductionForm.applies_to_promotion_arrears}
-                    onChange={(e) => setDeductionForm({ ...deductionForm, applies_to_promotion_arrears: e.target.checked })} className="w-4 h-4" />
-                  <span className="text-sm text-card-foreground">Apply this deduction to promotion arrears</span>
-                </label>
-                {deductionForm.applies_to_promotion_arrears && <>
-                  <div>
-                    <label className="block text-sm mb-1 text-card-foreground">Arrears calculation basis</label>
-                    <select value={deductionForm.promotion_arrears_basis}
-                      onChange={(e) => setDeductionForm({ ...deductionForm, promotion_arrears_basis: e.target.value as 'basic' | 'gross' })}
-                      className="w-full px-3 py-2 rounded border border-border bg-input-background text-foreground">
-                      <option value="basic">Basic arrears</option><option value="gross">Gross arrears</option>
-                    </select>
-                  </div>
-                  <label className="flex items-center gap-2">
-                    <input type="checkbox" checked={deductionForm.is_paye_relief}
-                      onChange={(e) => setDeductionForm({ ...deductionForm, is_paye_relief: e.target.checked })} className="w-4 h-4" />
-                    <span className="text-sm text-card-foreground">Treat as PAYE relief</span>
-                  </label>
-                </>}
-              </div>
-
               <div>
                 <label className="block text-sm mb-1 text-card-foreground">Status *</label>
                 <select
@@ -1580,6 +1564,30 @@ export function PayrollSetupPage() {
                     ))}
                   </div>
                 </div>
+              </div>
+
+              <div className="rounded border border-border bg-muted/30 p-3 space-y-3">
+                <div className="text-sm font-medium text-card-foreground">Promotion arrears policy</div>
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={deductionForm.applies_to_promotion_arrears}
+                    onChange={(e) => setDeductionForm({ ...deductionForm, applies_to_promotion_arrears: e.target.checked })} className="w-4 h-4" />
+                  <span className="text-sm text-card-foreground">Apply this deduction to promotion arrears</span>
+                </label>
+                {deductionForm.applies_to_promotion_arrears && <>
+                  <div>
+                    <label className="block text-sm mb-1 text-card-foreground">Arrears calculation basis</label>
+                    <select value={deductionForm.promotion_arrears_basis}
+                      onChange={(e) => setDeductionForm({ ...deductionForm, promotion_arrears_basis: e.target.value as 'basic' | 'gross' })}
+                      className="w-full px-3 py-2 rounded border border-border bg-input-background text-foreground">
+                      <option value="basic">Basic arrears</option><option value="gross">Gross arrears</option>
+                    </select>
+                  </div>
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" checked={deductionForm.is_paye_relief}
+                      onChange={(e) => setDeductionForm({ ...deductionForm, is_paye_relief: e.target.checked })} className="w-4 h-4" />
+                    <span className="text-sm text-card-foreground">Treat as PAYE relief</span>
+                  </label>
+                </>}
               </div>
 
               <div>

@@ -290,10 +290,10 @@ export function PromotionsPage() {
       );
 
       setArrearsPreview({
-        monthlyDifference: result.monthlyDifference,
+        monthlyDifference: result.grossMonthlyDifference ?? result.monthlyDifference,
         basicMonthlyDifference: result.basicMonthlyDifference,
         monthsOwed: result.monthsDiff,
-        totalArrears: result.totalArrears,
+        totalArrears: result.grossTotalArrears ?? result.totalArrears,
         oldSalary: result.oldBasicSalary,
         newSalary: result.newBasicSalary,
         oldGrossSalary: result.oldGrossSalary,
@@ -312,6 +312,8 @@ export function PromotionsPage() {
       });
     } catch (error) {
       console.error('Failed to calculate arrears preview:', error);
+      const message = error instanceof Error ? error.message : 'Unable to calculate promotion arrears preview.';
+      showToast('error', message);
       // Fallback or just clear preview on error
       setArrearsPreview(null);
     } finally {
@@ -354,13 +356,12 @@ export function PromotionsPage() {
                 })[0];
 
               if (matchedArrears && String(matchedArrears.status || '').trim().toLowerCase() !== 'rejected') {
-                setDetailsStoredArrearsTotal(
-                  Number(matchedArrears.total_arrears ?? matchedArrears.totalArrears ?? 0),
-                );
+                setDetailsStoredArrearsTotal(null);
                 setDetailsStoredArrearsStatus(normalizeStoredArrearsStatus(matchedArrears.status));
-                setDetailsUsesStoredArrears(true);
-                setDetailsArrearsPreview(buildPreviewFromStoredArrears(matchedArrears));
-                return;
+                setDetailsUsesStoredArrears(false);
+                // Always recalculate the detail preview using the current
+                // gross arrears policy. Stored arrears remain the posted
+                // transaction but must not hide a stale basic-only preview.
               }
 
               setDetailsStoredArrearsTotal(null);
@@ -388,10 +389,10 @@ export function PromotionsPage() {
           selectedPromotion.old_step,
         );
         setDetailsArrearsPreview({
-        monthlyDifference: result.monthlyDifference,
+        monthlyDifference: result.grossMonthlyDifference ?? result.monthlyDifference,
           basicMonthlyDifference: result.basicMonthlyDifference,
           monthsOwed: result.monthsDiff,
-          totalArrears: result.totalArrears,
+          totalArrears: result.grossTotalArrears ?? result.totalArrears,
           oldSalary: result.oldBasicSalary,
           newSalary: result.newBasicSalary,
           oldGrossSalary: result.oldGrossSalary,
@@ -1231,19 +1232,19 @@ export function PromotionsPage() {
                     <>
                   <div className="grid grid-cols-2 gap-3 text-sm">
                     <div>
-                      <span className="text-orange-700 dark:text-orange-300">Old Basic Salary:</span>
+                      <span className="text-orange-700 dark:text-orange-300">Old Basic Salary (reference):</span>
                       <div className="font-semibold text-orange-900 dark:text-orange-200">
                         {formatCurrency(arrearsPreview.oldSalary)}
                       </div>
                     </div>
                     <div>
-                      <span className="text-orange-700 dark:text-orange-300">New Basic Salary:</span>
+                      <span className="text-orange-700 dark:text-orange-300">New Basic Salary (reference):</span>
                       <div className="font-semibold text-orange-900 dark:text-orange-200">
                         {formatCurrency(arrearsPreview.newSalary)}
                       </div>
                     </div>
                     <div>
-                      <span className="text-orange-700 dark:text-orange-300">Monthly Gross Difference:</span>
+                      <span className="text-orange-700 dark:text-orange-300">Monthly Gross Difference (arrears basis):</span>
                       <div className="font-semibold text-orange-900 dark:text-orange-200">
                         {formatCurrency(arrearsPreview.monthlyDifference)}
                       </div>
@@ -1257,7 +1258,7 @@ export function PromotionsPage() {
                   </div>
                   <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
                     <div>
-                      <span className="text-orange-700 dark:text-orange-300">Monthly Basic Difference:</span>
+                      <span className="text-orange-700 dark:text-orange-300">Monthly Basic Difference (Union basis):</span>
                       <div className="font-semibold text-orange-900 dark:text-orange-200">
                         {formatCurrency(arrearsPreview.basicMonthlyDifference)}
                       </div>
@@ -1555,19 +1556,19 @@ export function PromotionsPage() {
                   )}
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <span className="text-orange-700 dark:text-orange-300">Old Basic Salary:</span>
+                      <span className="text-orange-700 dark:text-orange-300">Old Basic Salary (reference):</span>
                       <div className="font-semibold text-orange-900 dark:text-orange-200">
                         {formatCurrency(detailsArrearsPreview.oldSalary)}
                       </div>
                     </div>
                     <div>
-                      <span className="text-orange-700 dark:text-orange-300">New Basic Salary:</span>
+                      <span className="text-orange-700 dark:text-orange-300">New Basic Salary (reference):</span>
                       <div className="font-semibold text-orange-900 dark:text-orange-200">
                         {formatCurrency(detailsArrearsPreview.newSalary)}
                       </div>
                     </div>
                     <div>
-                      <span className="text-orange-700 dark:text-orange-300">Monthly Difference:</span>
+                      <span className="text-orange-700 dark:text-orange-300">Monthly Gross Difference (arrears basis):</span>
                       <div className="font-semibold text-orange-900 dark:text-orange-200">
                         {formatCurrency(detailsArrearsPreview.monthlyDifference)}
                       </div>

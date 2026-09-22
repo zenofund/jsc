@@ -76,6 +76,10 @@
             "dev": "vite",
             "build": "vite build",
             "lint": "npm --prefix src/backend run lint",
-            "typecheck": "tsc --noEmit"
+            "typecheck": "tsc --noEmit",
+            "db:migrate": "npm --prefix src/backend run db:migrate",
+            "db:migrate:status": "npm --prefix src/backend run db:migrate:status",
+            "db:migrate:dry-run": "npm --prefix src/backend run db:migrate:dry-run",
+            "db:seed": "npm --prefix src/backend run db:seed"
       }
 }

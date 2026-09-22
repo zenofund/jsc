@@ -455,3 +455,28 @@ npm run db:seed
 ```
 
 🎉 **Done!**
+
+## Consolidated deployment migrations
+# Database deployment
+
+The database is provisioned with the repository's canonical schema and forward-only SQL migrations. Do not apply `schema-full.sql` manually to an existing database: it is a clean baseline and intentionally contains destructive drop statements.
+
+From the repository root:
+
+```bash
+npm run db:migrate
+npm run db:seed
+```
+
+`db:migrate` creates `schema_migrations`, takes a PostgreSQL advisory lock, applies the canonical base schema only when the database is empty, and then applies pending migrations in numeric order. Each migration is executed inside the same transaction as its tracking record. Re-running it is safe; changed checksums fail loudly instead of silently changing migration history.
+
+Useful checks:
+
+```bash
+npm run db:migrate:status
+npm run db:migrate:dry-run
+```
+
+For a new server, set `DATABASE_URL`, deploy the repository, run `npm run db:migrate`, optionally run `npm run db:seed`, and start the backend. `npm run start:prod` also runs the migration command through its `prestart:prod` hook, so production startup cannot accidentally omit pending schema changes. Keep future schema changes as a new numbered SQL file in `src/backend/migrations/`; never edit an applied migration.
+
+The first consolidated runner release treats migrations `001` through `064` as the existing repository baseline. Migration `065_complete_schema_baseline.sql` repairs the latest bank-group and promotion-arrears columns for both fresh and previously provisioned databases. All migrations numbered above `064` are discovered and applied normally.

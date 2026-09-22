@@ -77,6 +77,17 @@ export function StaffListPage() {
   const [availableLGAs, setAvailableLGAs] = useState<string[]>([]);
   const [supportedBanks, setSupportedBanks] = useState<{ name: string; code: string }[]>([]);
   const [bankGroups, setBankGroups] = useState<BankGroup[]>([]);
+  const getCanonicalBankName = (bankCode?: string, fallback = '') => {
+    const normalizedCode = String(bankCode || '').trim();
+    if (!normalizedCode) return fallback;
+
+    const groupBank = bankGroups.find(
+      (group) => group.is_active && String(group.bank_code || '').trim() === normalizedCode,
+    )?.bank_name;
+    if (groupBank) return groupBank;
+
+    return supportedBanks.find((bank) => String(bank.code) === normalizedCode)?.name || fallback;
+  };
   const [allowedGrades, setAllowedGrades] = useState<string[]>(['3','4','5','6','7','8','9','10','12','13','14','15','16','17']);
   const [idempotencyKey, setIdempotencyKey] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -138,8 +149,8 @@ export function StaffListPage() {
 
     return bankGroups.filter((group) => {
       if (!group.is_active) return false;
-      if (normalizedCode && String(group.bank_code || '').trim() === normalizedCode) {
-        return true;
+      if (normalizedCode) {
+        return String(group.bank_code || '').trim() === normalizedCode;
       }
       if (normalizedName && String(group.bank_name || '').trim().toLowerCase() === normalizedName) {
         return true;
@@ -379,8 +390,7 @@ export function StaffListPage() {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     if (name === 'bank_code') {
-      const selected = supportedBanks.find((b) => String(b.code) === String(value));
-      const bankName = selected?.name || '';
+      const bankName = getCanonicalBankName(value);
       const availableGroups = getFilteredBankGroups(value, bankName);
       setFormData((prev) => ({
         ...prev,
@@ -441,7 +451,13 @@ export function StaffListPage() {
         const banks = await bankAPI.getSupportedBanks();
         console.log('Loaded banks:', banks);
         if (Array.isArray(banks)) {
-          setSupportedBanks(banks);
+          const uniqueBanks = banks.reduce<{ name: string; code: string }[]>((result, bank) => {
+            const code = String(bank.code || '').trim();
+            if (!code || result.some((item) => item.code === code)) return result;
+            result.push({ name: String(bank.name || '').trim(), code });
+            return result;
+          }, []);
+          setSupportedBanks(uniqueBanks);
         } else {
           console.warn('Supported banks API returned non-array:', banks);
           setSupportedBanks([]);
@@ -757,7 +773,10 @@ export function StaffListPage() {
       grade_level: normalizeGrade(staffMember.salary_info.grade_level) || '7',
       step: staffMember.salary_info.step || 1,
       bank_code: findBankCode(staffMember.salary_info.bank_code, staffMember.salary_info.bank_name),
-      bank_name: staffMember.salary_info.bank_name || '',
+      bank_name: getCanonicalBankName(
+        findBankCode(staffMember.salary_info.bank_code, staffMember.salary_info.bank_name),
+        staffMember.salary_info.bank_name || '',
+      ),
       bank_group_id: staffMember.salary_info.bank_group_id || '',
       account_number: staffMember.salary_info.account_number || '',
       account_name: staffMember.salary_info.account_name || '',
@@ -786,10 +805,15 @@ export function StaffListPage() {
     if (!editingStaff || !showFormModal) return;
 
     const resolvedBankCode = findBankCode(editingStaff.salary_info.bank_code, editingStaff.salary_info.bank_name);
-    if (resolvedBankCode && resolvedBankCode !== formData.bank_code) {
-      setFormData(prev => ({ ...prev, bank_code: resolvedBankCode }));
+    const resolvedBankName = getCanonicalBankName(resolvedBankCode, editingStaff.salary_info.bank_name || '');
+    if (resolvedBankCode !== formData.bank_code || resolvedBankName !== formData.bank_name) {
+      setFormData(prev => ({
+        ...prev,
+        bank_code: resolvedBankCode,
+        bank_name: resolvedBankName,
+      }));
     }
-  }, [supportedBanks, editingStaff, showFormModal]);
+  }, [bankGroups, supportedBanks, editingStaff, showFormModal]);
   const formatDateDisplay = (dateString?: string) => {
     if (!dateString) return 'N/A';
     const d = new Date(dateString);
