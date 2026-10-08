@@ -394,6 +394,25 @@ export class ReportsService {
       )
       : [];
     const [rawLines1, rawLines2] = await Promise.all([loadLines(batch1), loadLines(batch2)]);
+    const promotionRows = await this.databaseService.query(
+      `SELECT
+         p.staff_id,
+         p.old_grade_level,
+         p.old_step,
+         p.new_grade_level,
+         p.new_step,
+         p.old_basic_salary,
+         p.new_basic_salary,
+         COALESCE(p.promotion_date::date, p.effective_date) as promotion_effective_date,
+         p.promotion_type,
+         p.remarks
+       FROM promotions p
+       WHERE p.status = 'approved'
+         AND COALESCE(p.promotion_date::date, p.effective_date) >= TO_DATE($1 || '-01', 'YYYY-MM-DD')
+         AND COALESCE(p.promotion_date::date, p.effective_date) < (TO_DATE($1 || '-01', 'YYYY-MM-DD') + INTERVAL '1 month')
+       ORDER BY COALESCE(p.promotion_date::date, p.effective_date) ASC`,
+      [month2],
+    );
     const allLines = [...rawLines1, ...rawLines2];
     const bankGroups = Array.from(new Map(allLines.map((line: any) => {
       const id = line.bank_group_id || `name:${line.bank_group_name || 'unassigned'}`;
@@ -458,6 +477,12 @@ export class ReportsService {
     };
     const left = new Map(lines1.map((line: any) => [normalize(line).key, normalize(line)]));
     const right = new Map(lines2.map((line: any) => [normalize(line).key, normalize(line)]));
+    const promotionsByStaff = new Map<string, any[]>();
+    for (const promotion of promotionRows || []) {
+      const key = String(promotion.staff_id || '').trim();
+      if (!key) continue;
+      promotionsByStaff.set(key, [...(promotionsByStaff.get(key) || []), promotion]);
+    }
     const keys = Array.from(new Set([...left.keys(), ...right.keys()]));
     const allowanceColumns = new Map<string, any>();
     const deductionColumns = new Map<string, any>();
@@ -476,8 +501,17 @@ export class ReportsService {
         key,
         month1: this.amount(mapA[key]),
         month2: this.amount(mapB[key]),
-        variance: safeVariance(mapB[key], mapA[key]),
+        variance: this.amount(mapB[key]) - this.amount(mapA[key]),
       })).filter((item) => item.month1 !== 0 || item.month2 !== 0);
+    };
+    const formatAmountChange = (amount: number) => {
+      const rounded = Math.round(Math.abs(amount) * 100) / 100;
+      return `₦${rounded.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    };
+    const describeComponentChange = (label: string, variance: number) => {
+      if (variance > 0) return `${label} increased by ${formatAmountChange(variance)}`;
+      if (variance < 0) return `${label} decreased by ${formatAmountChange(variance)}`;
+      return '';
     };
     const rows = keys.map((key, index) => {
       const a: any = left.get(key);
@@ -485,15 +519,54 @@ export class ReportsService {
       const source = b || a;
       const allowanceVariance = componentDelta(a, b, 'allowances');
       const deductionVariance = componentDelta(a, b, 'deductionsByCode');
-      const details = [
-        !a ? `New staff in ${month2}` : '',
-        !b ? `Exited after ${month1}` : '',
-        allowanceVariance.some((item) => item.variance !== 0) ? 'Allowance change' : '',
-        deductionVariance.some((item) => item.variance !== 0) ? 'Deduction change' : '',
-        (b?.promotionArrears || a?.promotionArrears) ? 'Promotion arrears' : '',
-      ].filter(Boolean);
+      const details: string[] = [];
+      if (!a) {
+        details.push(`New staff in ${month2}`);
+      } else if (!b) {
+        details.push(`Exited after ${month1}`);
+      } else {
+        const staffPromotions = promotionsByStaff.get(String(source.staff_id || '').trim()) || [];
+        const gradeChanged = String(a.grade_level ?? '') !== String(b.grade_level ?? '') || String(a.step ?? '') !== String(b.step ?? '');
+        if (staffPromotions.length > 0 || gradeChanged) {
+          const promotion = staffPromotions[staffPromotions.length - 1];
+          if (promotion) {
+            details.push(
+              `Promotion: GL ${promotion.old_grade_level}/Step ${promotion.old_step} → GL ${promotion.new_grade_level}/Step ${promotion.new_step}`,
+            );
+          } else {
+            details.push(`Grade/step changed: GL ${a.grade_level ?? '-'} / Step ${a.step ?? '-'} → GL ${b.grade_level ?? '-'} / Step ${b.step ?? '-'}`);
+          }
+        }
+
+        allowanceVariance.forEach((item) => {
+          const label = item.key.replace(/^allowance:/, '').replace(/_/g, ' ');
+          const change = describeComponentChange(label, item.variance);
+          if (change) details.push(change);
+        });
+        deductionVariance.forEach((item) => {
+          const label = item.key.replace(/^deduction:/, '').replace(/_/g, ' ');
+          const change = describeComponentChange(label, item.variance);
+          if (change) details.push(change);
+        });
+
+        const promotionArrearsVariance = this.amount(b.promotionArrears) - this.amount(a.promotionArrears);
+        if (promotionArrearsVariance !== 0) {
+          const change = describeComponentChange(
+            staffPromotions.length > 0 ? 'Promotion arrears' : 'Arrears',
+            promotionArrearsVariance,
+          );
+          if (change) details.push(change);
+        }
+
+        const basicVariance = this.amount(b.basic) - this.amount(a.basic);
+        if (basicVariance !== 0 && !gradeChanged && staffPromotions.length === 0) {
+          const change = describeComponentChange('Basic salary', basicVariance);
+          if (change) details.push(change);
+        }
+      }
       const variance = (field: string) => safeVariance(b?.[field], a?.[field]);
-      const hasChange = ['basic', 'gross', 'deductions', 'paye', 'net'].some((field) => variance(field) !== 0) ||
+      const hasChange = details.length > 0 ||
+        ['basic', 'gross', 'deductions', 'paye', 'net'].some((field) => variance(field) !== 0) ||
         allowanceVariance.some((item) => item.variance !== 0) || deductionVariance.some((item) => item.variance !== 0);
       return {
         sn: index + 1,
