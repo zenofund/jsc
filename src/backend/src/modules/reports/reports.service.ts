@@ -465,6 +465,10 @@ export class ReportsService {
       Object.values(line.allowanceLabels).forEach((item: any) => allowanceColumns.set(item.key, item));
       Object.values(line.deductionLabels).forEach((item: any) => deductionColumns.set(item.key, item));
     });
+    const safeVariance = (currentValue: number | null | undefined, previousValue: number | null | undefined) => {
+      if (currentValue == null || previousValue == null) return 0;
+      return this.amount(currentValue) - this.amount(previousValue);
+    };
     const componentDelta = (a: any, b: any, mapName: string) => {
       const mapA = a?.[mapName] || {};
       const mapB = b?.[mapName] || {};
@@ -472,7 +476,7 @@ export class ReportsService {
         key,
         month1: this.amount(mapA[key]),
         month2: this.amount(mapB[key]),
-        variance: this.amount(mapB[key]) - this.amount(mapA[key]),
+        variance: safeVariance(mapB[key], mapA[key]),
       })).filter((item) => item.month1 !== 0 || item.month2 !== 0);
     };
     const rows = keys.map((key, index) => {
@@ -488,7 +492,7 @@ export class ReportsService {
         deductionVariance.some((item) => item.variance !== 0) ? 'Deduction change' : '',
         (b?.promotionArrears || a?.promotionArrears) ? 'Promotion arrears' : '',
       ].filter(Boolean);
-      const variance = (field: string) => this.amount(b?.[field]) - this.amount(a?.[field]);
+      const variance = (field: string) => safeVariance(b?.[field], a?.[field]);
       const hasChange = ['basic', 'gross', 'deductions', 'paye', 'net'].some((field) => variance(field) !== 0) ||
         allowanceVariance.some((item) => item.variance !== 0) || deductionVariance.some((item) => item.variance !== 0);
       return {
@@ -527,11 +531,13 @@ export class ReportsService {
     };
     const net1 = summary.total_net.month1;
     const net2 = summary.total_net.month2;
-    const amountChange = net2 - net1;
+    const hasPreviousData = Boolean(batch1 && lines1.length > 0);
+    const amountChange = hasPreviousData ? net2 - net1 : 0;
+    const percentageChange = hasPreviousData ? (net1 === 0 ? (net2 === 0 ? 0 : 100) : (amountChange / net1) * 100) : 0;
     return {
       month1: { month: month1, status: batch1?.status || null, batch_number: batch1?.batch_number || null, total_staff: lines1.length, total_basic: summary.total_basic.month1, total_gross: summary.total_gross.month1, total_deductions: summary.total_deductions.month1, total_paye: summary.total_paye.month1, total_net: net1 },
       month2: { month: month2, status: batch2?.status || null, batch_number: batch2?.batch_number || null, total_staff: lines2.length, total_basic: summary.total_basic.month2, total_gross: summary.total_gross.month2, total_deductions: summary.total_deductions.month2, total_paye: summary.total_paye.month2, total_net: net2 },
-      variance: { staff_change: lines2.length - lines1.length, amount_change: amountChange, percentage_change: net1 === 0 ? (net2 === 0 ? 0 : 100) : (amountChange / net1) * 100 },
+      variance: { staff_change: hasPreviousData ? lines2.length - lines1.length : 0, amount_change: amountChange, percentage_change: percentageChange },
       summary,
       bank_group_id: bankGroupId || null,
       bank_groups: bankGroups,

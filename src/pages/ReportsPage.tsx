@@ -14,6 +14,7 @@ import { PageSkeleton } from '../components/PageLoader';
 import { formatCurrency, formatCompactCurrency } from '../utils/format';
 import { loadPdfMake } from '../utils/loadPdfMake';
 import { exportSpreadsheet } from '../utils/exportSpreadsheet';
+import { getVarianceDelta } from '../lib/variance';
 
 export function ReportsPage() {
   const { user } = useAuth();
@@ -340,8 +341,6 @@ export function ReportsPage() {
           { key: 'variation_details', label: 'Variation Details' },
         ];
         financialFields.forEach(([key, label]) => {
-          columns.push({ key: `${key}_month1`, label: `${label} (${month1})` });
-          columns.push({ key: `${key}_month2`, label: `${label} (${month2})` });
           columns.push({ key: `${key}_variance`, label: `${label} Variance` });
         });
         const componentColumns = [
@@ -350,24 +349,18 @@ export function ReportsPage() {
         ];
         componentColumns.forEach((item: any) => {
           const prefix = item.kind === 'allowance' ? 'allowance_values' : 'deduction_values';
-          columns.push({ key: `${prefix}_month1_${item.key}`, label: `${item.label} (${month1})` });
-          columns.push({ key: `${prefix}_month2_${item.key}`, label: `${item.label} (${month2})` });
           columns.push({ key: `${prefix}_variance_${item.key}`, label: `${item.label} Variance` });
         });
         const rows = (reportData.rows || []).map((row: any) => {
           const exportRow: any = { ...row };
           financialFields.forEach(([key]) => {
-            exportRow[`${key}_month1`] = formatAmount(row[`${key}_month1`]);
-            exportRow[`${key}_month2`] = formatAmount(row[`${key}_month2`]);
-            exportRow[`${key}_variance`] = formatAmount(row[`${key}_variance`]);
+            exportRow[`${key}_variance`] = formatAmount(getVarianceDelta(row[`${key}_month2`], row[`${key}_month1`]));
           });
           componentColumns.forEach((item: any) => {
             const source = item.kind === 'allowance' ? 'allowance_values' : 'deduction_values';
             const variance = item.kind === 'allowance' ? 'allowance_variances' : 'deduction_variances';
             const delta = (row[variance] || []).find((entry: any) => entry.key === item.key);
-            exportRow[`${source}_month1_${item.key}`] = formatAmount(row[`${source}_month1`]?.[item.key]);
-            exportRow[`${source}_month2_${item.key}`] = formatAmount(row[`${source}_month2`]?.[item.key]);
-            exportRow[`${source}_variance_${item.key}`] = formatAmount(delta?.variance || 0);
+            exportRow[`${source}_variance_${item.key}`] = formatAmount(getVarianceDelta(row[`${source}_month2`]?.[item.key], row[`${source}_month1`]?.[item.key]) || delta?.variance || 0);
           });
           return exportRow;
         });
@@ -1494,7 +1487,7 @@ export function ReportsPage() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-border text-left text-muted-foreground">
-                        <th className="p-2">Component</th><th className="p-2">Type</th><th className="p-2 text-right">{month1}</th><th className="p-2 text-right">{month2}</th><th className="p-2 text-right">Variance</th>
+                        <th className="p-2">Component</th><th className="p-2">Type</th><th className="p-2 text-right">Difference</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1503,12 +1496,12 @@ export function ReportsPage() {
                         .map((item: any) => {
                           const values = (reportData.rows || []).reduce((totals: any, row: any) => {
                             const delta = (row[item.varianceSource] || []).find((entry: any) => entry.key === item.key);
-                            totals.month1 += row[`${item.source}_month1`]?.[item.key] || 0;
-                            totals.month2 += row[`${item.source}_month2`]?.[item.key] || 0;
-                            totals.variance += delta?.variance || 0;
+                            const nextValue = row[`${item.source}_month2`]?.[item.key];
+                            const previousValue = row[`${item.source}_month1`]?.[item.key];
+                            totals.variance += getVarianceDelta(nextValue, previousValue) || delta?.variance || 0;
                             return totals;
-                          }, { month1: 0, month2: 0, variance: 0 });
-                          return <tr key={`${item.type}-${item.key}`} className="border-b border-border/60"><td className="p-2">{item.label}</td><td className="p-2">{item.type}</td><td className="p-2 text-right">{formatCurrency(values.month1)}</td><td className="p-2 text-right">{formatCurrency(values.month2)}</td><td className="p-2 text-right font-medium">{formatCurrency(values.variance)}</td></tr>;
+                          }, { variance: 0 });
+                          return <tr key={`${item.type}-${item.key}`} className="border-b border-border/60"><td className="p-2">{item.label}</td><td className="p-2">{item.type}</td><td className="p-2 text-right font-medium">{formatCurrency(values.variance)}</td></tr>;
                         })}
                     </tbody>
                   </table>
