@@ -1462,23 +1462,36 @@ export function ReportsPage() {
                   <h3 className="font-semibold text-card-foreground">Employee Variation Control</h3>
                   <span className="text-xs text-muted-foreground">{(reportData.rows || []).length} records</span>
                 </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-border text-left text-muted-foreground">
-                        <th className="p-2">S/N</th><th className="p-2">Employee Name</th><th className="p-2">GL</th><th className="p-2">Step</th><th className="p-2">Ref. No</th><th className="p-2">Bank Group</th><th className="p-2">Variation Details</th><th className="p-2 text-right">Gross Variance</th><th className="p-2 text-right">Tax Variance</th><th className="p-2 text-right">Deduction Variance</th><th className="p-2 text-right">Net Variance</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(reportData.rows || []).map((row: any) => (
-                        <tr key={`${row.staff_id || row.staff_number}-${row.sn}`} className="border-b border-border/60">
-                          <td className="p-2">{row.sn}</td><td className="p-2 whitespace-nowrap">{row.staff_name}</td><td className="p-2">{row.grade_level ?? ''}</td><td className="p-2">{row.step ?? ''}</td><td className="p-2">{row.staff_number}</td><td className="p-2">{row.bank_group}</td><td className="p-2">{row.variation_details}</td>
-                          <td className="p-2 text-right">{formatCurrency(row.gross_variance || 0)}</td><td className="p-2 text-right">{formatCurrency(row.paye_variance || 0)}</td><td className="p-2 text-right">{formatCurrency(row.deductions_variance || 0)}</td><td className="p-2 text-right font-medium">{formatCurrency(row.net_variance || 0)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <DataTable
+                  data={(reportData.rows || []).map((row: any) => ({
+                    ...row,
+                    staff_name: row.staff_name || 'Unknown',
+                    grade_level: row.grade_level ?? '',
+                    step: row.step ?? '',
+                    staff_number: row.staff_number || '',
+                    bank_group: row.bank_group || 'Unassigned Bank Group',
+                    gross_variance: formatCurrency(row.gross_variance || 0),
+                    paye_variance: formatCurrency(row.paye_variance || 0),
+                    deductions_variance: formatCurrency(row.deductions_variance || 0),
+                    net_variance: formatCurrency(row.net_variance || 0),
+                  }))}
+                  searchable
+                  searchPlaceholder="Search employee, ref no, bank group..."
+                  itemsPerPage={100}
+                  columns={[
+                    { header: 'S/N', accessor: 'sn', sortable: true },
+                    { header: 'Employee Name', accessor: 'staff_name', sortable: true },
+                    { header: 'GL', accessor: 'grade_level', sortable: true },
+                    { header: 'Step', accessor: 'step', sortable: true },
+                    { header: 'Ref. No', accessor: 'staff_number', sortable: true },
+                    { header: 'Bank Group', accessor: 'bank_group', sortable: true },
+                    { header: 'Variation Details', accessor: 'variation_details', sortable: true },
+                    { header: 'Gross Variance', accessor: 'gross_variance', sortable: true },
+                    { header: 'Tax Variance', accessor: 'paye_variance', sortable: true },
+                    { header: 'Deduction Variance', accessor: 'deductions_variance', sortable: true },
+                    { header: 'Net Variance', accessor: 'net_variance', sortable: true },
+                  ]}
+                />
               </div>
 
               <div className="bg-card rounded-lg border border-border p-6">
