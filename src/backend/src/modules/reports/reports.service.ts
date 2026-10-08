@@ -386,9 +386,12 @@ export class ReportsService {
 
     const loadLines = async (batch: any) => batch
       ? this.databaseService.query(
-        `SELECT pl.*, s.staff_number, s.first_name, s.middle_name, s.last_name
+        `SELECT pl.*, s.staff_number, s.first_name, s.middle_name, s.last_name,
+                COALESCE(pl.bank_group_id, s.bank_group_id) as resolved_bank_group_id,
+                COALESCE(NULLIF(pl.bank_group_name, ''), bg.group_name) as resolved_bank_group_name
          FROM payroll_lines pl
          LEFT JOIN staff s ON pl.staff_id = s.id
+         LEFT JOIN bank_groups bg ON bg.id = COALESCE(pl.bank_group_id, s.bank_group_id)
          WHERE pl.payroll_batch_id = $1`,
         [batch.id],
       )
@@ -415,10 +418,10 @@ export class ReportsService {
     );
     const allLines = [...rawLines1, ...rawLines2];
     const bankGroups = Array.from(new Map(allLines.map((line: any) => {
-      const id = line.bank_group_id || `name:${line.bank_group_name || 'unassigned'}`;
-      return [String(id), { id: line.bank_group_id || null, name: line.bank_group_name || 'Unassigned Bank Group' }];
+      const id = line.resolved_bank_group_id || `name:${line.resolved_bank_group_name || 'unassigned'}`;
+      return [String(id), { id: line.resolved_bank_group_id || null, name: line.resolved_bank_group_name || 'Unassigned Bank Group' }];
     })).values()).sort((a: any, b: any) => a.name.localeCompare(b.name));
-    const matchesBankGroup = (line: any) => !bankGroupId || String(line.bank_group_id || '') === String(bankGroupId);
+    const matchesBankGroup = (line: any) => !bankGroupId || String(line.resolved_bank_group_id || '') === String(bankGroupId);
     const lines1 = rawLines1.filter(matchesBankGroup);
     const lines2 = rawLines2.filter(matchesBankGroup);
     const normalize = (line: any) => {
@@ -460,8 +463,8 @@ export class ReportsService {
         staff_name: line.staff_name || [line.first_name, line.middle_name, line.last_name].filter(Boolean).join(' ').trim(),
         grade_level: line.grade_level,
         step: line.step,
-        bank_group_id: line.bank_group_id || null,
-        bank_group: line.bank_group_name || 'Unassigned Bank Group',
+        bank_group_id: line.resolved_bank_group_id || null,
+        bank_group: line.resolved_bank_group_name || 'Unassigned Bank Group',
         basic: this.amount(line.basic_salary),
         gross: this.amount(line.gross_pay),
         deductions: this.amount(line.total_deductions),
