@@ -5,6 +5,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { getPwaInstallPromptState } from '../lib/pwa-install';
 import { NotificationDropdown } from './NotificationDropdown';
+import { CUSTOM_REPORTS_ENABLED } from '../lib/feature-flags';
 import { 
   X, User, LogOut, Lock,
   LayoutDashboard, Users, DollarSign, 
@@ -222,8 +223,12 @@ export function Layout({ children }: LayoutProps) {
       roles: ['admin', 'payroll_officer', 'hr_manager'],
       items: [
         { name: 'Reports', icon: BarChart3, view: 'reports', roles: ['admin', 'payroll_officer', 'hr_manager'] },
-        { name: 'Custom Reports', icon: Table, view: 'reports-list', roles: ['admin', 'payroll_officer', 'hr_manager'] },
-        { name: 'Report Builder', icon: PlusCircle, view: 'custom-report-builder', roles: ['admin', 'payroll_officer', 'hr_manager'] },
+        ...(CUSTOM_REPORTS_ENABLED
+          ? [
+              { name: 'Custom Reports', icon: Table, view: 'reports-list', roles: ['admin', 'payroll_officer', 'hr_manager'] },
+              { name: 'Report Builder', icon: PlusCircle, view: 'custom-report-builder', roles: ['admin', 'payroll_officer', 'hr_manager'] },
+            ]
+          : []),
       ],
     },
     {

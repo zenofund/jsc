@@ -42,6 +42,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import StaffAdjustmentApprovalPage from './pages/StaffAdjustmentApprovalPage';
 import StaffRequestsAdminPage from './pages/StaffRequestsAdminPage';
 import { SystemSettingsProvider, useSystemSettings } from './contexts/SystemSettingsContext';
+import { CUSTOM_REPORTS_ENABLED } from './lib/feature-flags';
 
 const getDefaultViewForUser = (user: { role?: string | null }) => {
   const role = String(user?.role || '').trim().toLowerCase();
@@ -114,7 +115,12 @@ function AuthenticatedAppContent({ user }: { user: any }) {
   // Listen for navigation events from Layout
   useEffect(() => {
     const handleNavigation = (event: CustomEvent) => {
-      setCurrentView(event.detail.view);
+      const requestedView = String(event.detail.view || '');
+      if (!CUSTOM_REPORTS_ENABLED && ['custom-report-builder', 'reports-list'].includes(requestedView)) {
+        setCurrentView('reports');
+        return;
+      }
+      setCurrentView(requestedView as any);
     };
 
     window.addEventListener('navigate' as any, handleNavigation);
@@ -165,9 +171,19 @@ function AuthenticatedAppContent({ user }: { user: any }) {
   // Create custom navigation helper
   useEffect(() => {
     (window as any).navigateTo = (view: string) => {
+      if (!CUSTOM_REPORTS_ENABLED && ['custom-report-builder', 'reports-list'].includes(view)) {
+        setCurrentView('reports');
+        return;
+      }
       setCurrentView(view as any);
     };
   }, []);
+
+  useEffect(() => {
+    if (!CUSTOM_REPORTS_ENABLED && ['custom-report-builder', 'reports-list'].includes(currentView)) {
+      setCurrentView('reports');
+    }
+  }, [currentView]);
 
   useEffect(() => {
     const setFavicon = (href: string) => {
