@@ -137,10 +137,24 @@ export class PayrollService {
     return deduction.promotion_arrears_basis === 'gross' ? 'gross' : 'basic';
   }
 
+  private async getBatchArrears(batchId: string) {
+    return this.databaseService.query(
+      `SELECT * FROM arrears
+       WHERE status = 'processed' AND payroll_batch_id = $1`,
+      [batchId],
+    );
+  }
+
   private getArrearBasicAmount(arrear: any) {
     const details = Array.isArray(arrear?.details) ? arrear.details : [];
-    const detailedBasic = details.reduce((sum: number, item: any) => sum + Number(item?.basic_amount || 0), 0);
-    if (detailedBasic > 0) return this.roundCurrency(detailedBasic);
+    const hasDetailedBasic = details.some(
+      (item: any) => item && Object.prototype.hasOwnProperty.call(item, 'basic_amount'),
+    );
+    if (hasDetailedBasic) {
+      return this.roundCurrency(
+        details.reduce((sum: number, item: any) => sum + Number(item?.basic_amount || 0), 0),
+      );
+    }
 
     const grossAmount = Number(arrear?.total_arrears || arrear?.amount || 0);
     const basicDifference = Number(arrear?.new_basic_salary || 0) - Number(arrear?.old_basic_salary || 0);
@@ -149,6 +163,82 @@ export class PayrollService {
       return this.roundCurrency(grossAmount * (basicDifference / grossDifference));
     }
     return this.roundCurrency(grossAmount);
+  }
+
+  private calculateManualArrearsDeductions(
+    deductionDefinitions: any[],
+    basicArrears: number,
+    grossArrears: number,
+    staffMember: any,
+  ) {
+    if (grossArrears <= 0) {
+      return { items: [], total: 0, payeReliefs: { pension: 0, nhf: 0, nhia: 0 } };
+    }
+
+    const seenCodes = new Set<string>();
+    const items: any[] = [];
+    const payeReliefs = { pension: 0, nhf: 0, nhia: 0 };
+
+    for (const deduction of deductionDefinitions) {
+      if (this.isExcludedFromPayrollItem(deduction, staffMember)) {
+        continue;
+      }
+
+      const code = String(deduction.code || deduction.deduction_code || '').trim();
+      const normalizedCode = code.toUpperCase();
+      if (!normalizedCode || normalizedCode === 'TAX' || seenCodes.has(normalizedCode)) {
+        continue;
+      }
+      seenCodes.add(normalizedCode);
+
+      const name = deduction.name || deduction.deduction_name || code;
+      const basis = this.normalizeCalculationBasis(deduction.calculation_basis);
+      const amount = deduction.type === 'percentage'
+        ? this.calculatePercentageAmount(
+            deduction.percentage,
+            basicArrears,
+            grossArrears,
+            basis,
+            (value) => this.roundCurrency(value),
+          )
+        : deduction.type === 'fixed'
+          ? this.roundCurrency(Number(deduction.amount || 0))
+          : 0;
+
+      if (amount <= 0) {
+        continue;
+      }
+
+      items.push({
+        code: `${code}_MANUAL_ARREARS`,
+        name: `${name} (Manual Arrears)`,
+        amount,
+        is_arrears_deduction: true,
+        calculation_basis: basis,
+        is_paye_relief: deduction.is_paye_relief === true,
+      });
+
+      if (deduction.is_paye_relief === true) {
+        if (normalizedCode === 'PENSION' || String(name).toUpperCase().includes('PENSION')) {
+          payeReliefs.pension += amount;
+        }
+        if (normalizedCode === 'NHF' || String(name).toUpperCase().includes('HOUSING FUND')) {
+          payeReliefs.nhf += amount;
+        }
+        if (
+          ['NHIA', 'NHIS'].includes(normalizedCode) ||
+          ['NHIA', 'NHIS', 'HEALTH INSURANCE'].some((term) => String(name).toUpperCase().includes(term))
+        ) {
+          payeReliefs.nhia += amount;
+        }
+      }
+    }
+
+    return {
+      items,
+      total: this.roundCurrency(items.reduce((sum, item) => sum + item.amount, 0)),
+      payeReliefs,
+    };
   }
 
   private async getDisabledFeatureDeductionSummary(
@@ -517,11 +607,8 @@ export class PayrollService {
       [batch.payroll_month],
     );
 
-    // Get approved arrears or arrears already linked to this batch
-    const arrears = await this.databaseService.query(
-      `SELECT * FROM arrears WHERE status = 'approved' OR (status = 'processed' AND payroll_batch_id = $1)`,
-      [batchId]
-    );
+    // Only arrears explicitly assigned to this batch are included, including during regeneration.
+    const arrears = await this.getBatchArrears(batchId);
 
     // Get active loan repayments
     const loanRepayments = loanManagementEnabled
@@ -659,8 +746,22 @@ export class PayrollService {
 
       // Add arrears if applicable
       const staffArrears = arrears.filter((arr) => arr.staff_id === staffMember.id);
+      const promotionArrears = staffArrears.filter((arrear) => arrear.reason === 'promotion');
+      const manualArrears = staffArrears.filter((arrear) => arrear.reason !== 'promotion');
       const arrearsGrossTotal = staffArrears.reduce(
         (sum, arrear) => sum + Number(arrear.total_arrears || arrear.amount || 0),
+        0,
+      );
+      const promotionArrearsGrossTotal = promotionArrears.reduce(
+        (sum, arrear) => sum + Number(arrear.total_arrears || arrear.amount || 0),
+        0,
+      );
+      const manualArrearsGrossTotal = manualArrears.reduce(
+        (sum, arrear) => sum + Number(arrear.total_arrears || arrear.amount || 0),
+        0,
+      );
+      const manualArrearsBasicTotal = manualArrears.reduce(
+        (sum, arrear) => sum + this.getArrearBasicAmount(arrear),
         0,
       );
       for (const arrear of staffArrears) {
@@ -863,7 +964,7 @@ export class PayrollService {
       let arrearsNhfDeduction = 0;
       let arrearsNhiaDeduction = 0;
       let arrearsUnionDeduction = 0;
-      const arrearsBasicTotal = staffArrears.reduce(
+      const promotionArrearsBasicTotal = promotionArrears.reduce(
         (sum, arrear) => sum + this.getArrearBasicAmount(arrear),
         0,
       );
@@ -872,8 +973,8 @@ export class PayrollService {
       const regularNhiaDeductionAmount = nhisDeductionAmount;
       for (const deduction of arrearsDeductionDefinitions) {
         const kind = this.getPromotionArrearsDeductionKind(deduction);
-        if (!kind) continue;
-        const basisAmount = kind === 'basic' ? arrearsBasicTotal : arrearsGrossTotal;
+        if (!kind || promotionArrears.length === 0) continue;
+        const basisAmount = kind === 'basic' ? promotionArrearsBasicTotal : promotionArrearsGrossTotal;
         const amount = deduction.type === 'percentage'
           ? round2((basisAmount * Number(deduction.percentage || 0)) / 100)
           : round2(Number(deduction.amount || 0));
@@ -897,9 +998,20 @@ export class PayrollService {
         if (normalizedCode === 'UNION' || normalizedName.includes('UNION')) arrearsUnionDeduction += amount;
       }
 
-      pensionDeductionAmount += arrearsPensionDeduction;
-      nhfDeductionAmount += arrearsNhfDeduction;
-      nhisDeductionAmount += arrearsNhiaDeduction;
+      const manualArrearsDeductions = this.calculateManualArrearsDeductions(
+        [...globalDeductions, ...staffSpecificDeductions],
+        manualArrearsBasicTotal,
+        manualArrearsGrossTotal,
+        staffMember,
+      );
+      for (const deduction of manualArrearsDeductions.items) {
+        deductionsArray.push(deduction);
+        totalDeductionsAmount += deduction.amount;
+      }
+
+      pensionDeductionAmount += arrearsPensionDeduction + manualArrearsDeductions.payeReliefs.pension;
+      nhfDeductionAmount += arrearsNhfDeduction + manualArrearsDeductions.payeReliefs.nhf;
+      nhisDeductionAmount += arrearsNhiaDeduction + manualArrearsDeductions.payeReliefs.nhia;
 
       const regularTaxDetails = this.payeCalculator.calculate(
         regularGrossPay,
@@ -996,6 +1108,10 @@ export class PayrollService {
         nhia: round2(arrearsNhiaDeduction),
         nhf: round2(arrearsNhfDeduction),
         union: round2(arrearsUnionDeduction),
+      };
+      taxDetails.manual_arrears_deductions = {
+        total: manualArrearsDeductions.total,
+        items: manualArrearsDeductions.items,
       };
 
       // Add Tax deduction

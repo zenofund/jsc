@@ -23,7 +23,8 @@ export function CreateArrearsModal({
   const [formData, setFormData] = useState({
     staffId: '',
     reason: 'salary_adjustment',
-    amount: '',
+    basicAmount: '',
+    grossAmount: '',
     effectiveDate: new Date().toISOString().split('T')[0],
     description: '',
   });
@@ -41,7 +42,18 @@ export function CreateArrearsModal({
     return `${firstName} ${lastName}`.trim();
   };
 
-  const normalizedAmount = String(formData.amount || '').trim();
+  const normalizedBasicAmount = String(formData.basicAmount || '').trim();
+  const normalizedGrossAmount = String(formData.grossAmount || '').trim();
+  const basicAmount = Number(normalizedBasicAmount);
+  const grossAmount = Number(normalizedGrossAmount);
+  const hasValidAmounts =
+    normalizedBasicAmount !== '' &&
+    normalizedGrossAmount !== '' &&
+    Number.isFinite(basicAmount) &&
+    Number.isFinite(grossAmount) &&
+    basicAmount >= 0 &&
+    grossAmount > 0 &&
+    basicAmount <= grossAmount;
   const filteredStaffList = useMemo(() => {
     const query = staffSearchTerm.trim().toLowerCase();
     if (!query) return staffList;
@@ -69,7 +81,7 @@ export function CreateArrearsModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.staffId || !normalizedAmount || !formData.effectiveDate || !Number.isFinite(Number(normalizedAmount))) {
+    if (!formData.staffId || !hasValidAmounts || !formData.effectiveDate) {
       return;
     }
 
@@ -77,14 +89,16 @@ export function CreateArrearsModal({
     try {
       await onSubmit({
         ...formData,
-        amount: normalizedAmount,
+        basicAmount: normalizedBasicAmount,
+        grossAmount: normalizedGrossAmount,
       });
       onClose();
       // Reset form
       setFormData({
         staffId: '',
         reason: 'salary_adjustment',
-        amount: '',
+        basicAmount: '',
+        grossAmount: '',
         effectiveDate: new Date().toISOString().split('T')[0],
         description: '',
       });
@@ -96,7 +110,7 @@ export function CreateArrearsModal({
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Add Manual Adjustment">
+    <Modal isOpen={isOpen} onClose={onClose} title="Add Manual Arrears / Adjustment">
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-foreground mb-2">
@@ -149,17 +163,43 @@ export function CreateArrearsModal({
 
         <div>
           <label className="block text-sm font-medium text-foreground mb-2">
-            Amount (₦)
+            Basic Arrears (₦)
           </label>
           <input
             type="number"
             step="0.01"
-            value={formData.amount}
-            onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+            min="0"
+            value={formData.basicAmount}
+            onChange={(e) => setFormData({ ...formData, basicAmount: e.target.value })}
             className="w-full px-3 py-2 bg-background border border-input rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
             required
             placeholder="0.00"
           />
+          <p className="mt-1 text-xs text-muted-foreground">
+            The basic-pay portion of the total gross arrears.
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-2">
+            Gross Arrears (Total, ₦)
+          </label>
+          <input
+            type="number"
+            step="0.01"
+            min="0.01"
+            value={formData.grossAmount}
+            onChange={(e) => setFormData({ ...formData, grossAmount: e.target.value })}
+            className="w-full px-3 py-2 bg-background border border-input rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+            required
+            placeholder="0.00"
+          />
+          <p className="mt-1 text-xs text-muted-foreground">
+            Total payable, including the basic arrears above. Basic arrears cannot exceed gross arrears.
+          </p>
+          {normalizedBasicAmount && normalizedGrossAmount && basicAmount > grossAmount && (
+            <p className="mt-1 text-xs text-destructive">Basic arrears must not exceed gross arrears.</p>
+          )}
         </div>
 
         <div>
@@ -199,11 +239,11 @@ export function CreateArrearsModal({
           </button>
           <button
             type="submit"
-            disabled={isSubmitting || !formData.staffId || !normalizedAmount || !Number.isFinite(Number(normalizedAmount))}
+            disabled={isSubmitting || !formData.staffId || !hasValidAmounts}
             className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
           >
             {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            Create Adjustment
+            Create Arrears
           </button>
         </div>
       </form>

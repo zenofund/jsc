@@ -356,8 +356,8 @@ export interface Arrears {
   approved_by?: string;
   approved_at?: string;
   payroll_batch_id?: string;
-  arrears_details: { month: string; amount: number }[];
-  details: { month: string; amount: number }[];
+  arrears_details: { month: string; amount: number; gross_amount?: number; basic_amount?: number }[];
+  details: { month: string; amount: number; gross_amount?: number; basic_amount?: number; description?: string }[];
   created_at: string;
   updated_at?: string;
 }

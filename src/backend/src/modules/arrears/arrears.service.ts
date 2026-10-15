@@ -194,10 +194,26 @@ export class ArrearsService {
    */
   async createArrears(data: any, userId: string) {
     const {
-      staffId, reason, amount, effectiveDate, 
+      staffId, reason, amount, basicAmount: requestedBasicAmount, grossAmount: requestedGrossAmount, effectiveDate,
       monthsOwed = 1, description
     } = data;
-    const normalizedAmount = this.parseCurrencyAmount(amount);
+    const hasNewAmountFields = requestedBasicAmount !== undefined || requestedGrossAmount !== undefined;
+    const grossArrears = this.parseCurrencyAmount(
+      requestedGrossAmount ?? (hasNewAmountFields ? undefined : amount),
+    );
+    const basicArrears = this.parseCurrencyAmount(
+      requestedBasicAmount ?? (hasNewAmountFields ? undefined : amount),
+    );
+
+    if (grossArrears <= 0) {
+      throw new BadRequestException('Gross arrears must be greater than zero');
+    }
+    if (basicArrears < 0) {
+      throw new BadRequestException('Basic arrears cannot be negative');
+    }
+    if (basicArrears > grossArrears) {
+      throw new BadRequestException('Basic arrears cannot exceed gross arrears');
+    }
 
     // Get staff details
     const staff = await this.databaseService.queryOne('SELECT * FROM staff WHERE id = $1', [staffId]);
@@ -209,11 +225,13 @@ export class ArrearsService {
     const { year, month } = this.getBusinessDateParts(effectiveDate);
     const details = [{
       month: this.buildMonthKey(year, month),
-      amount: normalizedAmount,
+      amount: grossArrears,
+      gross_amount: grossArrears,
+      basic_amount: basicArrears,
       description: description || 'Manual Adjustment'
     }];
 
-    const totalArrears = normalizedAmount;
+    const totalArrears = grossArrears;
     const staffName = this.getStaffName(staff);
 
     const arrearsRecord = await this.databaseService.queryOne(
@@ -441,26 +459,49 @@ export class ArrearsService {
    * Merge arrears to payroll
    */
   async mergeArrearsToPayroll(arrearsId: string, payrollBatchId: string, userId: string) {
-    const arrears = await this.databaseService.queryOne('SELECT * FROM arrears WHERE id = $1', [arrearsId]);
-    
-    if (!arrears) {
-      throw new NotFoundException(`Arrears record with ID ${arrearsId} not found`);
+    if (!payrollBatchId) {
+      throw new BadRequestException('Please select a payroll batch.');
     }
 
-    if (arrears.status !== 'approved') {
-      throw new BadRequestException('Arrears must be approved before merging to payroll');
+    const payrollBatch = await this.databaseService.queryOne(
+      'SELECT id, status FROM payroll_batches WHERE id = $1',
+      [payrollBatchId],
+    );
+    if (!payrollBatch) {
+      throw new NotFoundException(`Payroll batch with ID ${payrollBatchId} not found`);
+    }
+    if (payrollBatch.status !== 'draft') {
+      throw new BadRequestException('Arrears can only be assigned to a draft payroll batch');
     }
 
-    // Link arrears to the payroll batch
-    await this.databaseService.query(
+    // Claim only unassigned, approved records; the conditional update prevents concurrent assignment.
+    const assignedArrears = await this.databaseService.queryOne(
       `UPDATE arrears 
        SET status = 'processed', payroll_batch_id = $1, updated_at = NOW() 
-       WHERE id = $2`,
+       WHERE id = $2
+         AND status = 'approved'
+         AND payroll_batch_id IS NULL
+       RETURNING id`,
       [payrollBatchId, arrearsId]
     );
+    if (!assignedArrears) {
+      const arrears = await this.databaseService.queryOne(
+        'SELECT id, status, payroll_batch_id FROM arrears WHERE id = $1',
+        [arrearsId],
+      );
+      if (!arrears) {
+        throw new NotFoundException(`Arrears record with ID ${arrearsId} not found`);
+      }
+      if (arrears.payroll_batch_id) {
+        throw new BadRequestException(
+          `Arrears are already assigned to payroll batch ${arrears.payroll_batch_id}`,
+        );
+      }
+      throw new BadRequestException('Only approved, unassigned arrears can be merged to payroll');
+    }
 
-    this.logger.log(`Arrears ${arrearsId} merged to payroll batch ${payrollBatchId} by user ${userId}`);
-    return { message: 'Arrears merged to payroll successfully. Please regenerate payroll lines for this batch to reflect changes.' };
+    this.logger.log(`Arrears ${arrearsId} assigned to payroll batch ${payrollBatchId} by user ${userId}`);
+    return { message: 'Arrears assigned to payroll batch successfully. Please regenerate payroll lines for this batch to reflect changes.' };
   }
 
   async bulkMergeArrearsToPayroll(arrearsIds: string[], payrollBatchId: string, userId: string) {
@@ -533,13 +574,16 @@ export class ArrearsService {
         details.reduce((sum, item) => sum + Number(item.amount || 0), 0),
       );
     } else if (arrears.effective_date) {
-      const description = Array.isArray(details) && details[0]?.description
-        ? details[0].description
-        : 'Manual Adjustment';
+      const existingDetail = Array.isArray(details) ? details[0] : undefined;
+      const description = existingDetail?.description || 'Manual Adjustment';
       const { year, month } = this.getBusinessDateParts(arrears.effective_date);
       details = [{
         month: this.buildMonthKey(year, month),
         amount: totalArrears,
+        gross_amount: totalArrears,
+        ...(existingDetail && Object.prototype.hasOwnProperty.call(existingDetail, 'basic_amount')
+          ? { basic_amount: this.roundCurrency(Number(existingDetail.basic_amount || 0)) }
+          : {}),
         description,
       }];
     }
