@@ -962,14 +962,14 @@ export function ReportsPage() {
 
   const tabs = isCashier
     ? [
-        { id: 'variance', label: 'Variance Report', icon: TrendingUp },
+        { id: 'variance', label: 'Variation Report', icon: TrendingUp },
         { id: 'remittance', label: 'Remittance Report', icon: FileText },
       ]
     : [
         { id: 'staff', label: 'Staff Report', icon: Users },
         { id: 'payroll', label: 'Payroll Report', icon: DollarSign },
         { id: 'bank-schedule', label: 'E-Mandate Schedule', icon: Building2 },
-        { id: 'variance', label: 'Variance Report', icon: TrendingUp },
+        { id: 'variance', label: 'Variation Report', icon: TrendingUp },
         { id: 'remittance', label: 'Remittance Report', icon: FileText },
       ];
 
