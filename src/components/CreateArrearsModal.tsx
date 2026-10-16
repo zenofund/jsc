@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState } from 'react';
 import { Modal } from './Modal';
-import { staffAPI } from '../lib/api-client';
 import { Staff } from '../types/entities';
-import { Loader2, Search } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
+import { StaffSearch } from './ui/StaffSearch';
 
 interface CreateArrearsModalProps {
   isOpen: boolean;
@@ -15,10 +15,8 @@ export function CreateArrearsModal({
   onClose,
   onSubmit,
 }: CreateArrearsModalProps) {
-  const [staffList, setStaffList] = useState<Staff[]>([]);
-  const [loadingStaff, setLoadingStaff] = useState(false);
+  const [selectedStaff, setSelectedStaff] = useState<Staff | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [staffSearchTerm, setStaffSearchTerm] = useState('');
 
   const [formData, setFormData] = useState({
     staffId: '',
@@ -28,19 +26,6 @@ export function CreateArrearsModal({
     effectiveDate: new Date().toISOString().split('T')[0],
     description: '',
   });
-
-  useEffect(() => {
-    if (isOpen) {
-      loadStaff();
-      setStaffSearchTerm('');
-    }
-  }, [isOpen]);
-
-  const getStaffDisplayName = (staff: Staff) => {
-    const firstName = staff.bio_data?.first_name || (staff as any).first_name || '';
-    const lastName = staff.bio_data?.last_name || (staff as any).last_name || '';
-    return `${firstName} ${lastName}`.trim();
-  };
 
   const normalizedBasicAmount = String(formData.basicAmount || '').trim();
   const normalizedGrossAmount = String(formData.grossAmount || '').trim();
@@ -54,31 +39,6 @@ export function CreateArrearsModal({
     basicAmount >= 0 &&
     grossAmount > 0 &&
     basicAmount <= grossAmount;
-  const filteredStaffList = useMemo(() => {
-    const query = staffSearchTerm.trim().toLowerCase();
-    if (!query) return staffList;
-
-    return staffList.filter((staff) => {
-      const staffName = getStaffDisplayName(staff).toLowerCase();
-      const staffNumber = String(staff.staff_number || '').toLowerCase();
-      return staffName.includes(query) || staffNumber.includes(query);
-    });
-  }, [staffList, staffSearchTerm]);
-
-  const loadStaff = async () => {
-    setLoadingStaff(true);
-    try {
-      const response = await staffAPI.getActiveStaff({ allPages: true });
-      // Ensure we have an array
-      const data = Array.isArray(response) ? response : (response.data || []);
-      setStaffList(data);
-    } catch (error) {
-      console.error('Failed to load staff:', error);
-    } finally {
-      setLoadingStaff(false);
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.staffId || !hasValidAmounts || !formData.effectiveDate) {
@@ -102,6 +62,7 @@ export function CreateArrearsModal({
         effectiveDate: new Date().toISOString().split('T')[0],
         description: '',
       });
+      setSelectedStaff(null);
     } catch (error) {
       // Error handled by parent
     } finally {
@@ -116,35 +77,14 @@ export function CreateArrearsModal({
           <label className="block text-sm font-medium text-foreground mb-2">
             Staff Member
           </label>
-          <div className="relative mb-2">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <input
-              type="search"
-              value={staffSearchTerm}
-              onChange={(e) => setStaffSearchTerm(e.target.value)}
-              placeholder="Search staff name or number"
-              className="w-full rounded border border-border bg-input-background py-2 pl-9 pr-3 text-foreground focus:border-primary focus:ring-2 focus:ring-primary"
-              disabled={loadingStaff}
-            />
-          </div>
-          <select
-            value={formData.staffId}
-            onChange={(e) => setFormData({ ...formData, staffId: e.target.value })}
-            className="w-full px-3 py-2 bg-background border border-input rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-            required
-            disabled={loadingStaff}
-          >
-            <option value="">-- Select Staff --</option>
-            {filteredStaffList.map((staff) => (
-              <option key={staff.id} value={staff.id}>
-                {staff.staff_number} - {getStaffDisplayName(staff)}
-              </option>
-            ))}
-          </select>
-          {loadingStaff && <p className="text-xs text-muted-foreground mt-1">Loading staff...</p>}
-          {!loadingStaff && staffSearchTerm.trim() && filteredStaffList.length === 0 && (
-            <p className="text-xs text-muted-foreground mt-1">No staff matched your search.</p>
-          )}
+          <StaffSearch
+            status="active"
+            selectedStaff={selectedStaff}
+            onSelect={(staff) => {
+              setSelectedStaff(staff);
+              setFormData({ ...formData, staffId: staff?.id ?? '' });
+            }}
+          />
         </div>
 
         <div>

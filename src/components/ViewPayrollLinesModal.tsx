@@ -18,9 +18,11 @@ interface ViewPayrollLinesModalProps {
   batch: PayrollBatch | null;
   lines: PayrollLine[];
   isLoading?: boolean;
+  totalLines?: number;
   currentPage?: number;
   totalPages?: number;
   onPageChange?: (page: number) => void;
+  onSearchChange?: (search: string) => void;
   onSortChange?: (direction: 'asc' | 'desc') => void;
   sortDirection?: 'asc' | 'desc';
 }
@@ -33,9 +35,11 @@ export function ViewPayrollLinesModal({
   batch,
   lines,
   isLoading = false,
+  totalLines,
   currentPage = 1,
   totalPages = 1,
   onPageChange,
+  onSearchChange,
   onSortChange,
   sortDirection = 'desc',
 }: ViewPayrollLinesModalProps) {
@@ -43,6 +47,31 @@ export function ViewPayrollLinesModal({
   const { loanManagementEnabled, cooperativeManagementEnabled } = useSystemSettings();
   const [exporting, setExporting] = React.useState<'csv' | null>(null);
   const [searchTerm, setSearchTerm] = React.useState('');
+  const onSearchChangeRef = React.useRef(onSearchChange);
+  const lastRequestedSearchRef = React.useRef('');
+
+  React.useEffect(() => {
+    onSearchChangeRef.current = onSearchChange;
+  }, [onSearchChange]);
+
+  React.useEffect(() => {
+    if (!isOpen) {
+      setSearchTerm('');
+      lastRequestedSearchRef.current = '';
+    }
+  }, [isOpen]);
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const search = searchTerm.trim();
+    if (search === lastRequestedSearchRef.current) return;
+
+    const timer = setTimeout(() => {
+      lastRequestedSearchRef.current = search;
+      onSearchChangeRef.current?.(search);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [isOpen, searchTerm]);
 
   const getGradeKey = (gradeLevel: unknown) => {
     const raw = String(gradeLevel ?? '').trim().toUpperCase();
@@ -88,19 +117,10 @@ export function ViewPayrollLinesModal({
   };
 
   const displayLines = React.useMemo(() => {
-    const normalizedSearch = searchTerm.trim().toLowerCase();
-    const filtered = normalizedSearch
-      ? lines.filter((line) => {
-          const staffName = String(line.staff_name ?? '').toLowerCase();
-          const staffNumber = String(line.staff_number ?? '').toLowerCase();
-          return staffName.includes(normalizedSearch) || staffNumber.includes(normalizedSearch);
-        })
-      : lines;
-
-    const sorted = [...filtered];
+    const sorted = [...lines];
     sorted.sort((a, b) => compareLines(a, b, sortDirection));
     return sorted;
-  }, [lines, sortDirection, searchTerm]);
+  }, [lines, sortDirection]);
 
   const csvCell = (value: unknown) => {
     const str = value === null || value === undefined ? '' : String(value);
@@ -414,6 +434,13 @@ export function ViewPayrollLinesModal({
                 placeholder="Search staff name or number"
                 className="w-full px-3 py-2 rounded border border-border bg-input-background text-foreground focus:ring-2 focus:ring-primary focus:border-primary"
               />
+              {totalLines !== undefined && (
+                <p className="text-xs text-muted-foreground">
+                  {searchTerm.trim()
+                    ? `${totalLines} matching payroll line${totalLines === 1 ? '' : 's'}`
+                    : `${totalLines} payroll line${totalLines === 1 ? '' : 's'} in this batch`}
+                </p>
+              )}
               <div className="flex flex-col sm:flex-row gap-2">
                 <button
                     onClick={handleExportExcel}
@@ -586,7 +613,9 @@ export function ViewPayrollLinesModal({
         {!isLoading && lines.length === 0 && (
           <div className="text-center py-12">
             <Calculator className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
-            <p className="text-muted-foreground">No payroll lines found</p>
+            <p className="text-muted-foreground">
+              {searchTerm.trim() ? 'No payroll lines match your search' : 'No payroll lines found'}
+            </p>
           </div>
         )}
       </div>

@@ -470,7 +470,10 @@ export function ArrearsPage() {
             <DropdownMenuContent align="end">
               {row.status === 'pending' && (
                 <DropdownMenuItem
-                  onClick={() => handleApproveArrears(row.id)}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void handleApproveArrears(row.id);
+                  }}
                   disabled={isApprovalBlocked}
                 >
                   <Check className="w-4 h-4 mr-2 text-green-600" />

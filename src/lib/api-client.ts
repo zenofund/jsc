@@ -317,13 +317,28 @@ export const authAPI = {
 // ============================================
 
 export const staffAPI = {
-  async getAllStaff(options?: { page?: number; limit?: number; fetchAll?: boolean }) {
+  async getAllStaff(options?: {
+    page?: number;
+    limit?: number;
+    fetchAll?: boolean;
+    search?: string;
+    status?: string;
+  }) {
     const page = options?.page ?? 1;
     const limit = options?.limit ?? 100;
     const fetchAll = options?.fetchAll ?? false;
+    const buildUrl = (targetPage: number) => {
+      const params = new URLSearchParams({
+        page: String(targetPage),
+        limit: String(limit),
+      });
+      if (options?.search) params.set('search', options.search);
+      if (options?.status) params.set('status', options.status);
+      return `/staff?${params.toString()}`;
+    };
 
     if (!fetchAll) {
-      return makeApiRequest(`/staff?page=${page}&limit=${limit}`, {
+      return makeApiRequest(buildUrl(page), {
         method: 'GET',
       });
     }
@@ -334,7 +349,7 @@ export const staffAPI = {
     let totalPages = 1;
 
     do {
-      const resp = await makeApiRequest(`/staff?page=${currentPage}&limit=${limit}`, {
+      const resp = await makeApiRequest(buildUrl(currentPage), {
         method: 'GET',
       });
       const data = Array.isArray(resp) ? resp : (resp.data || []);

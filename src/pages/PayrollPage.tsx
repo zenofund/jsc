@@ -25,6 +25,8 @@ export function PayrollPage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalLines, setTotalLines] = useState(0);
+  const [lineSearch, setLineSearch] = useState('');
+  const payrollLinesRequestId = React.useRef(0);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showLinesModal, setShowLinesModal] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState('');
@@ -251,6 +253,7 @@ export function PayrollPage() {
   const handleViewLines = async (batch: PayrollBatch) => {
     setSelectedBatch(batch);
     setPayrollLines([]);
+    setLineSearch('');
     setLinesLoading(true);
     setShowLinesModal(true);
     try {
@@ -276,7 +279,12 @@ export function PayrollPage() {
     
     setLinesLoading(true);
     try {
-      const response = await payrollAPI.getPayrollLines(selectedBatch.id, { page: newPage, limit: 100, sort: sortDirection });
+      const response = await payrollAPI.getPayrollLines(selectedBatch.id, {
+        page: newPage,
+        limit: 100,
+        search: lineSearch,
+        sort: sortDirection,
+      });
       const lines = Array.isArray(response) ? response : (response.data || []);
       const meta = !Array.isArray(response) && response.meta ? response.meta : { total: lines.length, page: newPage, limit: 100, totalPages: 1 };
       
@@ -292,6 +300,39 @@ export function PayrollPage() {
     }
   };
 
+  const handleSearchChange = async (search: string) => {
+    if (!selectedBatch) return;
+
+    setLineSearch(search);
+    setPage(1);
+    setLinesLoading(true);
+    try {
+      const response = await payrollAPI.getPayrollLines(selectedBatch.id, {
+        page: 1,
+        limit: 100,
+        search,
+        sort: sortDirection,
+      });
+      const lines = Array.isArray(response) ? response : (response.data || []);
+      const meta = !Array.isArray(response) && response.meta
+        ? response.meta
+        : { total: lines.length, page: 1, limit: 100, totalPages: 1 };
+
+      setPayrollLines(lines);
+      setPage(Number(meta.page) || 1);
+      setTotalPages(Number(meta.totalPages) || 1);
+      setTotalLines(Number(meta.total) || lines.length);
+    } catch (error) {
+      console.error('Error searching payroll lines:', error);
+      setPayrollLines([]);
+      setTotalPages(1);
+      setTotalLines(0);
+      showToast('error', 'Failed to search payroll lines');
+    } finally {
+      setLinesLoading(false);
+    }
+  };
+
   const handleSortChange = async (direction: 'asc' | 'desc') => {
     if (!selectedBatch) return;
     
@@ -299,7 +340,12 @@ export function PayrollPage() {
     setLinesLoading(true);
     try {
       // Reset to page 1 when sorting changes
-      const response = await payrollAPI.getPayrollLines(selectedBatch.id, { page: 1, limit: 100, sort: direction });
+      const response = await payrollAPI.getPayrollLines(selectedBatch.id, {
+        page: 1,
+        limit: 100,
+        search: lineSearch,
+        sort: direction,
+      });
       const lines = Array.isArray(response) ? response : (response.data || []);
       const meta = !Array.isArray(response) && response.meta ? response.meta : { total: lines.length, page: 1, limit: 100, totalPages: 1 };
       
@@ -592,15 +638,18 @@ export function PayrollPage() {
           setPayrollLines([]);
           setLinesLoading(false);
           setPage(1);
+          setLineSearch('');
         }}
         title={`Payroll Lines - ${selectedBatch?.batch_number}`}
         size="xl"
         batch={selectedBatch}
         lines={payrollLines}
         isLoading={linesLoading}
+        totalLines={totalLines}
         currentPage={page}
         totalPages={totalPages}
         onPageChange={handlePageChange}
+        onSearchChange={handleSearchChange}
         onSortChange={handleSortChange}
         sortDirection={sortDirection}
       />

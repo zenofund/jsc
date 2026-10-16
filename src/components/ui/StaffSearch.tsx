@@ -4,16 +4,20 @@ import { staffAPI } from '../../lib/api-client';
 import { formatStaffName } from '../../lib/name-utils';
 import { Staff } from '../../types/entities';
 
+const STAFF_SEARCH_RESULT_LIMIT = 10;
+const STAFF_SEARCH_DEBOUNCE_MS = 300;
+
 interface StaffSearchProps {
-  onSelect: (staff: Staff) => void;
+  onSelect: (staff: Staff | null) => void;
   selectedStaff?: Staff | null;
+  status?: string;
 }
 
-export function StaffSearch({ onSelect, selectedStaff }: StaffSearchProps) {
+export function StaffSearch({ onSelect, selectedStaff, status }: StaffSearchProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Staff[]>([]);
-  const [staffDirectory, setStaffDirectory] = useState<Staff[]>([]);
   const [loading, setLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
@@ -67,56 +71,52 @@ export function StaffSearch({ onSelect, selectedStaff }: StaffSearchProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Search on the server so the result limit does not hide staff beyond a preloaded directory page.
   useEffect(() => {
-    let cancelled = false;
+    const searchTerm = query.trim();
+    setResults([]);
+    setSearchError(null);
 
-    const loadStaffDirectory = async () => {
+    if (!searchTerm) {
+      setResults([]);
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
       setLoading(true);
       try {
-        const response = await staffAPI.getAllStaff({ fetchAll: true, limit: 1000 });
+        const response = await staffAPI.getAllStaff({
+          page: 1,
+          limit: STAFF_SEARCH_RESULT_LIMIT,
+          search: searchTerm,
+          status,
+        });
         const data = Array.isArray(response) ? response : (response.data || []);
         if (!cancelled) {
-          setStaffDirectory(data.map(normalizeStaff));
+          setResults(data.slice(0, STAFF_SEARCH_RESULT_LIMIT).map(normalizeStaff));
+          setIsOpen(true);
         }
       } catch (error) {
-        console.error('Failed to load staff directory:', error);
+        if (!cancelled) {
+          console.error('Failed to search staff:', error);
+          setSearchError(error instanceof Error ? error.message : 'Unable to search staff.');
+          setResults([]);
+          setIsOpen(true);
+        }
       } finally {
         if (!cancelled) {
           setLoading(false);
         }
       }
-    };
-
-    loadStaffDirectory();
+    }, STAFF_SEARCH_DEBOUNCE_MS);
 
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
-  }, []);
-
-  // Debounced search
-  useEffect(() => {
-    if (!query) {
-      setResults([]);
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      const searchLower = query.toLowerCase();
-      const filtered = staffDirectory.filter((staff: Staff) => {
-        const name = formatStaffName(staff).toLowerCase();
-        const staffNo = staff.staff_number?.toLowerCase() || '';
-        const dept = staff.appointment?.department?.toLowerCase() || '';
-        
-        return name.includes(searchLower) || staffNo.includes(searchLower) || dept.includes(searchLower);
-      }).slice(0, 10);
-
-      setResults(filtered);
-      setIsOpen(true);
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [query, staffDirectory]);
+  }, [query]);
 
   return (
     <div className="relative" ref={wrapperRef}>
@@ -133,11 +133,10 @@ export function StaffSearch({ onSelect, selectedStaff }: StaffSearchProps) {
           className="w-full pl-9 pr-4 py-2 border border-border rounded-md bg-background text-foreground focus:ring-2 focus:ring-primary/50 outline-none"
           value={selectedStaff && !isOpen ? `${selectedStaff.staff_number} - ${formatStaffName(selectedStaff)}` : query}
           onChange={(e) => {
-            setQuery(e.target.value);
             if (selectedStaff) {
-               // Clear selection if user starts typing to search again
-               // But we don't call onSelect(null) immediately to avoid UI jump
+              onSelect(null);
             }
+            setQuery(e.target.value);
             setIsOpen(true);
           }}
           onFocus={() => {
@@ -169,17 +168,25 @@ export function StaffSearch({ onSelect, selectedStaff }: StaffSearchProps) {
               </div>
               <div className="text-xs text-muted-foreground flex justify-between">
                 <span>{staff.staff_number}</span>
-                <span>{staff.appointment.department}</span>
+                <span>{staff.appointment?.department || ''}</span>
               </div>
             </button>
           ))}
         </div>
       )}
       
-      {isOpen && query && results.length === 0 && !loading && (
-        <div className="absolute z-10 w-full mt-1 bg-popover border border-border rounded-md shadow-lg p-4 text-center text-muted-foreground text-sm">
-          No staff found matching "{query}"
+      {isOpen && searchError && (
+        <div className="absolute z-10 w-full mt-1 bg-popover border border-border rounded-md shadow-lg p-4 text-center text-destructive text-sm">
+          Staff search failed: {searchError}
         </div>
+      )}
+
+      {isOpen && query && results.length === 0 && !loading && (
+        searchError ? null : (
+          <div className="absolute z-10 w-full mt-1 bg-popover border border-border rounded-md shadow-lg p-4 text-center text-muted-foreground text-sm">
+            No staff found matching "{query}"
+          </div>
+        )
       )}
     </div>
   );

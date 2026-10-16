@@ -411,7 +411,16 @@ export class StaffService implements OnModuleInit {
 
     if (search) {
       whereConditions.push(
-        `(s.first_name ILIKE $${paramIndex} OR s.last_name ILIKE $${paramIndex} OR s.staff_number ILIKE $${paramIndex} OR s.email ILIKE $${paramIndex})`,
+        `(s.first_name ILIKE $${paramIndex}
+          OR s.last_name ILIKE $${paramIndex}
+          OR s.staff_number ILIKE $${paramIndex}
+          OR s.email ILIKE $${paramIndex}
+          OR EXISTS (
+            SELECT 1
+            FROM departments search_department
+            WHERE search_department.id = s.department_id
+              AND search_department.name ILIKE $${paramIndex}
+          ))`,
       );
       params.push(`%${search}%`);
       paramIndex++;
