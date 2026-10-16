@@ -15,6 +15,21 @@ export interface PayeCalculation {
   }>;
 }
 
+interface OneOffPayeReliefs {
+  pension?: number;
+  nhf?: number;
+  nhis?: number;
+}
+
+interface OneOffPayeBase {
+  grossPay: number;
+  allowances: any[];
+  isContractStaff: boolean;
+  pensionDeduction: number;
+  nhfDeduction: number;
+  nhisDeduction: number;
+}
+
 @Injectable()
 export class PayeCalculatorService {
   private readonly logger = new Logger(PayeCalculatorService.name);
@@ -127,5 +142,42 @@ export class PayeCalculatorService {
       monthly_tax: this.round2(annualTax / 12),
       tax_breakdown: taxBreakdown,
     };
+  }
+
+  calculateOneOffAdditionalTax(
+    base: OneOffPayeBase,
+    arrearsGrossAmount: number,
+    arrearsReliefs: OneOffPayeReliefs,
+    taxConfig: any,
+  ): number {
+    const oneOffGross = Math.max(0, Number(arrearsGrossAmount) || 0);
+    if (oneOffGross === 0) {
+      return 0;
+    }
+
+    const oneOffTaxableAllowance = oneOffGross / 12;
+    const annualTaxBefore = this.calculate(
+      base.grossPay,
+      base.allowances,
+      taxConfig,
+      base.isContractStaff,
+      base.pensionDeduction,
+      base.nhfDeduction,
+      base.nhisDeduction,
+    ).annual_tax;
+    const annualTaxAfter = this.calculate(
+      base.grossPay + oneOffTaxableAllowance,
+      [
+        ...base.allowances,
+        { code: 'MANUAL_ARREARS', name: 'Manual Arrears', amount: oneOffTaxableAllowance, is_taxable: true },
+      ],
+      taxConfig,
+      base.isContractStaff,
+      base.pensionDeduction + (Number(arrearsReliefs.pension) || 0) / 12,
+      base.nhfDeduction + (Number(arrearsReliefs.nhf) || 0) / 12,
+      base.nhisDeduction + (Number(arrearsReliefs.nhis) || 0) / 12,
+    ).annual_tax;
+
+    return Math.max(0, this.round2(annualTaxAfter - annualTaxBefore));
   }
 }

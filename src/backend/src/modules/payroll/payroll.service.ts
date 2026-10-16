@@ -760,19 +760,24 @@ export class PayrollService {
         (sum, arrear) => sum + Number(arrear.total_arrears || arrear.amount || 0),
         0,
       );
+      const manualArrearsAllowanceItems = new Set<object>();
       const manualArrearsBasicTotal = manualArrears.reduce(
         (sum, arrear) => sum + this.getArrearBasicAmount(arrear),
         0,
       );
       for (const arrear of staffArrears) {
         const arrearAmount = parseFloat(arrear.total_arrears || arrear.amount);
-        allowancesArray.push({
+        const arrearAllowance = {
           code: 'ARREAR',
           name: `Arrear: ${arrear.reason}`,
           amount: arrearAmount,
           is_taxable: true,
           calculation_basis: 'basic',
-        });
+        };
+        if (arrear.reason !== 'promotion') {
+          manualArrearsAllowanceItems.add(arrearAllowance);
+        }
+        allowancesArray.push(arrearAllowance);
         totalAllowances += arrearAmount;
       }
 
@@ -1090,19 +1095,43 @@ export class PayrollService {
       }
 
       // Calculate tax (Now passing actual deduction amounts for relief)
+      const allowancesWithoutManualArrears = allowancesArray.filter(
+        (allowance) => !manualArrearsAllowanceItems.has(allowance),
+      );
+      const pensionWithoutManualArrears =
+        pensionDeductionAmount - manualArrearsDeductions.payeReliefs.pension;
+      const nhfWithoutManualArrears =
+        nhfDeductionAmount - manualArrearsDeductions.payeReliefs.nhf;
+      const nhiaWithoutManualArrears =
+        nhisDeductionAmount - manualArrearsDeductions.payeReliefs.nhia;
       const taxDetails: any = this.payeCalculator.calculate(
-        grossPay, 
-        allowancesArray, 
+        round2(grossPay - manualArrearsGrossTotal),
+        allowancesWithoutManualArrears,
         taxConfig, 
         isContractStaff,
-        pensionDeductionAmount,
-        nhfDeductionAmount,
-        nhisDeductionAmount
+        pensionWithoutManualArrears,
+        nhfWithoutManualArrears,
+        nhiaWithoutManualArrears,
       );
       taxDetails.regular_monthly_tax = regularTaxDetails.monthly_tax;
       taxDetails.paye_on_promotion_arrears = round2(
         Math.max(0, taxDetails.monthly_tax - regularTaxDetails.monthly_tax),
       );
+      const manualArrearsPaye = this.payeCalculator.calculateOneOffAdditionalTax(
+        {
+          grossPay: round2(grossPay - manualArrearsGrossTotal),
+          allowances: allowancesWithoutManualArrears,
+          isContractStaff,
+          pensionDeduction: pensionWithoutManualArrears,
+          nhfDeduction: nhfWithoutManualArrears,
+          nhisDeduction: nhiaWithoutManualArrears,
+        },
+        manualArrearsGrossTotal,
+        manualArrearsDeductions.payeReliefs,
+        taxConfig,
+      );
+      taxDetails.manual_arrears_paye = manualArrearsPaye;
+      taxDetails.monthly_tax = round2(taxDetails.monthly_tax + manualArrearsPaye);
       taxDetails.promotion_arrears_deductions = {
         pension: round2(arrearsPensionDeduction),
         nhia: round2(arrearsNhiaDeduction),
