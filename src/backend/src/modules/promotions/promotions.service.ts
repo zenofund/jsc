@@ -449,100 +449,113 @@ export class PromotionsService {
     let totalDeductions = 0;
     let payeOnPromotionArrears = 0;
 
-    for (const range of ranges) {
-      const [oldAllowances, newAllowances] = await Promise.all([
-        this.calculateAllowanceBreakdown(staff.id, oldBasicSalary, oldGradeLevel, range.month),
-        this.calculateAllowanceBreakdown(staff.id, newBasicSalary, newGradeLevel, range.month),
-      ]);
-      const oldGrossSalary = this.roundCurrency(oldBasicSalary + oldAllowances.total);
-      const newGrossSalary = this.roundCurrency(newBasicSalary + newAllowances.total);
-      const [oldDeductions, newDeductions] = await Promise.all([
-        this.calculateDeductionBreakdown(staff.id, oldBasicSalary, oldGradeLevel, range.month, oldGrossSalary),
-        this.calculateDeductionBreakdown(staff.id, newBasicSalary, newGradeLevel, range.month, newGrossSalary),
-      ]);
-      const monthlyBasicDifference = this.roundCurrency(newBasicSalary - oldBasicSalary);
-      const monthlyGrossDifference = this.roundCurrency(newGrossSalary - oldGrossSalary);
-      const basicAmount = this.roundCurrency(monthlyBasicDifference * range.fraction);
-      const grossAmount = this.roundCurrency(monthlyGrossDifference * range.fraction);
-      const arrearsDeductions = await this.calculatePromotionArrearsDeductionBreakdown(
-        newDeductions.items,
-        monthlyGrossDifference,
-        monthlyBasicDifference,
-        range.fraction,
-      );
-      const oldReliefs = this.getPayeReliefAmounts(oldDeductions.items);
-      const newReliefs = this.getPayeReliefAmounts(newDeductions.items);
-      const oldTax = this.payeCalculator.calculate(
-        oldGrossSalary,
-        oldAllowances.items,
-        taxConfig,
-        isContractStaff,
-        oldReliefs.pension,
-        oldReliefs.nhf,
-        oldReliefs.nhia,
-      );
-      const newTax = this.payeCalculator.calculate(
-        newGrossSalary,
-        newAllowances.items,
-        taxConfig,
-        isContractStaff,
-        newReliefs.pension,
-        newReliefs.nhf,
-        newReliefs.nhia,
-      );
-      const monthlyPayeDifference = this.roundCurrency(Math.max(0, newTax.monthly_tax - oldTax.monthly_tax));
-      const payeAmount = this.roundCurrency(monthlyPayeDifference * range.fraction);
-      const netAmount = this.roundCurrency(grossAmount - arrearsDeductions.total - payeAmount);
+    // These months are independent; bound parallel work to reduce approval latency without flooding the DB pool.
+    const monthConcurrency = 4;
+    for (let index = 0; index < ranges.length; index += monthConcurrency) {
+      const monthResults = await Promise.all(ranges.slice(index, index + monthConcurrency).map(async (range) => {
+        const [oldAllowances, newAllowances] = await Promise.all([
+          this.calculateAllowanceBreakdown(staff.id, oldBasicSalary, oldGradeLevel, range.month),
+          this.calculateAllowanceBreakdown(staff.id, newBasicSalary, newGradeLevel, range.month),
+        ]);
+        const oldGrossSalary = this.roundCurrency(oldBasicSalary + oldAllowances.total);
+        const newGrossSalary = this.roundCurrency(newBasicSalary + newAllowances.total);
+        const [oldDeductions, newDeductions] = await Promise.all([
+          this.calculateDeductionBreakdown(staff.id, oldBasicSalary, oldGradeLevel, range.month, oldGrossSalary),
+          this.calculateDeductionBreakdown(staff.id, newBasicSalary, newGradeLevel, range.month, newGrossSalary),
+        ]);
+        const monthlyBasicDifference = this.roundCurrency(newBasicSalary - oldBasicSalary);
+        const monthlyGrossDifference = this.roundCurrency(newGrossSalary - oldGrossSalary);
+        const basicAmount = this.roundCurrency(monthlyBasicDifference * range.fraction);
+        const grossAmount = this.roundCurrency(monthlyGrossDifference * range.fraction);
+        const arrearsDeductions = await this.calculatePromotionArrearsDeductionBreakdown(
+          newDeductions.items,
+          monthlyGrossDifference,
+          monthlyBasicDifference,
+          range.fraction,
+        );
+        const oldReliefs = this.getPayeReliefAmounts(oldDeductions.items);
+        const newReliefs = this.getPayeReliefAmounts(newDeductions.items);
+        const oldTax = this.payeCalculator.calculate(
+          oldGrossSalary,
+          oldAllowances.items,
+          taxConfig,
+          isContractStaff,
+          oldReliefs.pension,
+          oldReliefs.nhf,
+          oldReliefs.nhia,
+        );
+        const newTax = this.payeCalculator.calculate(
+          newGrossSalary,
+          newAllowances.items,
+          taxConfig,
+          isContractStaff,
+          newReliefs.pension,
+          newReliefs.nhf,
+          newReliefs.nhia,
+        );
+        const monthlyPayeDifference = this.roundCurrency(Math.max(0, newTax.monthly_tax - oldTax.monthly_tax));
+        const payeAmount = this.roundCurrency(monthlyPayeDifference * range.fraction);
+        const netAmount = this.roundCurrency(grossAmount - arrearsDeductions.total - payeAmount);
 
-      totalArrears = this.roundCurrency(totalArrears + grossAmount);
-      basicTotalArrears = this.roundCurrency(basicTotalArrears + basicAmount);
-      totalDeductions = this.roundCurrency(totalDeductions + arrearsDeductions.total);
-      payeOnPromotionArrears = this.roundCurrency(payeOnPromotionArrears + payeAmount);
-      payeReliefs.pension += arrearsDeductions.payeReliefs.pension;
-      payeReliefs.nhf += arrearsDeductions.payeReliefs.nhf;
-      payeReliefs.nhia += arrearsDeductions.payeReliefs.nhia;
-      for (const item of arrearsDeductions.items) {
-        const code = String(item.code || '').trim();
-        const existing = deductionItemsByCode.get(code);
-        deductionItemsByCode.set(code, existing
-          ? { ...existing, amount: this.roundCurrency(existing.amount + item.amount) }
-          : { ...item });
+        return {
+          arrearsDeductions,
+          grossAmount,
+          basicAmount,
+          payeAmount,
+          detail: {
+            calculation_method: 'promotion_salary_period_v1',
+            month: range.month,
+            effective_start_date: range.startDate,
+            effective_end_date: range.endDate,
+            eligible_days: range.eligibleDays,
+            days_in_month: range.daysInMonth,
+            month_fraction: Number(range.fraction.toFixed(8)),
+            old_basic_salary: oldBasicSalary,
+            new_basic_salary: newBasicSalary,
+            monthly_basic_difference: monthlyBasicDifference,
+            basic_amount: basicAmount,
+            old_allowances: oldAllowances.items,
+            new_allowances: newAllowances.items,
+            old_gross: oldGrossSalary,
+            new_gross: newGrossSalary,
+            monthly_gross_difference: monthlyGrossDifference,
+            gross_amount: grossAmount,
+            amount: grossAmount,
+            old_deductions: oldDeductions.items,
+            new_deductions: newDeductions.items,
+            deductions: arrearsDeductions.items,
+            total_deductions: arrearsDeductions.total,
+            paye_old_monthly: oldTax.monthly_tax,
+            paye_new_monthly: newTax.monthly_tax,
+            paye_monthly_difference: monthlyPayeDifference,
+            paye_amount: payeAmount,
+            paye_reliefs: {
+              pension: this.roundCurrency(arrearsDeductions.payeReliefs.pension),
+              nhf: this.roundCurrency(arrearsDeductions.payeReliefs.nhf),
+              nhia: this.roundCurrency(arrearsDeductions.payeReliefs.nhia),
+            },
+            net_amount: netAmount,
+          },
+        };
+      }));
+
+      for (const result of monthResults) {
+        totalArrears = this.roundCurrency(totalArrears + result.grossAmount);
+        basicTotalArrears = this.roundCurrency(basicTotalArrears + result.basicAmount);
+        totalDeductions = this.roundCurrency(totalDeductions + result.arrearsDeductions.total);
+        payeOnPromotionArrears = this.roundCurrency(payeOnPromotionArrears + result.payeAmount);
+        payeReliefs.pension += result.arrearsDeductions.payeReliefs.pension;
+        payeReliefs.nhf += result.arrearsDeductions.payeReliefs.nhf;
+        payeReliefs.nhia += result.arrearsDeductions.payeReliefs.nhia;
+        for (const item of result.arrearsDeductions.items) {
+          const code = String(item.code || '').trim();
+          const existing = deductionItemsByCode.get(code);
+          deductionItemsByCode.set(code, existing
+            ? { ...existing, amount: this.roundCurrency(existing.amount + item.amount) }
+            : { ...item });
+        }
+        details.push(result.detail);
       }
-
-      details.push({
-        calculation_method: 'promotion_salary_period_v1',
-        month: range.month,
-        effective_start_date: range.startDate,
-        effective_end_date: range.endDate,
-        eligible_days: range.eligibleDays,
-        days_in_month: range.daysInMonth,
-        month_fraction: Number(range.fraction.toFixed(8)),
-        old_basic_salary: oldBasicSalary,
-        new_basic_salary: newBasicSalary,
-        monthly_basic_difference: monthlyBasicDifference,
-        basic_amount: basicAmount,
-        old_allowances: oldAllowances.items,
-        new_allowances: newAllowances.items,
-        old_gross: oldGrossSalary,
-        new_gross: newGrossSalary,
-        monthly_gross_difference: monthlyGrossDifference,
-        gross_amount: grossAmount,
-        amount: grossAmount,
-        old_deductions: oldDeductions.items,
-        new_deductions: newDeductions.items,
-        deductions: arrearsDeductions.items,
-        total_deductions: arrearsDeductions.total,
-        paye_old_monthly: oldTax.monthly_tax,
-        paye_new_monthly: newTax.monthly_tax,
-        paye_monthly_difference: monthlyPayeDifference,
-        paye_amount: payeAmount,
-        paye_reliefs: {
-          pension: this.roundCurrency(arrearsDeductions.payeReliefs.pension),
-          nhf: this.roundCurrency(arrearsDeductions.payeReliefs.nhf),
-          nhia: this.roundCurrency(arrearsDeductions.payeReliefs.nhia),
-        },
-        net_amount: netAmount,
-      });
     }
 
     return {
@@ -765,7 +778,7 @@ export class PromotionsService {
   private async ensurePromotionArrearsProcessed(promotion: any, userId?: string, notify = true) {
     const evaluation = await this.evaluatePromotionArrears(promotion);
 
-    if (!evaluation.effectiveDate) {
+    if (!evaluation.effectiveDate || !('effectiveEndDate' in evaluation)) {
       return { outcome: 'skipped', reason: evaluation.reason, evaluation, arrearsRecord: null };
     }
 
@@ -792,7 +805,10 @@ export class PromotionsService {
         if (
           existingArrears.status === 'pending' &&
           !existingArrears.payroll_batch_id &&
-          !existingDetails.some((detail: any) => detail?.calculation_method === 'promotion_salary_period_v1')
+          (
+            !existingDetails.some((detail: any) => detail?.calculation_method === 'promotion_salary_period_v1') ||
+            this.hasMissingPromotionArrearsDeductions(existingDetails)
+          )
         ) {
           arrearsRecord = await this.databaseService.queryOne(
             `UPDATE arrears
@@ -831,6 +847,24 @@ export class PromotionsService {
     );
 
     return { outcome, reason: evaluation.reason, evaluation, arrearsRecord };
+  }
+
+  private hasMissingPromotionArrearsDeductions(details: any[]) {
+    return details.some((detail: any) => {
+      if (detail?.calculation_method !== 'promotion_salary_period_v1') return false;
+      const expected = Array.isArray(detail.new_deductions)
+        ? detail.new_deductions.filter((deduction: any) =>
+            deduction?.applies_to_promotion_arrears === true && Number(deduction?.amount || 0) > 0,
+          )
+        : [];
+      const savedCodes = new Set(
+        (Array.isArray(detail.deductions) ? detail.deductions : [])
+          .map((deduction: any) => String(deduction?.code || '').trim().toUpperCase()),
+      );
+      return expected.some((deduction: any) =>
+        !savedCodes.has(`${String(deduction.code || '').trim()}_ARREARS`.toUpperCase()),
+      );
+    });
   }
 
   /**
@@ -2057,7 +2091,7 @@ export class PromotionsService {
     gradeLevel?: string | number,
     month?: string,
     grossSalaryOverride?: number,
-  ): Promise<{ total: number; items: Array<{ code: string; name: string; amount: number; type: string; source: string; calculation_basis?: string; applies_to_promotion_arrears?: boolean; promotion_arrears_basis?: string; is_paye_relief?: boolean }> }> {
+  ): Promise<{ total: number; items: Array<{ code: string; name: string; amount: number; percentage?: number; type: string; source: string; calculation_basis?: string; applies_to_promotion_arrears?: boolean; promotion_arrears_basis?: string; is_paye_relief?: boolean }> }> {
     const staffMember = await this.getPayrollContextStaff(staffId, gradeLevel);
     const globalDeductions = await this.databaseService.query(
       `SELECT * FROM deductions WHERE status = 'active' AND applies_to_all = true AND code != 'TAX'`,
@@ -2080,7 +2114,7 @@ export class PromotionsService {
       [staffId, month || null],
     );
 
-    const items: Array<{ code: string; name: string; amount: number; type: string; source: string; calculation_basis?: string; applies_to_promotion_arrears?: boolean; promotion_arrears_basis?: string; is_paye_relief?: boolean }> = [];
+    const items: Array<{ code: string; name: string; amount: number; percentage?: number; type: string; source: string; calculation_basis?: string; applies_to_promotion_arrears?: boolean; promotion_arrears_basis?: string; is_paye_relief?: boolean }> = [];
     let total = 0;
     const grossSalary = grossSalaryOverride !== undefined
       ? grossSalaryOverride
@@ -2107,6 +2141,7 @@ export class PromotionsService {
           code: deduction.code,
           name: deduction.name,
           amount,
+          percentage: deduction.type === 'percentage' ? Number(deduction.percentage || 0) : undefined,
           type: deduction.type,
           calculation_basis: this.normalizeCalculationBasis(deduction.calculation_basis),
           source: 'global',
@@ -2130,6 +2165,7 @@ export class PromotionsService {
         code: deduction.deduction_code || deduction.code,
         name: deduction.deduction_name || deduction.name,
         amount,
+        percentage: deduction.type === 'percentage' ? Number(deduction.percentage || 0) : undefined,
         type: deduction.type,
         calculation_basis: this.normalizeCalculationBasis(deduction.calculation_basis),
         source: 'staff',

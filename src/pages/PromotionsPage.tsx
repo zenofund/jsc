@@ -99,6 +99,7 @@ export function PromotionsPage() {
   const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [processingPromotionId, setProcessingPromotionId] = useState<string | null>(null);
+  const [processingPromotionAction, setProcessingPromotionAction] = useState<'approve' | 'reject' | 'delete' | null>(null);
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
   const [approvalComment, setApprovalComment] = useState('');
   const [selectedPromotionIds, setSelectedPromotionIds] = useState<string[]>([]);
@@ -547,6 +548,7 @@ export function PromotionsPage() {
 
     try {
       setProcessingPromotionId(promotionId);
+      setProcessingPromotionAction('approve');
       await promotionAPI.approvePromotion(promotionId, user!.id, user!.email, approvalComment.trim());
       showToast('success', 'Promotion approved successfully. Staff record updated and arrears calculated.');
       setShowDetailsModal(false);
@@ -556,6 +558,7 @@ export function PromotionsPage() {
       showToast('error', 'Failed to approve promotion');
     } finally {
       setProcessingPromotionId(null);
+      setProcessingPromotionAction(null);
     }
   };
 
@@ -563,6 +566,7 @@ export function PromotionsPage() {
     if (!await confirm('Are you sure you want to reject this promotion?')) return;
     try {
       setProcessingPromotionId(promotionId);
+      setProcessingPromotionAction('reject');
       await promotionAPI.rejectPromotion(promotionId, user!.id, user!.email, approvalComment.trim());
       showToast('success', 'Promotion rejected');
       setShowDetailsModal(false);
@@ -572,6 +576,7 @@ export function PromotionsPage() {
       showToast('error', 'Failed to reject promotion');
     } finally {
       setProcessingPromotionId(null);
+      setProcessingPromotionAction(null);
     }
   };
 
@@ -598,6 +603,7 @@ export function PromotionsPage() {
 
     try {
       setProcessingPromotionId(promotionId);
+      setProcessingPromotionAction('delete');
       await promotionAPI.deletePromotion(promotionId);
       showToast('success', 'Promotion deleted');
       if (selectedPromotion?.id === promotionId) {
@@ -606,11 +612,12 @@ export function PromotionsPage() {
         setApprovalComment('');
       }
       setSelectedPromotionIds((currentSelection) => currentSelection.filter((id) => id !== promotionId));
-      await loadData();
+      void loadData();
     } catch {
       showToast('error', 'Failed to delete promotion');
     } finally {
       setProcessingPromotionId(null);
+      setProcessingPromotionAction(null);
     }
   };
 
@@ -825,7 +832,8 @@ export function PromotionsPage() {
         const canApprovePromotion = row.status === 'pending' && canReviewPromotions;
         const canRejectPromotion = row.status === 'pending' && canReviewPromotions;
         const canDelete = canDeletePromotion(row.status);
-        const isProcessing = processingPromotionId === row.id || bulkActionLoading;
+        const isProcessing = Boolean(processingPromotionId) || bulkActionLoading;
+        const isRowProcessing = processingPromotionId === row.id || bulkActionLoading;
 
         return (
           <DropdownMenu>
@@ -837,7 +845,7 @@ export function PromotionsPage() {
                 className="p-2 hover:bg-accent rounded disabled:opacity-50 disabled:cursor-not-allowed"
                 aria-label={`Open actions for promotion ${row.id}`}
               >
-                {isProcessing ? (
+                {isRowProcessing ? (
                   <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
                 ) : (
                   <MoreVertical className="w-4 h-4 text-muted-foreground" />
@@ -1553,6 +1561,7 @@ export function PromotionsPage() {
         <Modal
           isOpen={showDetailsModal}
           onClose={() => {
+            if (processingPromotionId === selectedPromotion.id) return;
             setShowDetailsModal(false);
             setSelectedPromotion(null);
             setApprovalComment('');
@@ -1565,6 +1574,7 @@ export function PromotionsPage() {
                   setShowDetailsModal(false);
                   setSelectedPromotion(null);
                 }}
+                disabled={processingPromotionId === selectedPromotion.id}
                 className="px-4 py-2 text-foreground hover:bg-accent rounded-lg"
               >
                 Close
@@ -1572,24 +1582,30 @@ export function PromotionsPage() {
               {canDeletePromotion(selectedPromotion.status) && (
                 <button
                   onClick={() => handleDeletePromotion(selectedPromotion.id)}
-                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                  disabled={Boolean(processingPromotionId)}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center gap-2"
                 >
-                  Delete
+                  {processingPromotionId === selectedPromotion.id && processingPromotionAction === 'delete' && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {processingPromotionId === selectedPromotion.id && processingPromotionAction === 'delete' ? 'Deleting…' : 'Delete'}
                 </button>
               )}
               {selectedPromotion.status === 'pending' && (user?.role === 'admin' || user?.role === 'hr_manager') && (
                 <>
                   <button
                     onClick={() => handleRejectPromotion(selectedPromotion.id)}
-                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                    disabled={Boolean(processingPromotionId)}
+                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center gap-2"
                   >
-                    Reject
+                    {processingPromotionId === selectedPromotion.id && processingPromotionAction === 'reject' && <Loader2 className="w-4 h-4 animate-spin" />}
+                    {processingPromotionId === selectedPromotion.id && processingPromotionAction === 'reject' ? 'Rejecting…' : 'Reject'}
                   </button>
                   <button
                     onClick={() => handleApprovePromotion(selectedPromotion.id)}
-                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                    disabled={Boolean(processingPromotionId)}
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center gap-2"
                   >
-                    Approve Promotion
+                    {processingPromotionId === selectedPromotion.id && processingPromotionAction === 'approve' && <Loader2 className="w-4 h-4 animate-spin" />}
+                    {processingPromotionId === selectedPromotion.id && processingPromotionAction === 'approve' ? 'Approving…' : 'Approve Promotion'}
                   </button>
                 </>
               )}
