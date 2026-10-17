@@ -1416,10 +1416,8 @@ export class PayrollService {
          FOR UPDATE`,
         [batchId],
       );
-      const existingLineIds = new Set<string>();
       const existingLineByStaff = new Map<string, string>();
       for (const existingLine of existingLinesResult.rows) {
-        existingLineIds.add(existingLine.id);
         if (existingLine.staff_id && !existingLineByStaff.has(existingLine.staff_id)) {
           // If historical duplicate rows exist, keep the earliest line for the
           // staff member and remove the extras, matching the prior regenerate result.
@@ -1446,33 +1444,8 @@ export class PayrollService {
       // Process in chunks of 100 to stay well below PostgreSQL's parameter limit.
       // Each line uses 18 parameters, so each chunk has at most 1800 parameters.
       const CHUNK_SIZE = 100;
-
-      const lineValues = (line: any) => [
-        line.id,
-        line.payroll_batch_id,
-        line.staff_id,
-        line.staff_number,
-        line.staff_name,
-        line.grade_level,
-        line.step,
-        line.basic_salary,
-        line.allowances,
-        line.deductions,
-        line.gross_pay,
-        line.total_deductions,
-        line.net_pay,
-        line.tax_details,
-        line.bank_name,
-        line.bank_group_id,
-        line.bank_group_name,
-        line.account_number,
-      ];
-
-      const insertLines = payrollLines.filter((line) => !existingLineIds.has(line.id));
-      const updateLines = payrollLines.filter((line) => existingLineIds.has(line.id));
-
-      for (let i = 0; i < updateLines.length; i += CHUNK_SIZE) {
-        const chunk = updateLines.slice(i, i + CHUNK_SIZE);
+      for (let i = 0; i < payrollLines.length; i += CHUNK_SIZE) {
+        const chunk = payrollLines.slice(i, i + CHUNK_SIZE);
         const values: any[] = [];
         const placeholders: string[] = [];
         let paramIndex = 1;
@@ -1480,49 +1453,26 @@ export class PayrollService {
         for (const line of chunk) {
           const rowPlaceholders = Array.from({ length: 18 }, () => `$${paramIndex++}`);
           placeholders.push(`(${rowPlaceholders.join(', ')})`);
-          values.push(...lineValues(line));
-        }
-
-        await client.query(
-          `UPDATE payroll_lines AS current_line
-           SET payroll_batch_id = generated.payroll_batch_id,
-               staff_id = generated.staff_id,
-               staff_number = generated.staff_number,
-               staff_name = generated.staff_name,
-               grade_level = generated.grade_level,
-               step = generated.step,
-               basic_salary = generated.basic_salary,
-               allowances = generated.allowances,
-               deductions = generated.deductions,
-               gross_pay = generated.gross_pay,
-               total_deductions = generated.total_deductions,
-               net_pay = generated.net_pay,
-               tax_details = generated.tax_details,
-               bank_name = generated.bank_name,
-               bank_group_id = generated.bank_group_id,
-               bank_group_name = generated.bank_group_name,
-               account_number = generated.account_number
-           FROM (VALUES ${placeholders.join(', ')}) AS generated(
-             id, payroll_batch_id, staff_id, staff_number, staff_name,
-             grade_level, step, basic_salary, allowances, deductions,
-             gross_pay, total_deductions, net_pay, tax_details, bank_name,
-             bank_group_id, bank_group_name, account_number
-           )
-           WHERE current_line.id = generated.id`,
-          values,
-        );
-      }
-
-      for (let i = 0; i < insertLines.length; i += CHUNK_SIZE) {
-        const chunk = insertLines.slice(i, i + CHUNK_SIZE);
-        const values: any[] = [];
-        const placeholders: string[] = [];
-        let paramIndex = 1;
-
-        for (const line of chunk) {
-          const rowPlaceholders = Array.from({ length: 18 }, () => `$${paramIndex++}`);
-          placeholders.push(`(${rowPlaceholders.join(', ')})`);
-          values.push(...lineValues(line));
+          values.push(
+            line.id,
+            line.payroll_batch_id,
+            line.staff_id,
+            line.staff_number,
+            line.staff_name,
+            line.grade_level,
+            line.step,
+            line.basic_salary,
+            line.allowances,
+            line.deductions,
+            line.gross_pay,
+            line.total_deductions,
+            line.net_pay,
+            line.tax_details,
+            line.bank_name,
+            line.bank_group_id,
+            line.bank_group_name,
+            line.account_number,
+          );
         }
 
         await client.query(
@@ -1531,7 +1481,25 @@ export class PayrollService {
             grade_level, step, basic_salary, allowances, deductions,
             gross_pay, total_deductions, net_pay, tax_details, bank_name,
             bank_group_id, bank_group_name, account_number
-          ) VALUES ${placeholders.join(', ')}`,
+          ) VALUES ${placeholders.join(', ')}
+          ON CONFLICT (id) DO UPDATE SET
+            payroll_batch_id = EXCLUDED.payroll_batch_id,
+            staff_id = EXCLUDED.staff_id,
+            staff_number = EXCLUDED.staff_number,
+            staff_name = EXCLUDED.staff_name,
+            grade_level = EXCLUDED.grade_level,
+            step = EXCLUDED.step,
+            basic_salary = EXCLUDED.basic_salary,
+            allowances = EXCLUDED.allowances,
+            deductions = EXCLUDED.deductions,
+            gross_pay = EXCLUDED.gross_pay,
+            total_deductions = EXCLUDED.total_deductions,
+            net_pay = EXCLUDED.net_pay,
+            tax_details = EXCLUDED.tax_details,
+            bank_name = EXCLUDED.bank_name,
+            bank_group_id = EXCLUDED.bank_group_id,
+            bank_group_name = EXCLUDED.bank_group_name,
+            account_number = EXCLUDED.account_number`,
           values,
         );
       }

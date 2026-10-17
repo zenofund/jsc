@@ -8,6 +8,7 @@
 import type { User, Staff, PayrollBatch, PayrollLine, LoanApplication, CooperativeContribution, Allowance, Deduction, CooperativeMember, SystemSettings } from '../types/entities';
 import {
   clearRequestIdempotencyKey,
+  createFreshRequestIdempotencyKey,
   getRequestIdempotencyKey,
   getRequestIdempotencyUserContext,
 } from './request-idempotency';
@@ -529,6 +530,9 @@ export const payrollAPI = {
   async generatePayrollLines(batchId: string, userId: string, userEmail: string) {
     return makeApiRequest(`/payroll/batches/${batchId}/generate-lines`, {
       method: 'POST',
+      // Regeneration is an atomic upsert. Give every deliberate attempt a fresh
+      // key so a cached 500 from an earlier attempt cannot block a retry.
+      headers: { 'Idempotency-Key': createFreshRequestIdempotencyKey() },
       body: JSON.stringify({ userId, userEmail }),
     });
   },
