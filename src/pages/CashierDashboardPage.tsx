@@ -140,28 +140,33 @@ export function CashierDashboardPage() {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 md:gap-6 mb-4 sm:mb-6 justify-items-center sm:justify-items-stretch max-w-sm sm:max-w-none mx-auto">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 md:gap-6 mb-4 sm:mb-6">
         {statCards.map((stat, index) => {
           const Icon = stat.icon;
           return (
-            <div key={index} className="bg-card border border-border rounded-lg p-4 sm:p-6 w-full">
-              <div className="flex items-center gap-3 sm:gap-4">
-                <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg ${colorClasses[stat.color as keyof typeof colorClasses]} flex items-center justify-center flex-shrink-0`}>
+            <div key={index} className="min-w-0 bg-card border border-border rounded-lg p-3 sm:p-6">
+              <div className="mb-2 sm:mb-4">
+                <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg ${colorClasses[stat.color as keyof typeof colorClasses]} flex items-center justify-center`}>
                   <Icon className="w-4 h-4 sm:w-5 sm:h-5" />
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex flex-col">
-                    <span className="text-xl sm:text-2xl font-bold text-foreground">
-                      {(stat as any).isCurrency ? formatCompactCurrency(stat.value as number).short : stat.value}
-                    </span>
-                    {(stat as any).isCurrency && typeof stat.value === 'number' && stat.value > 999999 && (
-                       <span className="text-xs text-muted-foreground font-mono mt-0.5">{formatCompactCurrency(stat.value).full}</span>
-                    )}
-                  </div>
-                  <div className="text-xs sm:text-sm text-muted-foreground">{stat.title}</div>
-                </div>
               </div>
-              <div className="text-xs text-muted-foreground/80 mt-2 ml-11 sm:ml-14">{stat.subtitle}</div>
+              <div className="min-w-0 text-[clamp(0.875rem,5vw,1.5rem)] sm:text-2xl leading-tight tracking-tight tabular-nums font-bold text-foreground">
+                {(stat as any).isCurrency
+                  ? formatCompactCurrency(stat.value as number).short
+                  : typeof stat.value === 'number' && stat.value > 999999
+                    ? Intl.NumberFormat('en-NG', { notation: 'compact', maximumFractionDigits: 1 }).format(stat.value)
+                    : typeof stat.value === 'number' ? stat.value.toLocaleString() : stat.value}
+              </div>
+              {!(stat as any).isCurrency && typeof stat.value === 'number' && stat.value > 999999 && (
+                <div className="text-[10px] sm:text-xs text-muted-foreground font-mono mt-1 break-all">{stat.value.toLocaleString()}</div>
+              )}
+              {(stat as any).isCurrency && typeof stat.value === 'number' && stat.value > 999999 && (
+                <div className="text-[10px] sm:text-xs text-muted-foreground font-mono mt-1 break-all">
+                  {formatCompactCurrency(stat.value).full}
+                </div>
+              )}
+              <div className="text-xs sm:text-sm text-muted-foreground mt-1 leading-tight">{stat.title}</div>
+              <div className="text-[11px] sm:text-xs text-muted-foreground/80 mt-2 leading-snug line-clamp-2">{stat.subtitle}</div>
             </div>
           );
         })}

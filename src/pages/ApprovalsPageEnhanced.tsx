@@ -1001,111 +1001,122 @@ export function ApprovalsPageEnhanced() {
         <p className="text-muted-foreground">Centralized approval management for all entities</p>
       </div>
 
+      {/* Approval queue */}
+      <div className="mb-6">
+        <div className="mb-3">
+          <h2 className="text-lg font-semibold text-foreground">Approval Queue</h2>
+          <p className="text-sm text-muted-foreground">Review and filter items awaiting action.</p>
+        </div>
+
+        {/* Tabs */}
+        <div className="mb-6 border-b border-border">
+          <div className="flex gap-4 overflow-x-auto">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as TabType)}
+                className={`px-4 py-2 border-b-2 transition-colors whitespace-nowrap ${
+                  activeTab === tab.id
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {tab.label} {tab.count > 0 && <span className="ml-1 text-xs">({tab.count})</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Approvals Table or My Actions */}
+        {activeTab === 'history' ? (
+          myActions.length === 0 ? (
+            <div className="bg-card border border-border rounded-lg p-12 text-center">
+              <Info className="w-16 h-16 text-blue-500 mx-auto mb-4" />
+              <h3 className="font-medium text-foreground mb-2">No Approval History</h3>
+              <p className="text-muted-foreground">Your approved/rejected actions will appear here</p>
+            </div>
+          ) : (
+            <DataTable
+              data={myActions}
+              columns={[
+                { header: 'Batch Number', accessor: 'batch_number' as keyof any },
+                { header: 'Month', accessor: 'month' as keyof any },
+                { header: 'Stage', accessor: 'stage_name' as keyof any },
+                { header: 'Status', accessor: (row: any) => <StatusBadge status={row.status} /> },
+                { header: 'Date', accessor: (row: any) => new Date(row.action_date).toLocaleString() },
+              ]}
+              searchable
+              searchPlaceholder="Search by batch number or month..."
+            />
+          )
+        ) : (
+          filteredItems.length === 0 ? (
+            <div className="bg-card border border-border rounded-lg p-12 text-center">
+              <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
+              <h3 className="font-medium text-foreground mb-2">No Pending Approvals</h3>
+              <p className="text-muted-foreground">
+                {activeTab === 'all' ? 'All items are up to date' : `No pending ${activeTab} approvals`}
+              </p>
+            </div>
+          ) : (
+            <DataTable
+              data={filteredItems}
+              columns={columns}
+              searchable
+              searchPlaceholder="Search approvals..."
+            />
+          )
+        )}
+      </div>
+
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-card border border-border rounded-lg p-6">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-muted-foreground">Total Pending</span>
-            <Clock className="w-5 h-5 text-blue-600" />
+      <section aria-label="Approval summary" className="mb-6">
+        <h2 className="text-lg font-semibold text-foreground mb-3">Approval Summary</h2>
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+          <div className="min-w-0 bg-card border border-border rounded-lg p-3 sm:p-6">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <span className="text-xs sm:text-sm text-muted-foreground">Total Pending</span>
+              <Clock className="w-5 h-5 text-blue-600 flex-shrink-0" />
+            </div>
+            <p className="text-[clamp(1rem,5vw,1.5rem)] sm:text-2xl leading-tight font-bold text-foreground">{stats.total}</p>
+            <p className="text-[11px] sm:text-xs text-muted-foreground mt-1">Awaiting your action</p>
           </div>
-          <p className="text-2xl font-bold text-foreground">{stats.total}</p>
-          <p className="text-xs text-muted-foreground mt-1">Awaiting your action</p>
-        </div>
 
-        <div className="bg-card border border-border rounded-lg p-6">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-muted-foreground">Critical Items</span>
-            <AlertCircle className="w-5 h-5 text-red-600" />
+          <div className="min-w-0 bg-card border border-border rounded-lg p-3 sm:p-6">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <span className="text-xs sm:text-sm text-muted-foreground">Critical Items</span>
+              <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
+            </div>
+            <p className="text-[clamp(1rem,5vw,1.5rem)] sm:text-2xl leading-tight font-bold text-red-600">{stats.critical}</p>
+            <p className="text-[11px] sm:text-xs text-muted-foreground mt-1">Requires immediate attention</p>
           </div>
-          <p className="text-2xl font-bold text-red-600">{stats.critical}</p>
-          <p className="text-xs text-muted-foreground mt-1">Requires immediate attention</p>
-        </div>
 
-        <div className="bg-card border border-border rounded-lg p-6">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-muted-foreground">High Priority</span>
-            <TrendingUp className="w-5 h-5 text-orange-600" />
-          </div>
-          <p className="text-2xl font-bold text-orange-600">
-            {approvalItems.filter(i => i.urgency === 'high').length}
-          </p>
-          <p className="text-xs text-muted-foreground mt-1">Action needed soon</p>
-        </div>
-
-        <div className="bg-card border border-border rounded-lg p-6">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-muted-foreground">This Week</span>
-            <Calendar className="w-5 h-5 text-green-600" />
-          </div>
-          <p className="text-2xl font-bold text-foreground">
-            {approvalItems.filter(i => {
-              const daysOld = Math.floor((Date.now() - new Date(i.created_at).getTime()) / (1000 * 60 * 60 * 24));
-              return daysOld <= 7;
-            }).length}
-          </p>
-          <p className="text-xs text-muted-foreground mt-1">Submitted recently</p>
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="mb-6 border-b border-border">
-        <div className="flex gap-4 overflow-x-auto">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as TabType)}
-              className={`px-4 py-2 border-b-2 transition-colors whitespace-nowrap ${
-                activeTab === tab.id
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              {tab.label} {tab.count > 0 && <span className="ml-1 text-xs">({tab.count})</span>}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Approvals Table or My Actions */}
-      {activeTab === 'history' ? (
-        myActions.length === 0 ? (
-          <div className="bg-card border border-border rounded-lg p-12 text-center">
-            <Info className="w-16 h-16 text-blue-500 mx-auto mb-4" />
-            <h3 className="font-medium text-foreground mb-2">No Approval History</h3>
-            <p className="text-muted-foreground">Your approved/rejected actions will appear here</p>
-          </div>
-        ) : (
-          <DataTable
-            data={myActions}
-            columns={[
-              { header: 'Batch Number', accessor: 'batch_number' as keyof any },
-              { header: 'Month', accessor: 'month' as keyof any },
-              { header: 'Stage', accessor: 'stage_name' as keyof any },
-              { header: 'Status', accessor: (row: any) => <StatusBadge status={row.status} /> },
-              { header: 'Date', accessor: (row: any) => new Date(row.action_date).toLocaleString() },
-            ]}
-            searchable
-            searchPlaceholder="Search by batch number or month..."
-          />
-        )
-      ) : (
-        filteredItems.length === 0 ? (
-          <div className="bg-card border border-border rounded-lg p-12 text-center">
-            <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
-            <h3 className="font-medium text-foreground mb-2">No Pending Approvals</h3>
-            <p className="text-muted-foreground">
-              {activeTab === 'all' ? 'All items are up to date' : `No pending ${activeTab} approvals`}
+          <div className="min-w-0 bg-card border border-border rounded-lg p-3 sm:p-6">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <span className="text-xs sm:text-sm text-muted-foreground">High Priority</span>
+              <TrendingUp className="w-5 h-5 text-orange-600 flex-shrink-0" />
+            </div>
+            <p className="text-[clamp(1rem,5vw,1.5rem)] sm:text-2xl leading-tight font-bold text-orange-600">
+              {approvalItems.filter(i => i.urgency === 'high').length}
             </p>
+            <p className="text-[11px] sm:text-xs text-muted-foreground mt-1">Action needed soon</p>
           </div>
-        ) : (
-          <DataTable
-            data={filteredItems}
-            columns={columns}
-            searchable
-            searchPlaceholder="Search approvals..."
-          />
-        )
-      )}
+
+          <div className="min-w-0 bg-card border border-border rounded-lg p-3 sm:p-6">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <span className="text-xs sm:text-sm text-muted-foreground">This Week</span>
+              <Calendar className="w-5 h-5 text-green-600 flex-shrink-0" />
+            </div>
+            <p className="text-[clamp(1rem,5vw,1.5rem)] sm:text-2xl leading-tight font-bold text-foreground">
+              {approvalItems.filter(i => {
+                const daysOld = Math.floor((Date.now() - new Date(i.created_at).getTime()) / (1000 * 60 * 60 * 24));
+                return daysOld <= 7;
+              }).length}
+            </p>
+            <p className="text-[11px] sm:text-xs text-muted-foreground mt-1">Submitted recently</p>
+          </div>
+        </div>
+      </section>
 
       {/* Approval Modal */}
       <Modal

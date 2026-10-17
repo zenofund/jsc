@@ -217,32 +217,33 @@ export function CooperativeDashboardPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4 md:gap-6 mb-4 sm:mb-6">
+      <div className="grid grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4 md:gap-6 mb-4 sm:mb-6">
         {statCards.map((stat: StatCard) => {
           const Icon = stat.icon;
           return (
-            <div key={stat.title} className="bg-card border border-border rounded-lg p-4 sm:p-6">
-              <div className="flex items-center gap-3 sm:gap-4">
-                <div className={`w-10 h-10 rounded-lg ${colorClasses[stat.color as keyof typeof colorClasses]} flex items-center justify-center flex-shrink-0`}>
-                  <Icon className="w-5 h-5" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex flex-col">
-                    <span className="text-xl sm:text-2xl font-bold text-foreground">
-                      {stat.isCurrency
-                        ? formatCompactCurrency(stat.value).short
-                        : stat.value.toLocaleString()}
-                    </span>
-                    {stat.isCurrency && stat.value > 999999 && (
-                      <span className="text-xs text-muted-foreground font-mono mt-0.5">
-                        {formatCompactCurrency(stat.value).full}
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-xs sm:text-sm text-muted-foreground">{stat.title}</div>
+            <div key={stat.title} className="min-w-0 bg-card border border-border rounded-lg p-3 sm:p-6">
+              <div className="mb-2 sm:mb-4">
+                <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg ${colorClasses[stat.color as keyof typeof colorClasses]} flex items-center justify-center`}>
+                  <Icon className="w-4 h-4 sm:w-5 sm:h-5" />
                 </div>
               </div>
-              <div className="text-xs text-muted-foreground/80 mt-2 ml-14">{stat.subtitle}</div>
+              <div className="min-w-0 text-[clamp(0.875rem,5vw,1.5rem)] sm:text-2xl leading-tight tracking-tight tabular-nums font-bold text-foreground">
+                {stat.isCurrency
+                  ? formatCompactCurrency(stat.value).short
+                  : stat.value > 999999
+                    ? Intl.NumberFormat('en-NG', { notation: 'compact', maximumFractionDigits: 1 }).format(stat.value)
+                    : stat.value.toLocaleString()}
+              </div>
+              {!stat.isCurrency && stat.value > 999999 && (
+                <div className="text-[10px] sm:text-xs text-muted-foreground font-mono mt-1 break-all">{stat.value.toLocaleString()}</div>
+              )}
+              {stat.isCurrency && stat.value > 999999 && (
+                <div className="text-[10px] sm:text-xs text-muted-foreground font-mono mt-1 break-all">
+                  {formatCompactCurrency(stat.value).full}
+                </div>
+              )}
+              <div className="text-xs sm:text-sm text-muted-foreground mt-1 leading-tight">{stat.title}</div>
+              <div className="text-[11px] sm:text-xs text-muted-foreground/80 mt-2 leading-snug line-clamp-2">{stat.subtitle}</div>
             </div>
           );
         })}

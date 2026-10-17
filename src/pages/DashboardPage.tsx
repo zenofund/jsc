@@ -11,7 +11,7 @@ import {
 
 import { PageSkeleton } from '../components/PageLoader';
 import { Skeleton } from '../components/ui/skeleton';
-import { formatCurrency, formatCompactCurrency } from '../utils/format';
+import { formatCurrency } from '../utils/format';
 
 export function DashboardPage() {
   const { user } = useAuth();
@@ -130,7 +130,7 @@ export function DashboardPage() {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 md:gap-6 mb-4 sm:mb-6 justify-items-center sm:justify-items-stretch max-w-sm sm:max-w-none mx-auto">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 md:gap-6 mb-4 sm:mb-6">
         {statCards.map((stat: any, index) => {
           const Icon = stat.icon;
           return (
@@ -138,32 +138,26 @@ export function DashboardPage() {
               key={index}
               onClick={stat.onClick}
               disabled={!stat.onClick}
-              className={`p-4 sm:p-6 rounded-lg border border-border bg-card transition-all w-full text-left ${
+              className={`min-w-0 p-3 sm:p-6 rounded-lg border border-border bg-card transition-all w-full text-left ${
                 stat.onClick ? 'hover:shadow-md cursor-pointer' : ''
               }`}
             >
-              <div className="flex items-start justify-between mb-3 sm:mb-4">
-                <div className={`p-2 sm:p-3 rounded-lg ${colorClasses[stat.color as keyof typeof colorClasses]}`}>
-                  <Icon className="w-5 h-5 sm:w-6 sm:h-6" />
+              <div className="flex items-start justify-between mb-2 sm:mb-4">
+                <div className={`p-1.5 sm:p-3 rounded-lg ${colorClasses[stat.color as keyof typeof colorClasses]}`}>
+                  <Icon className="w-4 h-4 sm:w-6 sm:h-6" />
                 </div>
               </div>
-              <div>
-                <p className="text-sm font-medium text-muted-foreground mb-1">{stat.title}</p>
-                <div className="flex flex-col items-start">
-                   <h3 className="text-2xl sm:text-3xl font-bold text-foreground">
-                      {typeof stat.value === 'number' && stat.value > 999999 ? (
-                        formatCompactCurrency(stat.value).short
-                      ) : (
-                        stat.value
-                      )}
-                   </h3>
-                   {typeof stat.value === 'number' && stat.value > 999999 && (
-                      <span className="text-xs text-muted-foreground/70 font-mono mt-0.5">
-                        {formatCompactCurrency(stat.value).full}
-                      </span>
-                   )}
-                </div>
-                <p className="text-xs sm:text-sm text-muted-foreground mt-2">{stat.subtitle}</p>
+              <div className="min-w-0">
+                <h3 className="min-w-0 text-[clamp(1rem,5.5vw,1.75rem)] sm:text-3xl leading-tight tracking-tight tabular-nums font-bold text-foreground">
+                  {typeof stat.value === 'number' && stat.value > 999999
+                    ? Intl.NumberFormat('en-NG', { notation: 'compact', maximumFractionDigits: 1 }).format(stat.value)
+                    : typeof stat.value === 'number' ? stat.value.toLocaleString() : stat.value}
+                </h3>
+                {typeof stat.value === 'number' && stat.value > 999999 && (
+                  <p className="text-[10px] sm:text-xs text-muted-foreground font-mono mt-1 break-all">{stat.value.toLocaleString()}</p>
+                )}
+                <p className="text-xs sm:text-sm font-medium text-muted-foreground mt-1 leading-tight">{stat.title}</p>
+                <p className="text-[11px] sm:text-sm text-muted-foreground mt-2 leading-snug line-clamp-2">{stat.subtitle}</p>
               </div>
             </button>
           );
