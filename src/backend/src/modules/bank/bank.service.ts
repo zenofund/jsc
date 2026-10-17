@@ -780,6 +780,75 @@ export class BankService {
     })).sort((a, b) => a.name.localeCompare(b.name));
   }
 
+  private getPaymentDate(batch: any) {
+    if (batch.period_end) {
+      return new Date(batch.period_end).toISOString().slice(0, 10);
+    }
+    if (batch.payroll_month) {
+      const [year, month] = String(batch.payroll_month).split('-').map(Number);
+      if (!Number.isNaN(year) && !Number.isNaN(month)) {
+        return new Date(year, month, 0).toISOString().slice(0, 10);
+      }
+    }
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  private async getDebitAccountNumber(batch: any) {
+    if (!batch.bank_account_id) return '';
+    const bankAccount = await this.databaseService.queryOne(
+      'SELECT account_number FROM bank_accounts WHERE id = $1',
+      [batch.bank_account_id],
+    );
+    return String(bankAccount?.account_number || '');
+  }
+
+  private buildEpaymentExportRows(
+    batch: any,
+    transactions: any[],
+    paymentDate: string,
+    debitAccountNumber: string,
+  ) {
+    return transactions.map((txn) => {
+      const bankName = String(txn.bank_name || '').toLowerCase();
+      return {
+        transaction_reference_number: String(batch.batch_number || ''),
+        beneficiary_name: String(txn.staff_name || ''),
+        payment_amount: Number(txn.amount || 0),
+        payment_date: paymentDate,
+        beneficiary_code: String(txn.staff_number || ''),
+        beneficiary_account_number: String(txn.account_number || ''),
+        bank_sort_code: bankName.includes('zenith') ? '' : String(this.BANK_SORT_CODES[bankName] || ''),
+        account_number_to_debit: debitAccountNumber,
+      };
+    });
+  }
+
+  async getEpaymentExcelPreview(id: string) {
+    const batch = await this.findOnePaymentBatch(id);
+    if (batch.file_format !== 'e_mandate' && batch.file_format !== 'custom_csv') {
+      throw new BadRequestException('Excel preview is only available for E-Mandate payment batches');
+    }
+    const transactions = await this.databaseService.query(
+      "SELECT * FROM payment_transactions WHERE payment_batch_id = $1 AND status != 'failed' ORDER BY staff_number",
+      [id],
+    );
+    const paymentDate = this.getPaymentDate(batch);
+    const debitAccountNumber = await this.getDebitAccountNumber(batch);
+    return {
+      columns: [
+        { key: 'transaction_reference_number', label: 'Transaction Reference Number' },
+        { key: 'beneficiary_name', label: 'Beneficiary Name' },
+        { key: 'payment_amount', label: 'Payment Amount' },
+        { key: 'payment_date', label: 'Payment Date' },
+        { key: 'beneficiary_code', label: 'Beneficiary Code' },
+        { key: 'beneficiary_account_number', label: 'Beneficiary Account Number' },
+        { key: 'bank_sort_code', label: 'Bank Sort Code' },
+        { key: 'account_number_to_debit', label: 'Account Number to Debit' },
+      ],
+      rows: this.buildEpaymentExportRows(batch, transactions, paymentDate, debitAccountNumber),
+    };
+  }
+
   async generatePaymentFile(id: string, userId: string) {
     const batch = await this.findOnePaymentBatch(id);
     const transactions = await this.databaseService.query(
@@ -790,27 +859,8 @@ export class BankService {
     let content = '';
     let filename = '';
 
-    let paymentDate = '';
-    if (batch.period_end) {
-      paymentDate = new Date(batch.period_end).toISOString().slice(0, 10);
-    } else if (batch.payroll_month) {
-      const [year, month] = String(batch.payroll_month).split('-').map(Number);
-      if (!Number.isNaN(year) && !Number.isNaN(month)) {
-        paymentDate = new Date(year, month, 0).toISOString().slice(0, 10);
-      }
-    }
-    if (!paymentDate) {
-      paymentDate = new Date().toISOString().slice(0, 10);
-    }
-
-    let debitAccountNumber = '';
-    if (batch.bank_account_id) {
-      const bankAccount = await this.databaseService.queryOne(
-        'SELECT account_number FROM bank_accounts WHERE id = $1',
-        [batch.bank_account_id],
-      );
-      debitAccountNumber = bankAccount?.account_number || '';
-    }
+    const paymentDate = this.getPaymentDate(batch);
+    const debitAccountNumber = await this.getDebitAccountNumber(batch);
 
     if (batch.file_format === 'nibss') {
       // NIBSS Format: SerialNumber,AccountNumber,BankCode,Amount,BeneficiaryName,Narration

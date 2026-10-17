@@ -178,6 +178,13 @@ export const paymentBatchAPI = {
     return makeApiRequest(`/bank/payment-batches/${batchId}/transactions?_t=${Date.now()}`, { method: 'GET' });
   },
 
+  async getEpaymentExcelPreview(batchId: string): Promise<{
+    columns: { key: string; label: string }[];
+    rows: Record<string, string | number>[];
+  }> {
+    return makeApiRequest(`/bank/payment-batches/${batchId}/epayment-preview?_t=${Date.now()}`, { method: 'GET' });
+  },
+
   async updateStatus(id: string, status: PaymentBatch['status']): Promise<void> {
     await makeApiRequest(`/bank/payment-batches/${id}/status`, {
       method: 'PUT',

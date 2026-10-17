@@ -13,6 +13,9 @@ type ExportSpreadsheetOptions<Row extends Record<string, any>> = {
   rows: Row[];
   columns?: SpreadsheetColumn[];
   meta?: SpreadsheetMetaRow[];
+  textKeys?: string[];
+  numberFormats?: Record<string, string>;
+  plain?: boolean;
 };
 
 const humanizeLabel = (value: string) =>
@@ -57,6 +60,9 @@ const buildSpreadsheetContent = <Row extends Record<string, any>>({
   rows,
   columns,
   meta,
+  textKeys,
+  numberFormats,
+  plain,
 }: Omit<ExportSpreadsheetOptions<Row>, 'fileName'>): string => {
   const resolvedColumns: SpreadsheetColumn[] =
     columns && columns.length > 0
@@ -69,8 +75,9 @@ const buildSpreadsheetContent = <Row extends Record<string, any>>({
         ).map((key) => ({ key, label: humanizeLabel(key) }));
 
   const colspan = Math.max(resolvedColumns.length, 1);
+  const textKeySet = textKeys ? new Set(textKeys) : null;
 
-  const metaRows = [
+  const metaRows = plain ? [] : [
     `<tr><td colspan="${colspan}" style="font-size:16pt;font-weight:700;padding:12px 8px;text-align:left;">${escapeHtml(
       title,
     )}</td></tr>`,
@@ -85,10 +92,12 @@ const buildSpreadsheetContent = <Row extends Record<string, any>>({
 
   const headerRow = `<tr>${resolvedColumns
     .map(
-      (col) =>
-        `<th style="background:#f3f4f6;font-weight:700;padding:8px;border:1px solid #d1d5db;text-align:left;">${escapeHtml(
+      (col) => {
+        const tag = plain ? 'td' : 'th';
+        return `<${tag}${plain ? '' : ' style="background:#f3f4f6;font-weight:700;padding:8px;border:1px solid #d1d5db;text-align:left;"'}>${escapeHtml(
           humanizeLabel(col.label || col.key),
-        )}</th>`,
+        )}</${tag}>`;
+      },
     )
     .join('')}</tr>`;
 
@@ -99,7 +108,16 @@ const buildSpreadsheetContent = <Row extends Record<string, any>>({
           .map((col) => {
             const rawValue = row?.[col.key];
             const value = escapeHtml(formatSpreadsheetValue(rawValue));
-            return `<td style="padding:8px;border:1px solid #e5e7eb;text-align:left;mso-number-format:'\\@';">${value}</td>`;
+            const keepAsText = textKeySet ? textKeySet.has(col.key) : true;
+            const cellFormat = keepAsText
+              ? "mso-number-format:'\\@';"
+              : !plain && numberFormats?.[col.key]
+                ? `mso-number-format:'${numberFormats[col.key]}';`
+                : '';
+            const style = plain
+              ? (keepAsText ? ` style="${cellFormat}"` : '')
+              : ` style="padding:8px;border:1px solid #e5e7eb;text-align:left;${cellFormat}"`;
+            return `<td${style}>${value}</td>`;
           })
           .join('')}</tr>`,
     )

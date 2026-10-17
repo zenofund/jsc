@@ -31,6 +31,7 @@ import {
   AlertCircle,
   CheckCircle,
   Download,
+  FileSpreadsheet,
   Upload,
   Play,
   CreditCard,
@@ -43,6 +44,7 @@ import {
   MoreVertical,
 } from 'lucide-react';
 import { formatCurrency } from '../utils/format';
+import { exportSpreadsheet } from '../utils/exportSpreadsheet';
 import { Button } from '../components/ui/button';
 import {
   DropdownMenu,
@@ -321,6 +323,32 @@ export function BankPaymentsPage() {
       loadData();
     } catch (error: any) {
       showToast('error', error.message || 'Failed to generate payment file');
+    }
+  };
+
+  const handleDownloadEpaymentExcelPreview = async (batch: PaymentBatch) => {
+    try {
+      const preview = await paymentBatchAPI.getEpaymentExcelPreview(batch.id);
+      if (preview.rows.length === 0) {
+        showToast('warning', 'No payment transactions are available to export');
+        return;
+      }
+
+      const batchFileName = batch.batch_number.replace(/\//g, '-');
+
+      exportSpreadsheet({
+        title: `E-Mandate Excel Preview - ${batch.batch_number}`,
+        fileName: `E_MANDATE_PREVIEW_${batchFileName}.xls`,
+        columns: preview.columns,
+        textKeys: preview.columns
+          .filter((column) => column.key !== 'payment_amount')
+          .map((column) => column.key),
+        plain: true,
+        rows: preview.rows,
+      });
+      showToast('success', 'Excel preview downloaded with all E-Mandate columns preserved');
+    } catch (error: any) {
+      showToast('error', error.message || 'Failed to download E-Mandate Excel preview');
     }
   };
 
@@ -770,6 +798,17 @@ export function BankPaymentsPage() {
                 <FileText className="mr-2 h-4 w-4 text-blue-600" />
                 <span>View Details</span>
               </DropdownMenuItem>
+              {(row.file_format === 'e_mandate' || row.file_format === 'custom_csv') && (
+                <DropdownMenuItem
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleDownloadEpaymentExcelPreview(row);
+                  }}
+                >
+                  <FileSpreadsheet className="mr-2 h-4 w-4 text-emerald-600" />
+                  <span>Download Excel Preview</span>
+                </DropdownMenuItem>
+              )}
               {(row.status === 'draft' || row.status === 'pending_approval' || row.status === 'approved') && !row.file_generated && (
                 <DropdownMenuItem
                   onClick={(event) => {

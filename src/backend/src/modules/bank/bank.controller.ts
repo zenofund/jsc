@@ -164,6 +164,12 @@ export class BankController {
     return this.bankService.getPaymentBatchTransactions(id);
   }
 
+  @Get('payment-batches/:id/epayment-preview')
+  @ApiOperation({ summary: 'Get E-Mandate file data for an Excel-safe preview' })
+  getEpaymentExcelPreview(@Param('id') id: string) {
+    return this.bankService.getEpaymentExcelPreview(id);
+  }
+
   @Put('payment-batches/:id/status')
   @ApiOperation({ summary: 'Update payment batch status' })
   updatePaymentBatchStatus(
