@@ -1871,15 +1871,35 @@ export class PayrollService {
     // Send notifications
     try {
       if (action === 'rejected') {
-        await this.notificationsService.create({
-          recipient_id: batch.created_by,
-          type: NotificationType.PAYROLL,
-          category: NotificationCategory.ACTION_REQUIRED,
-          title: 'Payroll Batch Returned',
-          message: `Payroll batch ${batch.batch_number} was returned/rejected. Please review and resubmit. Comments: ${comments}`,
-          entity_type: 'payroll_batch',
-          entity_id: batchId,
-          priority: NotificationPriority.HIGH,
+        const payrollManagers = await this.databaseService.query<{ id: string }>(
+          `SELECT id
+           FROM users
+           WHERE LOWER(REGEXP_REPLACE(BTRIM(COALESCE(role, '')), '[^a-z0-9]+', '_', 'g')) = ANY($1::text[])`,
+          [['admin', 'super_admin', 'payroll_manager', 'payroll_hr_manager', 'hr_manager']],
+        );
+        const recipientIds = Array.from(new Set([
+          batch.created_by,
+          ...payrollManagers.map((recipient) => recipient.id),
+        ].filter((recipientId): recipientId is string => Boolean(recipientId))));
+
+        const notificationResults = await Promise.allSettled(
+          recipientIds.map((recipientId) => this.notificationsService.create({
+            recipient_id: recipientId,
+            type: NotificationType.PAYROLL,
+            category: NotificationCategory.ACTION_REQUIRED,
+            title: 'Payroll Batch Returned',
+            message: `Payroll batch ${batch.batch_number} was returned/rejected. Please review and resubmit. Comments: ${comments || 'No comments provided.'}`,
+            entity_type: 'payroll_batch',
+            entity_id: batchId,
+            priority: NotificationPriority.HIGH,
+          })),
+        );
+        notificationResults.forEach((result, index) => {
+          if (result.status === 'rejected') {
+            this.logger.error(
+              `Failed to notify payroll rejection recipient ${recipientIds[index]}: ${result.reason?.message || result.reason}`,
+            );
+          }
         });
       } else if (action === 'approved') {
         // Get updated batch status to decide notification
