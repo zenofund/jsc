@@ -226,7 +226,7 @@ export function StaffRequestStatusPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         <div className="bg-card border border-border rounded-lg p-4 flex items-center gap-4">
           <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-full">
             <Clock className="w-6 h-6 text-blue-600 dark:text-blue-400" />

@@ -588,7 +588,7 @@ export function ArrearsPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mb-6 justify-items-center md:justify-items-stretch max-w-sm md:max-w-none mx-auto">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6 justify-items-center md:justify-items-stretch max-w-sm md:max-w-none mx-auto">
         <div className="bg-card border border-border rounded-lg p-6 w-full">
           <div className="flex items-center justify-between mb-2">
             <AlertCircle className="w-8 h-8 text-gray-600 dark:text-gray-500" />

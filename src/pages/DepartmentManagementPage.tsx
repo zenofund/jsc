@@ -151,7 +151,7 @@ export function DepartmentManagementPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
         <div className="p-6 rounded-lg border border-border bg-card">
           <div className="flex items-center justify-between mb-4">
             <div className="p-3 rounded-lg bg-muted">

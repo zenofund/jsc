@@ -1013,7 +1013,7 @@ export function BankPaymentsPage() {
           {activeTab === 'overview' && stats && (
             <div className="space-y-6">
               {/* Stats Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="bg-card border border-border rounded-lg p-6">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm text-muted-foreground">Total Amount Processed</span>
@@ -1233,7 +1233,7 @@ export function BankPaymentsPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="bg-card border border-border rounded-lg p-4">
                   <div className="text-sm text-muted-foreground">Filtered Staff</div>
                   <div className="text-2xl font-semibold text-foreground">{filteredAssignableStaff.length}</div>

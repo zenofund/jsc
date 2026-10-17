@@ -218,7 +218,7 @@ export function LeaveManagementPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6 justify-items-center md:justify-items-stretch max-w-sm md:max-w-none mx-auto">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-6 justify-items-center md:justify-items-stretch max-w-sm md:max-w-none mx-auto">
         <div className="bg-card border border-border rounded-lg p-6 w-full">
           <div className="flex items-center justify-between mb-2">
             <Calendar className="w-8 h-8 text-blue-600 dark:text-blue-500" />

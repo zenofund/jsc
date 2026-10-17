@@ -797,7 +797,7 @@ export function PayrollPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                 <div className="rounded-lg border border-border bg-card p-3">
                   <div className="text-xs text-muted-foreground">Total Staff</div>
                   <div className="text-lg text-card-foreground">{traceData?.total_staff || 0}</div>

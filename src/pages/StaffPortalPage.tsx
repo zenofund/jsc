@@ -591,7 +591,7 @@ export function StaffPortalPage() {
         </div>
 
         {/* Quick Stats Grid - Floating Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <div className="bg-card hover:bg-accent/5 transition-colors rounded-xl p-6 border border-border shadow-sm hover:shadow-md group relative overflow-hidden">
             <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity transform group-hover:scale-110 duration-500">
               <DollarSign className="h-24 w-24 text-green-600" />
@@ -1449,7 +1449,7 @@ export function StaffPortalPage() {
             {myCooperatives.length > 0 ? (
               <>
                 {/* Summary Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                   <div className="p-6 rounded-lg border border-border bg-card">
                     <div className="flex items-center gap-3 mb-2">
                       <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30">
@@ -1577,7 +1577,7 @@ export function StaffPortalPage() {
                 </div>
 
                 {/* Financial Summary */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                   <div className="p-6 rounded-lg border border-border bg-card">
                     <p className="text-sm text-muted-foreground mb-1">Total Contributions</p>
                     <p className="text-2xl text-card-foreground">

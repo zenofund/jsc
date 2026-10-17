@@ -1058,7 +1058,7 @@ export function ReportsPage() {
           </div>
 
           {/* Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
             <div className="bg-card border border-border rounded-lg p-6">
               <div className="flex items-center justify-between mb-2">
                 <Users className="w-8 h-8 text-accent" />
@@ -1175,7 +1175,7 @@ export function ReportsPage() {
           {reportData && reportData.summary ? (
             <>
               {/* Summary */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                 <div className="bg-card rounded-lg border border-border p-6">
                   <div className="text-sm text-muted-foreground mb-1">Total Staff</div>
                   <div className="text-2xl font-semibold text-foreground">{reportData.summary.total_staff || 0}</div>
@@ -1269,7 +1269,7 @@ export function ReportsPage() {
 
           {reportData && reportData.groups ? (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                 <div className="bg-card rounded-lg border border-border p-6">
                   <div className="text-sm text-muted-foreground mb-1">Total {scheduleCollectionLabel}</div>
                   <div className="text-2xl font-semibold text-foreground">{reportData.totals?.total_groups || 0}</div>
@@ -1366,7 +1366,7 @@ export function ReportsPage() {
           {reportData && (
             <>
               {/* Comparison Summary */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
                 <div className="bg-card rounded-lg border border-border p-6">
                   <div className="text-sm text-muted-foreground mb-2">{reportData.month1?.month || 'Month 1'}</div>
                   <div className="flex flex-col">
@@ -1553,7 +1553,7 @@ export function ReportsPage() {
         }
       >
         <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             <div className="bg-muted/30 border border-border rounded-lg p-4">
               <div className="text-xs text-muted-foreground mb-1">Staff Count</div>
               <div className="text-lg font-semibold text-foreground">{selectedBank?.total_staff || 0}</div>

@@ -397,7 +397,7 @@ export function ApprovalsPage() {
       >
         <div className="space-y-6">
           {/* Batch Summary */}
-          <div className="grid grid-cols-4 gap-4 p-4 bg-muted/30 rounded-lg">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted/30 rounded-lg">
             <div>
               <p className="text-sm text-muted-foreground">Month</p>
               <p className="font-medium text-foreground">{selectedBatch?.month}</p>

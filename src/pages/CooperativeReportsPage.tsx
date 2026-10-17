@@ -553,7 +553,7 @@ function OverviewReport({ cooperatives, selectedCooperativeId }: { cooperatives:
   return (
     <div className="space-y-6">
       {/* Aggregate Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="p-6 rounded-lg border border-border bg-card">
           <div className="flex items-center gap-3 mb-2">
             <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30">
@@ -643,7 +643,7 @@ function OverviewReport({ cooperatives, selectedCooperativeId }: { cooperatives:
       {/* Individual Cooperative Stats */}
       <div className="space-y-4">
         <h2 className="text-lg text-card-foreground">Cooperative Breakdown</h2>
-        <div className="grid grid-cols-1 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-1 gap-4">
           {stats.map((stat) => (
             <div key={stat?.cooperative?.id || Math.random()} className="p-4 rounded-lg border border-border bg-card">
               <div className="flex items-center justify-between mb-4">
@@ -779,7 +779,7 @@ function ContributionsReport({
   return (
     <div className="space-y-6">
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="p-6 rounded-lg border border-border bg-card">
           <p className="text-sm text-muted-foreground mb-1">Total Contributions</p>
           <p className="text-2xl text-card-foreground">{formatCurrency(summary.total_amount)}</p>
@@ -1002,7 +1002,7 @@ function LoansReport({
   return (
     <div className="space-y-6">
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="p-6 rounded-lg border border-border bg-card">
           <p className="text-sm text-muted-foreground mb-1">Total Loans</p>
           <p className="text-2xl text-card-foreground">{summary.total_count}</p>
@@ -1193,7 +1193,7 @@ function MembersReport({ cooperatives, selectedCooperativeId }: { cooperatives: 
   return (
     <div className="space-y-6">
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="p-6 rounded-lg border border-border bg-card">
           <p className="text-sm text-muted-foreground mb-1">Total Members</p>
           <p className="text-2xl text-card-foreground">{members.length}</p>
@@ -1383,7 +1383,7 @@ function CrossCooperativeReport({ cooperatives }: { cooperatives: Cooperative[] 
   return (
     <div className="space-y-6">
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         <div className="p-6 rounded-lg border border-border bg-card">
           <p className="text-sm text-muted-foreground mb-1">Total Unique Staff</p>
           <p className="text-2xl text-card-foreground">{staffMemberships.size}</p>
