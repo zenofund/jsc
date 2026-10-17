@@ -562,6 +562,10 @@ export function ArrearsPage() {
   const hasCalculatedManualBreakdown = selectedDetails.some(
     (detail: any) => detail?.calculation_method === 'manual_salary_period_v1',
   );
+  const hasCalculatedPromotionBreakdown = selectedDetails.some(
+    (detail: any) => detail?.calculation_method === 'promotion_salary_period_v1',
+  );
+  const hasCalculatedSalaryBreakdown = hasCalculatedManualBreakdown || hasCalculatedPromotionBreakdown;
 
   return (
     <div className="p-4 sm:p-6 space-y-6">
@@ -814,8 +818,99 @@ export function ArrearsPage() {
               </div>
             )}
 
+            {hasCalculatedPromotionBreakdown && (
+              <div>
+                <h4 className="font-medium text-foreground mb-3">Promotion Arrears Calculation by Month</h4>
+                <div className="border border-border rounded-lg overflow-x-auto">
+                  <table className="min-w-[1250px] w-full text-sm">
+                    <thead className="bg-muted/30">
+                      <tr>
+                        <th className="px-3 py-2 text-left font-medium text-muted-foreground">Month / covered dates</th>
+                        <th className="px-3 py-2 text-right font-medium text-muted-foreground">Days</th>
+                        <th className="px-3 py-2 text-right font-medium text-muted-foreground">Basic arrears</th>
+                        <th className="px-3 py-2 text-right font-medium text-muted-foreground">Old gross</th>
+                        <th className="px-3 py-2 text-right font-medium text-muted-foreground">New gross</th>
+                        <th className="px-3 py-2 text-right font-medium text-muted-foreground">Gross arrears</th>
+                        <th className="px-3 py-2 text-right font-medium text-muted-foreground">Arrears deductions</th>
+                        <th className="px-3 py-2 text-right font-medium text-muted-foreground">Monthly PAYE old → new</th>
+                        <th className="px-3 py-2 text-right font-medium text-muted-foreground">Arrears PAYE</th>
+                        <th className="px-3 py-2 text-right font-medium text-muted-foreground">Net arrears</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedDetails.filter((detail: any) => detail?.calculation_method === 'promotion_salary_period_v1').map((detail: any, index: number) => (
+                        <React.Fragment key={`${detail.month}-${index}`}>
+                          <tr className="border-t border-border">
+                            <td className="px-3 py-2 text-foreground">
+                              <div>{getBreakdownMonthLabel(selectedArrears, detail.month, index)}</div>
+                              <div className="text-xs text-muted-foreground">{formatDateOnly(detail.effective_start_date)} – {formatDateOnly(detail.effective_end_date)}</div>
+                            </td>
+                            <td className="px-3 py-2 text-right text-foreground">{detail.eligible_days}/{detail.days_in_month}</td>
+                            <td className="px-3 py-2 text-right text-foreground">{formatCurrency(detail.basic_amount)}</td>
+                            <td className="px-3 py-2 text-right text-foreground">{formatCurrency(detail.old_gross)}</td>
+                            <td className="px-3 py-2 text-right text-foreground">{formatCurrency(detail.new_gross)}</td>
+                            <td className="px-3 py-2 text-right text-foreground">{formatCurrency(detail.gross_amount)}</td>
+                            <td className="px-3 py-2 text-right text-foreground">{formatCurrency(detail.total_deductions)}</td>
+                            <td className="px-3 py-2 text-right text-foreground">{formatCurrency(detail.paye_old_monthly)} → {formatCurrency(detail.paye_new_monthly)}</td>
+                            <td className="px-3 py-2 text-right text-foreground">{formatCurrency(detail.paye_amount)}</td>
+                            <td className="px-3 py-2 text-right text-foreground">{formatCurrency(detail.net_amount)}</td>
+                          </tr>
+                          <tr className="border-t border-border bg-muted/20">
+                            <td colSpan={10} className="px-3 py-2">
+                              <details>
+                                <summary className="cursor-pointer text-xs font-medium text-primary">View configured old/new allowances and deductions</summary>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3 text-xs">
+                                  {[
+                                    { title: `Old package · Basic ${formatCurrency(detail.old_basic_salary)} · Gross ${formatCurrency(detail.old_gross)}`, allowances: detail.old_allowances, deductions: detail.old_deductions },
+                                    { title: `New package · Basic ${formatCurrency(detail.new_basic_salary)} · Gross ${formatCurrency(detail.new_gross)}`, allowances: detail.new_allowances, deductions: detail.new_deductions },
+                                    { title: 'Promotion arrears deductions', allowances: [], deductions: detail.deductions },
+                                  ].map((pkg) => (
+                                    <div key={pkg.title} className="rounded-md bg-background p-3 space-y-2">
+                                      <div className="font-semibold">{pkg.title}</div>
+                                      {pkg.allowances.length > 0 && (
+                                        <div>
+                                          <div className="font-medium">Allowances</div>
+                                          {pkg.allowances.map((item: any, itemIndex: number) => (
+                                            <div key={`${item.code}-${itemIndex}`} className="flex justify-between gap-3"><span>{item.name}</span><span>{formatCurrency(item.amount)}</span></div>
+                                          ))}
+                                        </div>
+                                      )}
+                                      <div>
+                                        <div className="font-medium">Deductions</div>
+                                        {(pkg.deductions || []).map((item: any, itemIndex: number) => (
+                                          <div key={`${item.code}-${itemIndex}`} className="flex justify-between gap-3"><span>{item.name}</span><span>{formatCurrency(item.amount)}</span></div>
+                                        ))}
+                                        {(pkg.deductions || []).length === 0 && <div className="text-muted-foreground">None</div>}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </details>
+                            </td>
+                          </tr>
+                        </React.Fragment>
+                      ))}
+                    </tbody>
+                    <tfoot className="bg-muted/30 border-t border-border">
+                      <tr>
+                        <td className="px-3 py-2 font-medium text-foreground">Total</td>
+                        <td className="px-3 py-2 text-right text-muted-foreground">—</td>
+                        <td className="px-3 py-2 text-right font-semibold text-foreground">{formatCurrency(selectedDetails.reduce((sum, detail) => sum + (detail?.calculation_method === 'promotion_salary_period_v1' ? Number(detail.basic_amount || 0) : 0), 0))}</td>
+                        <td colSpan={2} className="px-3 py-2 text-right text-muted-foreground">Monthly package values</td>
+                        <td className="px-3 py-2 text-right font-semibold text-foreground">{formatCurrency(selectedDetails.reduce((sum, detail) => sum + (detail?.calculation_method === 'promotion_salary_period_v1' ? Number(detail.gross_amount || 0) : 0), 0))}</td>
+                        <td className="px-3 py-2 text-right font-semibold text-foreground">{formatCurrency(selectedDetails.reduce((sum, detail) => sum + (detail?.calculation_method === 'promotion_salary_period_v1' ? Number(detail.total_deductions || 0) : 0), 0))}</td>
+                        <td className="px-3 py-2 text-right text-muted-foreground">—</td>
+                        <td className="px-3 py-2 text-right font-semibold text-foreground">{formatCurrency(selectedDetails.reduce((sum, detail) => sum + (detail?.calculation_method === 'promotion_salary_period_v1' ? Number(detail.paye_amount || 0) : 0), 0))}</td>
+                        <td className="px-3 py-2 text-right font-semibold text-foreground">{formatCurrency(selectedDetails.reduce((sum, detail) => sum + (detail?.calculation_method === 'promotion_salary_period_v1' ? Number(detail.net_amount || 0) : 0), 0))}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            )}
+
             {/* Legacy Breakdown Table */}
-            {!hasCalculatedManualBreakdown && (
+            {!hasCalculatedSalaryBreakdown && (
             <div>
               <h4 className="font-medium text-foreground mb-3">Breakdown by Month</h4>
               <div className="border border-border rounded-lg overflow-hidden">

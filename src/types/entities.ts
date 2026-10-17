@@ -378,6 +378,7 @@ export interface Promotion {
   new_grade_level: number | string;
   new_step: number;
   effective_date: string;
+  arrears_end_date?: string | null;
   status: 'pending' | 'approved' | 'rejected';
   approved_by?: string;
   approval_date?: string;

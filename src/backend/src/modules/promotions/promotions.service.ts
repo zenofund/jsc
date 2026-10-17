@@ -182,6 +182,23 @@ export class PromotionsService {
     throw new BadRequestException('Invalid promotion effective date');
   }
 
+  private canonicalizePromotionEffectiveDate(value: any, fallbackDate?: any) {
+    const rawValue = String(value ?? '').trim();
+    const yearMatch = rawValue.match(/^(\d{4})[-/]/);
+    if (yearMatch) {
+      const year = Number(yearMatch[1]);
+      if (year < 1900 || year > 2100) {
+        throw new BadRequestException('Promotion effective date must be between 1900 and 2100.');
+      }
+    }
+    const canonicalDate = this.canonicalizeBusinessDate(value, fallbackDate);
+    const { year } = this.getBusinessDateParts(canonicalDate);
+    if (year < 1900 || year > 2100) {
+      throw new BadRequestException('Promotion effective date must be between 1900 and 2100.');
+    }
+    return canonicalDate;
+  }
+
   private getStaffName(staff: any) {
     return [staff?.first_name, staff?.last_name].filter(Boolean).join(' ').trim();
   }
@@ -334,68 +351,49 @@ export class PromotionsService {
     }
   }
 
-  private calculatePromotionArrearsBreakdown(
-    effectiveDate: any,
-    monthlyDifference: number,
-    basicMonthlyDifference = monthlyDifference,
-  ) {
-    const effectiveParts = this.getBusinessDateParts(effectiveDate);
-    if (effectiveParts.year < 1900 || effectiveParts.year > 2100) {
-      throw new BadRequestException('Promotion effective date must be between 1900 and 2100.');
+  private getDefaultPromotionArrearsEndDate() {
+    const today = this.getBusinessDateParts(new Date());
+    const lastDayOfPreviousMonth = new Date(Date.UTC(today.year, today.month - 1, 0));
+    return `${lastDayOfPreviousMonth.getUTCFullYear()}-${String(lastDayOfPreviousMonth.getUTCMonth() + 1).padStart(2, '0')}-${String(lastDayOfPreviousMonth.getUTCDate()).padStart(2, '0')}`;
+  }
+
+  private getPromotionArrearsMonthRanges(effectiveDate: string, effectiveEndDate: string) {
+    const startParts = this.getBusinessDateParts(effectiveDate);
+    const endParts = this.getBusinessDateParts(effectiveEndDate);
+    const start = new Date(Date.UTC(startParts.year, startParts.month - 1, startParts.day));
+    const end = new Date(Date.UTC(endParts.year, endParts.month - 1, endParts.day));
+    const ranges: Array<{
+      month: string;
+      startDate: string;
+      endDate: string;
+      eligibleDays: number;
+      daysInMonth: number;
+      fraction: number;
+    }> = [];
+
+    if (start > end) return ranges;
+    let cursor = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
+    const finalMonth = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), 1));
+    while (cursor <= finalMonth) {
+      const year = cursor.getUTCFullYear();
+      const monthIndex = cursor.getUTCMonth();
+      const daysInMonth = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+      const monthStart = new Date(Date.UTC(year, monthIndex, 1));
+      const monthEnd = new Date(Date.UTC(year, monthIndex, daysInMonth));
+      const coveredStart = start > monthStart ? start : monthStart;
+      const coveredEnd = end < monthEnd ? end : monthEnd;
+      const eligibleDays = Math.floor((coveredEnd.getTime() - coveredStart.getTime()) / 86400000) + 1;
+      ranges.push({
+        month: this.buildMonthKey(year, monthIndex + 1),
+        startDate: `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(coveredStart.getUTCDate()).padStart(2, '0')}`,
+        endDate: `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(coveredEnd.getUTCDate()).padStart(2, '0')}`,
+        eligibleDays,
+        daysInMonth,
+        fraction: eligibleDays / daysInMonth,
+      });
+      cursor = new Date(Date.UTC(year, monthIndex + 1, 1));
     }
-    const effectiveMonth = new Date(Date.UTC(effectiveParts.year, effectiveParts.month - 1, 1));
-    const todayParts = this.getBusinessDateParts(new Date());
-    const currentMonth = new Date(Date.UTC(todayParts.year, todayParts.month - 1, 1));
-    const monthsDiff =
-      (currentMonth.getUTCFullYear() - effectiveMonth.getUTCFullYear()) * 12 +
-      (currentMonth.getUTCMonth() - effectiveMonth.getUTCMonth());
-
-    const safeMonthsDiff = Math.max(0, monthsDiff);
-    const roundedMonthlyDifference = this.roundCurrency(monthlyDifference);
-    let proratedFirstMonth = 0;
-    let fullMonthsAfter = 0;
-    let totalArrears = 0;
-    let basicProratedFirstMonth = 0;
-    let basicTotalArrears = 0;
-    const details: Array<{ month: string; amount: number; gross_amount: number; basic_amount?: number }> = [];
-
-    if (roundedMonthlyDifference > 0 && safeMonthsDiff > 0) {
-      const daysInEffectiveMonth = new Date(Date.UTC(effectiveParts.year, effectiveParts.month, 0)).getUTCDate();
-      const eligibleDays = Math.max(0, daysInEffectiveMonth - (effectiveParts.day - 1));
-      const dailyDifference = daysInEffectiveMonth > 0 ? roundedMonthlyDifference / daysInEffectiveMonth : 0;
-      proratedFirstMonth = this.roundCurrency(dailyDifference * eligibleDays);
-      const roundedBasicDifference = this.roundCurrency(basicMonthlyDifference);
-      const basicDailyDifference = daysInEffectiveMonth > 0 ? roundedBasicDifference / daysInEffectiveMonth : 0;
-      basicProratedFirstMonth = this.roundCurrency(basicDailyDifference * eligibleDays);
-      fullMonthsAfter = Math.max(0, safeMonthsDiff - 1);
-      totalArrears = this.roundCurrency(proratedFirstMonth + (roundedMonthlyDifference * fullMonthsAfter));
-      basicTotalArrears = this.roundCurrency(
-        basicProratedFirstMonth + (roundedBasicDifference * fullMonthsAfter),
-      );
-
-      for (let index = 0; index < safeMonthsDiff; index += 1) {
-        const monthDate = new Date(Date.UTC(effectiveParts.year, effectiveParts.month - 1 + index, 1));
-        details.push({
-          month: this.buildMonthKey(monthDate.getUTCFullYear(), monthDate.getUTCMonth() + 1),
-          amount: this.roundCurrency(index === 0 ? proratedFirstMonth : roundedMonthlyDifference),
-          gross_amount: this.roundCurrency(index === 0 ? proratedFirstMonth : roundedMonthlyDifference),
-          basic_amount: this.roundCurrency(index === 0 ? basicProratedFirstMonth : roundedBasicDifference),
-        });
-      }
-    }
-
-    return {
-      monthlyDifference: roundedMonthlyDifference,
-      grossMonthlyDifference: roundedMonthlyDifference,
-      monthsDiff: safeMonthsDiff,
-      proratedFirstMonth,
-      fullMonthsAfter,
-      totalArrears,
-      grossTotalArrears: totalArrears,
-      basicProratedFirstMonth,
-      basicTotalArrears,
-      details,
-    };
+    return ranges;
   }
 
   private async resolvePromotionBasicSalaries(promotion: any) {
@@ -428,6 +426,150 @@ export class PromotionsService {
     return {
       oldBasicSalary: this.roundCurrency(oldBasicSalary),
       newBasicSalary: this.roundCurrency(newBasicSalary),
+    };
+  }
+
+  private async calculatePromotionArrearsPeriod(
+    staff: any,
+    effectiveDate: string,
+    effectiveEndDate: string,
+    oldBasicSalary: number,
+    newBasicSalary: number,
+    oldGradeLevel: number | string,
+    newGradeLevel: number | string,
+    taxConfig: any,
+  ) {
+    const ranges = this.getPromotionArrearsMonthRanges(effectiveDate, effectiveEndDate);
+    const isContractStaff = String(staff?.employment_type || '').trim().toLowerCase() === 'contract';
+    const details: any[] = [];
+    const deductionItemsByCode = new Map<string, any>();
+    const payeReliefs = { pension: 0, nhf: 0, nhia: 0 };
+    let totalArrears = 0;
+    let basicTotalArrears = 0;
+    let totalDeductions = 0;
+    let payeOnPromotionArrears = 0;
+
+    for (const range of ranges) {
+      const [oldAllowances, newAllowances] = await Promise.all([
+        this.calculateAllowanceBreakdown(staff.id, oldBasicSalary, oldGradeLevel, range.month),
+        this.calculateAllowanceBreakdown(staff.id, newBasicSalary, newGradeLevel, range.month),
+      ]);
+      const oldGrossSalary = this.roundCurrency(oldBasicSalary + oldAllowances.total);
+      const newGrossSalary = this.roundCurrency(newBasicSalary + newAllowances.total);
+      const [oldDeductions, newDeductions] = await Promise.all([
+        this.calculateDeductionBreakdown(staff.id, oldBasicSalary, oldGradeLevel, range.month, oldGrossSalary),
+        this.calculateDeductionBreakdown(staff.id, newBasicSalary, newGradeLevel, range.month, newGrossSalary),
+      ]);
+      const monthlyBasicDifference = this.roundCurrency(newBasicSalary - oldBasicSalary);
+      const monthlyGrossDifference = this.roundCurrency(newGrossSalary - oldGrossSalary);
+      const basicAmount = this.roundCurrency(monthlyBasicDifference * range.fraction);
+      const grossAmount = this.roundCurrency(monthlyGrossDifference * range.fraction);
+      const arrearsDeductions = await this.calculatePromotionArrearsDeductionBreakdown(
+        newDeductions.items,
+        monthlyGrossDifference,
+        monthlyBasicDifference,
+        range.fraction,
+      );
+      const oldReliefs = this.getPayeReliefAmounts(oldDeductions.items);
+      const newReliefs = this.getPayeReliefAmounts(newDeductions.items);
+      const oldTax = this.payeCalculator.calculate(
+        oldGrossSalary,
+        oldAllowances.items,
+        taxConfig,
+        isContractStaff,
+        oldReliefs.pension,
+        oldReliefs.nhf,
+        oldReliefs.nhia,
+      );
+      const newTax = this.payeCalculator.calculate(
+        newGrossSalary,
+        newAllowances.items,
+        taxConfig,
+        isContractStaff,
+        newReliefs.pension,
+        newReliefs.nhf,
+        newReliefs.nhia,
+      );
+      const monthlyPayeDifference = this.roundCurrency(Math.max(0, newTax.monthly_tax - oldTax.monthly_tax));
+      const payeAmount = this.roundCurrency(monthlyPayeDifference * range.fraction);
+      const netAmount = this.roundCurrency(grossAmount - arrearsDeductions.total - payeAmount);
+
+      totalArrears = this.roundCurrency(totalArrears + grossAmount);
+      basicTotalArrears = this.roundCurrency(basicTotalArrears + basicAmount);
+      totalDeductions = this.roundCurrency(totalDeductions + arrearsDeductions.total);
+      payeOnPromotionArrears = this.roundCurrency(payeOnPromotionArrears + payeAmount);
+      payeReliefs.pension += arrearsDeductions.payeReliefs.pension;
+      payeReliefs.nhf += arrearsDeductions.payeReliefs.nhf;
+      payeReliefs.nhia += arrearsDeductions.payeReliefs.nhia;
+      for (const item of arrearsDeductions.items) {
+        const code = String(item.code || '').trim();
+        const existing = deductionItemsByCode.get(code);
+        deductionItemsByCode.set(code, existing
+          ? { ...existing, amount: this.roundCurrency(existing.amount + item.amount) }
+          : { ...item });
+      }
+
+      details.push({
+        calculation_method: 'promotion_salary_period_v1',
+        month: range.month,
+        effective_start_date: range.startDate,
+        effective_end_date: range.endDate,
+        eligible_days: range.eligibleDays,
+        days_in_month: range.daysInMonth,
+        month_fraction: Number(range.fraction.toFixed(8)),
+        old_basic_salary: oldBasicSalary,
+        new_basic_salary: newBasicSalary,
+        monthly_basic_difference: monthlyBasicDifference,
+        basic_amount: basicAmount,
+        old_allowances: oldAllowances.items,
+        new_allowances: newAllowances.items,
+        old_gross: oldGrossSalary,
+        new_gross: newGrossSalary,
+        monthly_gross_difference: monthlyGrossDifference,
+        gross_amount: grossAmount,
+        amount: grossAmount,
+        old_deductions: oldDeductions.items,
+        new_deductions: newDeductions.items,
+        deductions: arrearsDeductions.items,
+        total_deductions: arrearsDeductions.total,
+        paye_old_monthly: oldTax.monthly_tax,
+        paye_new_monthly: newTax.monthly_tax,
+        paye_monthly_difference: monthlyPayeDifference,
+        paye_amount: payeAmount,
+        paye_reliefs: {
+          pension: this.roundCurrency(arrearsDeductions.payeReliefs.pension),
+          nhf: this.roundCurrency(arrearsDeductions.payeReliefs.nhf),
+          nhia: this.roundCurrency(arrearsDeductions.payeReliefs.nhia),
+        },
+        net_amount: netAmount,
+      });
+    }
+
+    return {
+      details,
+      monthsDiff: details.length,
+      totalArrears,
+      grossTotalArrears: totalArrears,
+      basicTotalArrears,
+      totalDeductions,
+      payeOnPromotionArrears,
+      totalArrearsDeductions: this.roundCurrency(totalDeductions + payeOnPromotionArrears),
+      estimatedNetArrears: this.roundCurrency(totalArrears - totalDeductions - payeOnPromotionArrears),
+      proratedFirstMonth: this.roundCurrency(Number(details[0]?.gross_amount || 0)),
+      basicProratedFirstMonth: this.roundCurrency(Number(details[0]?.basic_amount || 0)),
+      fullMonthsAfter: Math.max(0, details.length - 1),
+      monthlyDifference: this.roundCurrency(Number(details[0]?.monthly_gross_difference || 0)),
+      grossMonthlyDifference: this.roundCurrency(Number(details[0]?.monthly_gross_difference || 0)),
+      basicMonthlyDifference: this.roundCurrency(Number(details[0]?.monthly_basic_difference || 0)),
+      arrearsDeductions: {
+        items: Array.from(deductionItemsByCode.values()),
+        total: this.roundCurrency(totalDeductions),
+        payeReliefs: {
+          pension: this.roundCurrency(payeReliefs.pension),
+          nhf: this.roundCurrency(payeReliefs.nhf),
+          nhia: this.roundCurrency(payeReliefs.nhia),
+        },
+      },
     };
   }
 
@@ -476,7 +618,7 @@ export class PromotionsService {
     const rawEffectiveDate = promotion.promotion_date || promotion.effective_date;
     let effectiveDate: string;
     try {
-      effectiveDate = this.canonicalizeBusinessDate(
+      effectiveDate = this.canonicalizePromotionEffectiveDate(
         rawEffectiveDate,
         promotion.approval_date || promotion.created_at || new Date(),
       );
@@ -496,42 +638,50 @@ export class PromotionsService {
       };
     }
 
+    const effectiveEndDate = this.canonicalizeBusinessDate(
+      promotion.arrears_end_date || this.getDefaultPromotionArrearsEndDate(),
+      new Date(),
+    );
+    const defaultEndDate = this.getDefaultPromotionArrearsEndDate();
+    if (effectiveEndDate > defaultEndDate) {
+      throw new BadRequestException('Promotion arrears end date must be before the current payroll month.');
+    }
     const { oldBasicSalary, newBasicSalary } = await this.resolvePromotionBasicSalaries(promotion);
-    const oldAllowances = await this.calculateAllowanceBreakdown(
-      promotion.staff_id,
-      oldBasicSalary,
-      promotion.old_grade_level,
+    const taxSettings = await this.databaseService.queryOne(
+      `SELECT tax_configuration FROM system_settings WHERE key = 'general_settings'`,
     );
-    const newAllowances = await this.calculateAllowanceBreakdown(
-      promotion.staff_id,
-      newBasicSalary,
-      promotion.new_grade_level,
-    );
-    const oldGrossSalary = this.roundCurrency(oldBasicSalary + oldAllowances.total);
-    const newGrossSalary = this.roundCurrency(newBasicSalary + newAllowances.total);
-    const basicMonthlyDifference = this.roundCurrency(newBasicSalary - oldBasicSalary);
-    const grossMonthlyDifference = this.roundCurrency(newGrossSalary - oldGrossSalary);
-    const breakdown = this.calculatePromotionArrearsBreakdown(
+    const staff = await this.databaseService.queryOne('SELECT * FROM staff WHERE id = $1', [promotion.staff_id]);
+    if (!staff) throw new NotFoundException(`Staff member with ID ${promotion.staff_id} does not exist.`);
+    const arrearsCalculation = await this.calculatePromotionArrearsPeriod(
+      staff,
       effectiveDate,
-      grossMonthlyDifference,
-      basicMonthlyDifference,
+      effectiveEndDate,
+      oldBasicSalary,
+      newBasicSalary,
+      promotion.old_grade_level,
+      promotion.new_grade_level,
+      taxSettings?.tax_configuration || {},
     );
+    const firstDetail = arrearsCalculation.details[0];
+    const oldGrossSalary = this.roundCurrency(Number(firstDetail?.old_gross ?? oldBasicSalary));
+    const newGrossSalary = this.roundCurrency(Number(firstDetail?.new_gross ?? newBasicSalary));
+    const basicMonthlyDifference = arrearsCalculation.basicMonthlyDifference;
+    const grossMonthlyDifference = arrearsCalculation.grossMonthlyDifference;
 
     return {
       effectiveDate,
+      effectiveEndDate,
       oldBasicSalary,
       newBasicSalary,
       oldGrossSalary,
       newGrossSalary,
-      oldAllowances,
-      newAllowances,
       basicMonthlyDifference,
-      ...breakdown,
-      shouldCreate: breakdown.monthsDiff > 0 && breakdown.monthlyDifference > 0,
+      ...arrearsCalculation,
+      shouldCreate: arrearsCalculation.monthsDiff > 0 && arrearsCalculation.totalArrears > 0,
       reason:
-        breakdown.monthsDiff <= 0
+        arrearsCalculation.monthsDiff <= 0
           ? 'not_backdated'
-          : breakdown.monthlyDifference <= 0
+          : arrearsCalculation.totalArrears <= 0
             ? 'non_positive_difference'
             : 'eligible',
     };
@@ -541,13 +691,14 @@ export class PromotionsService {
     promotion: any,
     evaluation: {
       effectiveDate: any;
+      effectiveEndDate: any;
       oldBasicSalary: number;
       newBasicSalary: number;
       oldGrossSalary?: number;
       newGrossSalary?: number;
       monthsDiff: number;
       totalArrears: number;
-      details: Array<{ month: string; amount: number; gross_amount?: number; basic_amount?: number }>;
+      details: any[];
     },
     userId?: string,
     notify = true,
@@ -557,9 +708,9 @@ export class PromotionsService {
       `INSERT INTO arrears (
         staff_id, reason, old_salary, new_salary,
         old_basic_salary, new_basic_salary,
-        effective_date, months_owed, total_arrears,
+        effective_date, effective_end_date, months_owed, total_arrears,
         status, details, created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8, $9, $10, $11, $12)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8::date, $9, $10, $11, $12, $13)
       RETURNING *`,
       [
         promotion.staff_id,
@@ -569,6 +720,7 @@ export class PromotionsService {
         evaluation.oldBasicSalary,
         evaluation.newBasicSalary,
         evaluation.effectiveDate,
+        evaluation.effectiveEndDate,
         evaluation.monthsDiff,
         evaluation.totalArrears,
         'pending',
@@ -628,6 +780,41 @@ export class PromotionsService {
     let outcome: 'inserted' | 'existing' | 'no_due' = 'no_due';
     if (evaluation.shouldCreate) {
       if (existingArrears) {
+        let existingDetails: any[] = [];
+        try {
+          const parsed = typeof existingArrears.details === 'string'
+            ? JSON.parse(existingArrears.details)
+            : existingArrears.details;
+          existingDetails = Array.isArray(parsed) ? parsed : [];
+        } catch {
+          existingDetails = [];
+        }
+        if (
+          existingArrears.status === 'pending' &&
+          !existingArrears.payroll_batch_id &&
+          !existingDetails.some((detail: any) => detail?.calculation_method === 'promotion_salary_period_v1')
+        ) {
+          arrearsRecord = await this.databaseService.queryOne(
+            `UPDATE arrears
+             SET old_salary = $1, new_salary = $2,
+                 old_basic_salary = $3, new_basic_salary = $4,
+                 effective_end_date = $5::date, months_owed = $6,
+                 total_arrears = $7, details = $8, updated_at = NOW()
+             WHERE id = $9 AND status = 'pending' AND payroll_batch_id IS NULL
+             RETURNING *`,
+            [
+              evaluation.oldGrossSalary,
+              evaluation.newGrossSalary,
+              evaluation.oldBasicSalary,
+              evaluation.newBasicSalary,
+              evaluation.effectiveEndDate,
+              evaluation.monthsDiff,
+              evaluation.totalArrears,
+              JSON.stringify(evaluation.details),
+              existingArrears.id,
+            ],
+          );
+        }
         outcome = 'existing';
       } else {
         arrearsRecord = await this.createPromotionArrearsRecord(promotion, evaluation, userId, notify);
@@ -772,20 +959,26 @@ export class PromotionsService {
       );
     }
 
-    const canonicalEffectiveDate = this.canonicalizeBusinessDate(effectiveDate, new Date());
+    const canonicalEffectiveDate = this.canonicalizePromotionEffectiveDate(effectiveDate, new Date());
+    const rawArrearsEndDate = dto.arrearsEndDate || dto.arrears_end_date || this.getDefaultPromotionArrearsEndDate();
+    const canonicalArrearsEndDate = this.canonicalizeBusinessDate(rawArrearsEndDate, new Date());
+    if (canonicalArrearsEndDate > this.getDefaultPromotionArrearsEndDate()) {
+      throw new BadRequestException('Promotion arrears end date must be before the current payroll month.');
+    }
     
     // Create promotion record
     const result = await this.databaseService.queryOne(
       `INSERT INTO promotions (
         staff_id, old_grade_level, old_step, old_basic_salary,
         new_grade_level, new_step, new_basic_salary,
-        promotion_date, effective_date, promotion_type, remarks, status, created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`,
+        promotion_date, effective_date, arrears_end_date, promotion_type, remarks, status, created_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::date, $11, $12, $13, $14) RETURNING *`,
       [
         staffId, staff.grade_level, staff.step, staff.current_basic_salary,
         newGradeLevel, newStep, newBasicSalary,
         canonicalEffectiveDate,
         canonicalEffectiveDate,
+        canonicalArrearsEndDate,
         promotionType || 'regular',
         remarks,
         status,
@@ -1349,7 +1542,9 @@ export class PromotionsService {
     effectiveDate: string,
     oldGradeLevel?: number | string,
     oldStep?: number | string,
+    effectiveEndDate?: string,
   ) {
+    const canonicalEffectiveDate = this.canonicalizePromotionEffectiveDate(effectiveDate, new Date());
     const staff = await this.databaseService.queryOne('SELECT * FROM staff WHERE id = $1', [staffId]);
     if (!staff) {
       throw new NotFoundException(`Staff member with ID ${staffId} does not exist.`);
@@ -1387,89 +1582,79 @@ export class PromotionsService {
 
     const oldContextGrade = resolvedOldGradeLevel;
     const newContextGrade = resolvedNewGradeLevel;
-    const canonicalEffectiveDate = this.canonicalizeBusinessDate(effectiveDate, new Date());
-    const effectiveParts = this.getBusinessDateParts(canonicalEffectiveDate);
-    if (effectiveParts.year < 1900 || effectiveParts.year > 2100) {
-      throw new BadRequestException('Promotion effective date must be between 1900 and 2100.');
+    const canonicalEffectiveEndDate = this.canonicalizeBusinessDate(
+      effectiveEndDate || this.getDefaultPromotionArrearsEndDate(),
+      new Date(),
+    );
+    if (canonicalEffectiveEndDate > this.getDefaultPromotionArrearsEndDate()) {
+      throw new BadRequestException('Promotion arrears end date must be before the current payroll month.');
     }
     const employmentDate = staff.employment_date ? this.canonicalizeBusinessDate(staff.employment_date, new Date()) : null;
     if (employmentDate && canonicalEffectiveDate < employmentDate) {
       throw new BadRequestException('Promotion effective date cannot be earlier than the staff employment date.');
     }
-    const oldAllowances = await this.calculateAllowanceBreakdown(staffId, oldBasicSalary, oldContextGrade);
-    const newAllowances = await this.calculateAllowanceBreakdown(staffId, newBasicSalary, newContextGrade);
-    const oldGrossSalary = this.roundCurrency(oldBasicSalary + oldAllowances.total);
-    const newGrossSalary = this.roundCurrency(newBasicSalary + newAllowances.total);
-    
-    const oldDeductions = await this.calculateDeductionBreakdown(staffId, oldBasicSalary, oldContextGrade);
-    const newDeductions = await this.calculateDeductionBreakdown(staffId, newBasicSalary, newContextGrade);
-
-    const oldNetSalary = oldGrossSalary - oldDeductions.total;
-    const newNetSalary = newGrossSalary - newDeductions.total;
-
-    const monthlyDifference = this.roundCurrency(newGrossSalary - oldGrossSalary);
-    const basicMonthlyDifference = this.roundCurrency(newBasicSalary - oldBasicSalary);
-    const breakdown =
-      this.calculatePromotionArrearsBreakdown(canonicalEffectiveDate, monthlyDifference, basicMonthlyDifference);
-    const arrearsDeductions = await this.calculatePromotionArrearsDeductionBreakdown(
-      newDeductions.items,
-      breakdown.totalArrears,
-      breakdown.basicTotalArrears,
-    );
     const taxSettings = await this.databaseService.queryOne(
       `SELECT tax_configuration FROM system_settings WHERE key = 'general_settings'`,
     );
     const taxConfig = taxSettings?.tax_configuration || {};
-    const isContractStaff = String(staff.employment_type || '').trim().toLowerCase() === 'contract';
-    const regularReliefs = this.getPayeReliefAmounts(newDeductions.items);
-    const regularTax = this.payeCalculator.calculate(
-      newGrossSalary,
-      newAllowances.items,
+    const calculation = await this.calculatePromotionArrearsPeriod(
+      staff,
+      canonicalEffectiveDate,
+      canonicalEffectiveEndDate,
+      oldBasicSalary,
+      newBasicSalary,
+      oldContextGrade,
+      newContextGrade,
       taxConfig,
-      isContractStaff,
-      regularReliefs.pension,
-      regularReliefs.nhf,
-      regularReliefs.nhia,
     );
-    const arrearsTax = this.payeCalculator.calculate(
-      this.roundCurrency(newGrossSalary + breakdown.totalArrears),
-      [...newAllowances.items, { code: 'ARREAR', name: 'Promotion Arrears', amount: breakdown.totalArrears, is_taxable: true }],
-      taxConfig,
-      isContractStaff,
-      regularReliefs.pension + arrearsDeductions.payeReliefs.pension,
-      regularReliefs.nhf + arrearsDeductions.payeReliefs.nhf,
-      regularReliefs.nhia + arrearsDeductions.payeReliefs.nhia,
-    );
-    const payeOnPromotionArrears = this.roundCurrency(Math.max(0, arrearsTax.monthly_tax - regularTax.monthly_tax));
-    const totalArrearsDeductions = this.roundCurrency(arrearsDeductions.total + payeOnPromotionArrears);
+    const firstDetail = calculation.details[0];
+    const oldAllowances = firstDetail
+      ? { items: firstDetail.old_allowances, total: this.roundCurrency(firstDetail.old_allowances.reduce((sum: number, item: any) => sum + Number(item.amount || 0), 0)) }
+      : await this.calculateAllowanceBreakdown(staffId, oldBasicSalary, oldContextGrade);
+    const newAllowances = firstDetail
+      ? { items: firstDetail.new_allowances, total: this.roundCurrency(firstDetail.new_allowances.reduce((sum: number, item: any) => sum + Number(item.amount || 0), 0)) }
+      : await this.calculateAllowanceBreakdown(staffId, newBasicSalary, newContextGrade);
+    const oldDeductions = firstDetail
+      ? { items: firstDetail.old_deductions, total: this.roundCurrency(firstDetail.old_deductions.reduce((sum: number, item: any) => sum + Number(item.amount || 0), 0)) }
+      : await this.calculateDeductionBreakdown(staffId, oldBasicSalary, oldContextGrade);
+    const newDeductions = firstDetail
+      ? { items: firstDetail.new_deductions, total: this.roundCurrency(firstDetail.new_deductions.reduce((sum: number, item: any) => sum + Number(item.amount || 0), 0)) }
+      : await this.calculateDeductionBreakdown(staffId, newBasicSalary, newContextGrade);
+    const oldGrossSalary = this.roundCurrency(Number(firstDetail?.old_gross ?? (oldBasicSalary + oldAllowances.total)));
+    const newGrossSalary = this.roundCurrency(Number(firstDetail?.new_gross ?? (newBasicSalary + newAllowances.total)));
+    const oldNetSalary = this.roundCurrency(oldGrossSalary - oldDeductions.total);
+    const newNetSalary = this.roundCurrency(newGrossSalary - newDeductions.total);
+    const regularPaye = this.roundCurrency(Number(firstDetail?.paye_new_monthly || 0));
 
     return {
       oldBasicSalary,
       newBasicSalary,
       effectiveDate: canonicalEffectiveDate,
-      basicMonthlyDifference,
+      effectiveEndDate: canonicalEffectiveEndDate,
+      basicMonthlyDifference: calculation.basicMonthlyDifference || this.roundCurrency(newBasicSalary - oldBasicSalary),
       oldNetSalary,
       newNetSalary,
-      monthlyDifference,
-      grossMonthlyDifference: monthlyDifference,
-      monthsDiff: breakdown.monthsDiff,
-      proratedFirstMonth: breakdown.proratedFirstMonth,
-      fullMonthsAfter: breakdown.fullMonthsAfter,
-      totalArrears: breakdown.totalArrears,
-      grossTotalArrears: breakdown.totalArrears,
+      monthlyDifference: calculation.monthlyDifference,
+      grossMonthlyDifference: calculation.grossMonthlyDifference,
+      monthsDiff: calculation.monthsDiff,
+      proratedFirstMonth: calculation.proratedFirstMonth,
+      fullMonthsAfter: calculation.fullMonthsAfter,
+      totalArrears: calculation.totalArrears,
+      grossTotalArrears: calculation.totalArrears,
       oldGrossSalary,
       newGrossSalary,
       oldAllowances,
       newAllowances,
       oldDeductions,
       newDeductions,
-      basicTotalArrears: breakdown.basicTotalArrears,
+      basicTotalArrears: calculation.basicTotalArrears,
       arrearsCalculationBasis: 'gross',
-      arrearsDeductions,
-      regularPaye: regularTax.monthly_tax,
-      payeOnPromotionArrears,
-      totalArrearsDeductions,
-      estimatedNetArrears: this.roundCurrency(breakdown.totalArrears - totalArrearsDeductions),
+      arrearsDeductions: calculation.arrearsDeductions,
+      regularPaye,
+      payeOnPromotionArrears: calculation.payeOnPromotionArrears,
+      totalArrearsDeductions: calculation.totalArrearsDeductions,
+      estimatedNetArrears: calculation.estimatedNetArrears,
+      monthlyDetails: calculation.details,
     };
   }
 
@@ -1677,6 +1862,7 @@ export class PromotionsService {
     staffId: string,
     basicSalary: number,
     gradeLevel?: string | number,
+    month?: string,
   ): Promise<{ total: number; items: Array<{ code: string; name: string; amount: number; type: string; source: string; calculation_basis?: string; is_taxable?: boolean }> }> {
     const staffMember = await this.getPayrollContextStaff(staffId, gradeLevel);
     const globalAllowances = await this.databaseService.query(
@@ -1693,8 +1879,12 @@ export class PromotionsService {
               COALESCE(sa.custom_allowance_code, a.code) as allowance_code
        FROM staff_allowances sa
        LEFT JOIN allowances a ON sa.allowance_id = a.id
-       WHERE sa.status = 'active' AND sa.staff_id = $1`,
-      [staffId],
+       WHERE sa.status = 'active' AND sa.staff_id = $1
+         AND ($2::text IS NULL OR (
+           sa.effective_from <= TO_DATE($2 || '-01', 'YYYY-MM-DD')
+           AND (sa.effective_to IS NULL OR sa.effective_to >= TO_DATE($2 || '-01', 'YYYY-MM-DD'))
+         ))`,
+      [staffId, month || null],
     );
 
     const items: Array<{ code: string; name: string; amount: number; type: string; source: string; calculation_basis?: string; is_taxable?: boolean }> = [];
@@ -1825,6 +2015,7 @@ export class PromotionsService {
     deductionItems: any[],
     grossArrears: number,
     basicArrears: number,
+    monthFraction = 1,
   ) {
     const items: any[] = [];
     const seen = new Set<string>();
@@ -1836,14 +2027,16 @@ export class PromotionsService {
       seen.add(code);
       const basis = deduction.promotion_arrears_basis === 'gross' ? 'gross' : 'basic';
       const base = basis === 'gross' ? grossArrears : basicArrears;
-      const amount = deduction.type === 'percentage'
+      const monthlyAmount = deduction.type === 'percentage'
         ? this.roundCurrency((base * Number(deduction.percentage || 0)) / 100)
         : this.roundCurrency(Number(deduction.amount || 0));
+      const amount = this.roundCurrency(monthlyAmount * monthFraction);
       if (amount <= 0) continue;
       const item = {
         code: `${deduction.code}_ARREARS`,
         name: `${deduction.name} (Promotion Arrears)`,
         amount,
+        monthly_amount: monthlyAmount,
         type: deduction.type,
         source: deduction.source,
         calculation_basis: basis,
@@ -1862,6 +2055,8 @@ export class PromotionsService {
     staffId: string,
     basicSalary: number,
     gradeLevel?: string | number,
+    month?: string,
+    grossSalaryOverride?: number,
   ): Promise<{ total: number; items: Array<{ code: string; name: string; amount: number; type: string; source: string; calculation_basis?: string; applies_to_promotion_arrears?: boolean; promotion_arrears_basis?: string; is_paye_relief?: boolean }> }> {
     const staffMember = await this.getPayrollContextStaff(staffId, gradeLevel);
     const globalDeductions = await this.databaseService.query(
@@ -1877,13 +2072,19 @@ export class PromotionsService {
               d.excluded_grades, d.excluded_employment_types
        FROM staff_deductions sd
        LEFT JOIN deductions d ON sd.deduction_id = d.id
-       WHERE sd.status = 'active' AND sd.staff_id = $1`,
-      [staffId],
+       WHERE sd.status = 'active' AND sd.staff_id = $1
+         AND ($2::text IS NULL OR (
+           sd.effective_from <= TO_DATE($2 || '-01', 'YYYY-MM-DD')
+           AND (sd.effective_to IS NULL OR sd.effective_to >= TO_DATE($2 || '-01', 'YYYY-MM-DD'))
+         ))`,
+      [staffId, month || null],
     );
 
     const items: Array<{ code: string; name: string; amount: number; type: string; source: string; calculation_basis?: string; applies_to_promotion_arrears?: boolean; promotion_arrears_basis?: string; is_paye_relief?: boolean }> = [];
     let total = 0;
-    const grossSalary = await this.calculateGrossSalary(staffId, basicSalary, gradeLevel);
+    const grossSalary = grossSalaryOverride !== undefined
+      ? grossSalaryOverride
+      : await this.calculateGrossSalary(staffId, basicSalary, gradeLevel);
 
     for (const deduction of globalDeductions) {
       if (staffMember && this.isExcludedFromGlobalItem(deduction, staffMember)) {

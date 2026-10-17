@@ -54,6 +54,35 @@ function toDateOnly(value: string | null | undefined): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+function getPreviousMonthEndDate(): string {
+  const date = new Date();
+  const previousMonthEnd = new Date(date.getFullYear(), date.getMonth(), 0);
+  return `${previousMonthEnd.getFullYear()}-${String(previousMonthEnd.getMonth() + 1).padStart(2, '0')}-${String(previousMonthEnd.getDate()).padStart(2, '0')}`;
+}
+
+function getPromotionEffectiveDateError(value: string): string | null {
+  if (!value) return null;
+  const normalized = normalizePromotionDate(value);
+  const match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return 'Enter a valid promotion effective date.';
+
+  const year = Number(match[1]);
+  if (year < 1900 || year > 2100) {
+    return 'Promotion effective date must be between 1900 and 2100.';
+  }
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return 'Enter a valid promotion effective date.';
+  }
+  return null;
+}
+
 export function PromotionsPage() {
   type StoredArrearsStatus = 'pending' | 'approved' | 'processed' | 'rejected';
   const { user } = useAuth();
@@ -78,6 +107,7 @@ export function PromotionsPage() {
   const [showStaffDropdown, setShowStaffDropdown] = useState(false);
   const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number; width: number } | null>(null);
   const staffSelectRef = useRef<HTMLDivElement>(null);
+  const arrearsPreviewRequestRef = useRef(0);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -87,7 +117,8 @@ export function PromotionsPage() {
     new_grade_level: 0,
     new_step: 0,
     effective_date: '',
-    justification: '',
+    arrears_end_date: getPreviousMonthEndDate(),
+    justification: 'Promotion Arrears',
   });
 
   // Arrears preview state
@@ -111,6 +142,8 @@ export function PromotionsPage() {
     estimatedNetArrears: number;
     proratedFirstMonth: number;
     fullMonthsAfter: number;
+    monthlyDetails: any[];
+    effectiveEndDate: string;
   } | null>(null);
   const [detailsArrearsPreview, setDetailsArrearsPreview] = useState<typeof arrearsPreview | null>(null);
   const [detailsPreviewLoading, setDetailsPreviewLoading] = useState(false);
@@ -118,6 +151,7 @@ export function PromotionsPage() {
   const [detailsStoredArrearsStatus, setDetailsStoredArrearsStatus] = useState<StoredArrearsStatus | null>(null);
   const [detailsUsesStoredArrears, setDetailsUsesStoredArrears] = useState(false);
   const [arrearsPreviewLoading, setArrearsPreviewLoading] = useState(false);
+  const [arrearsPreviewError, setArrearsPreviewError] = useState<string | null>(null);
 
   const buildEmptyBreakdown = () => ({
     total: 0,
@@ -271,7 +305,26 @@ export function PromotionsPage() {
     }
   };
 
+  const handleEffectiveDateChange = (effectiveDate: string) => {
+    // Invalidate an in-flight preview before React runs the dependent effect.
+    arrearsPreviewRequestRef.current += 1;
+    setArrearsPreview(null);
+    setArrearsPreviewLoading(false);
+    setArrearsPreviewError(getPromotionEffectiveDateError(effectiveDate));
+    setFormData((prev) => ({ ...prev, effective_date: effectiveDate }));
+  };
+
   const calculateArrearsPreview = async () => {
+    const requestId = ++arrearsPreviewRequestRef.current;
+    const effectiveDateError = getPromotionEffectiveDateError(formData.effective_date);
+    if (effectiveDateError) {
+      setArrearsPreview(null);
+      setArrearsPreviewError(effectiveDateError);
+      setArrearsPreviewLoading(false);
+      return;
+    }
+
+    setArrearsPreviewError(null);
     if (!formData.effective_date || !formData.new_grade_level || !formData.new_step || !formData.staff_id) {
       setArrearsPreview(null);
       setArrearsPreviewLoading(false);
@@ -287,8 +340,10 @@ export function PromotionsPage() {
         formData.effective_date,
         formData.old_grade_level,
         formData.old_step,
+        formData.arrears_end_date,
       );
 
+      if (requestId !== arrearsPreviewRequestRef.current) return;
       setArrearsPreview({
         monthlyDifference: result.grossMonthlyDifference ?? result.monthlyDifference,
         basicMonthlyDifference: result.basicMonthlyDifference,
@@ -309,21 +364,29 @@ export function PromotionsPage() {
         estimatedNetArrears: result.estimatedNetArrears,
         proratedFirstMonth: result.proratedFirstMonth,
         fullMonthsAfter: result.fullMonthsAfter,
+        monthlyDetails: result.monthlyDetails || [],
+        effectiveEndDate: result.effectiveEndDate,
       });
     } catch (error) {
+      if (requestId !== arrearsPreviewRequestRef.current) return;
       console.error('Failed to calculate arrears preview:', error);
       const message = error instanceof Error ? error.message : 'Unable to calculate promotion arrears preview.';
+      setArrearsPreviewError(message);
       showToast('error', message);
-      // Fallback or just clear preview on error
       setArrearsPreview(null);
     } finally {
-      setArrearsPreviewLoading(false);
+      if (requestId === arrearsPreviewRequestRef.current) {
+        setArrearsPreviewLoading(false);
+      }
     }
   };
 
   useEffect(() => {
     calculateArrearsPreview();
-  }, [formData.new_grade_level, formData.new_step, formData.effective_date, formData.staff_id]);
+    return () => {
+      arrearsPreviewRequestRef.current += 1;
+    };
+  }, [formData.new_grade_level, formData.new_step, formData.effective_date, formData.arrears_end_date, formData.staff_id]);
 
   useEffect(() => {
     const loadDetailsPreview = async () => {
@@ -338,6 +401,7 @@ export function PromotionsPage() {
         setDetailsPreviewLoading(true);
         const normalizedEffectiveDate = normalizePromotionDate(selectedPromotion.effective_date);
         const effectiveDateKey = normalizedEffectiveDate || String(selectedPromotion.effective_date || '').slice(0, 10);
+        let arrearsEndDate = normalizePromotionDate((selectedPromotion as any).arrears_end_date);
 
         if (selectedPromotion.status === 'approved') {
           try {
@@ -356,6 +420,7 @@ export function PromotionsPage() {
                 })[0];
 
               if (matchedArrears && String(matchedArrears.status || '').trim().toLowerCase() !== 'rejected') {
+                arrearsEndDate = normalizePromotionDate(matchedArrears.effective_end_date) || arrearsEndDate;
                 setDetailsStoredArrearsTotal(null);
                 setDetailsStoredArrearsStatus(normalizeStoredArrearsStatus(matchedArrears.status));
                 setDetailsUsesStoredArrears(false);
@@ -387,6 +452,7 @@ export function PromotionsPage() {
           normalizedEffectiveDate || String(selectedPromotion.effective_date || ''),
           selectedPromotion.old_grade_level,
           selectedPromotion.old_step,
+          arrearsEndDate || getPreviousMonthEndDate(),
         );
         setDetailsArrearsPreview({
         monthlyDifference: result.grossMonthlyDifference ?? result.monthlyDifference,
@@ -408,6 +474,8 @@ export function PromotionsPage() {
           estimatedNetArrears: result.estimatedNetArrears,
           proratedFirstMonth: result.proratedFirstMonth,
           fullMonthsAfter: result.fullMonthsAfter,
+          monthlyDetails: result.monthlyDetails || [],
+          effectiveEndDate: result.effectiveEndDate,
         });
       } catch {
         setDetailsArrearsPreview(null);
@@ -422,8 +490,14 @@ export function PromotionsPage() {
   }, [showDetailsModal, selectedPromotion]);
 
   const handleCreatePromotion = async () => {
-    if (!formData.staff_id || !formData.new_grade_level || !formData.new_step || !formData.effective_date) {
+    if (!formData.staff_id || !formData.new_grade_level || !formData.new_step || !formData.effective_date || !formData.arrears_end_date) {
       showToast('error', 'Please fill all required fields');
+      return;
+    }
+    const effectiveDateError = getPromotionEffectiveDateError(formData.effective_date);
+    if (effectiveDateError) {
+      setArrearsPreviewError(effectiveDateError);
+      showToast('error', effectiveDateError);
       return;
     }
     if (!allowedGrades.includes(Number(formData.new_grade_level))) {
@@ -447,6 +521,8 @@ export function PromotionsPage() {
           new_grade_level: formData.new_grade_level,
           new_step: formData.new_step,
           effective_date: formData.effective_date,
+          arrears_end_date: formData.arrears_end_date,
+          remarks: formData.justification,
           status: 'pending',
           arrears_calculated: false,
           created_by: user!.id,
@@ -546,9 +622,11 @@ export function PromotionsPage() {
       new_grade_level: 0,
       new_step: 0,
       effective_date: '',
-      justification: '',
+      arrears_end_date: getPreviousMonthEndDate(),
+      justification: 'Promotion Arrears',
     });
     setArrearsPreview(null);
+    setArrearsPreviewError(null);
     setApprovalComment('');
   };
 
@@ -1206,23 +1284,51 @@ export function PromotionsPage() {
                 </label>
                 <input
                   type="date"
+                  min="1900-01-01"
+                  max="2100-12-31"
                   value={formData.effective_date}
-                  onChange={(e) => setFormData({ ...formData, effective_date: e.target.value })}
+                  onChange={(e) => handleEffectiveDateChange(e.target.value)}
                   className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
                   required
                 />
+                {getPromotionEffectiveDateError(formData.effective_date) && (
+                  <p role="alert" className="text-xs text-destructive mt-1">
+                    {getPromotionEffectiveDateError(formData.effective_date)}
+                  </p>
+                )}
                 <p className="text-xs text-muted-foreground mt-1">
                   If backdated, arrears will be automatically calculated upon approval
                 </p>
               </div>
 
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1">
+                  Arrears Effective End Date *
+                </label>
+                <input
+                  type="date"
+                  value={formData.arrears_end_date}
+                  onChange={(e) => setFormData({ ...formData, arrears_end_date: e.target.value })}
+                  className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                  required
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Arrears include this date. The payment month’s regular payroll is handled separately.
+                </p>
+              </div>
+
               {/* Arrears Preview */}
-              {(arrearsPreviewLoading || arrearsPreview) && (
+              {(arrearsPreviewLoading || arrearsPreview || arrearsPreviewError) && (
                 <div className="p-4 bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-900 rounded-lg">
                   <h4 className="font-medium text-orange-900 dark:text-orange-400 mb-3 flex items-center gap-2">
                     <Calendar className="w-4 h-4" />
                     Arrears Preview
                   </h4>
+                  {arrearsPreviewError && (
+                    <div role="alert" className="mb-3 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                      {arrearsPreviewError}
+                    </div>
+                  )}
                   {arrearsPreviewLoading ? (
                     <div className="flex items-center gap-2 text-sm text-orange-700 dark:text-orange-300">
                       <Loader2 className="w-4 h-4 animate-spin" />
@@ -1291,6 +1397,36 @@ export function PromotionsPage() {
                   <div className="mt-3 text-xs text-orange-700 dark:text-orange-300">
                     Prorated first month: {formatCurrency(arrearsPreview.proratedFirstMonth)} · Full months after: {arrearsPreview.fullMonthsAfter}
                   </div>
+                  {arrearsPreview.monthlyDetails.length > 0 && (
+                    <div className="mt-3 overflow-x-auto rounded-lg border border-orange-200 dark:border-orange-900">
+                      <table className="w-full min-w-[720px] text-xs text-left">
+                        <thead className="bg-orange-100/70 dark:bg-orange-900/40 text-orange-900 dark:text-orange-100">
+                          <tr>
+                            <th className="px-2 py-2">Month / eligible dates</th>
+                            <th className="px-2 py-2 text-right">Days</th>
+                            <th className="px-2 py-2 text-right">Basic arrears</th>
+                            <th className="px-2 py-2 text-right">Gross arrears</th>
+                            <th className="px-2 py-2 text-right">Old PAYE</th>
+                            <th className="px-2 py-2 text-right">New PAYE</th>
+                            <th className="px-2 py-2 text-right">Arrears PAYE</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {arrearsPreview.monthlyDetails.map((month: any, index: number) => (
+                            <tr key={`${month.month}-${index}`} className="border-t border-orange-200/70 dark:border-orange-900/70">
+                              <td className="px-2 py-2">{month.month}<div className="text-orange-700 dark:text-orange-300">{month.effective_start_date} – {month.effective_end_date}</div></td>
+                              <td className="px-2 py-2 text-right">{month.eligible_days}/{month.days_in_month}</td>
+                              <td className="px-2 py-2 text-right">{formatCurrency(month.basic_amount)}</td>
+                              <td className="px-2 py-2 text-right">{formatCurrency(month.gross_amount)}</td>
+                              <td className="px-2 py-2 text-right">{formatCurrency(month.paye_old_monthly)}</td>
+                              <td className="px-2 py-2 text-right">{formatCurrency(month.paye_new_monthly)}</td>
+                              <td className="px-2 py-2 text-right">{formatCurrency(month.paye_amount)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                   {arrearsPreview.monthsOwed === 0 && (
                     <div className="mt-2 text-xs text-orange-700 dark:text-orange-300">
                       No arrears are currently owed for the selected effective date, but the salary difference is shown for review.
@@ -1497,11 +1633,17 @@ export function PromotionsPage() {
             </div>
 
             {/* Dates & Status */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-xs text-muted-foreground mb-1">Effective Date</label>
                 <div className="text-sm font-medium text-foreground">
                   {new Date(selectedPromotion.effective_date).toLocaleDateString()}
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Arrears Through</label>
+                <div className="text-sm font-medium text-foreground">
+                  {detailsArrearsPreview?.effectiveEndDate ? new Date(`${detailsArrearsPreview.effectiveEndDate}T00:00:00`).toLocaleDateString() : 'No arrears period'}
                 </div>
               </div>
               <div>
@@ -1611,6 +1753,36 @@ export function PromotionsPage() {
                       <div className="text-xs text-orange-700 dark:text-orange-300">
                         Prorated first month: {formatCurrency(detailsArrearsPreview.proratedFirstMonth)} · Full months after: {detailsArrearsPreview.fullMonthsAfter}
                       </div>
+                      {detailsArrearsPreview.monthlyDetails.length > 0 && (
+                        <div className="overflow-x-auto rounded-lg border border-orange-200 dark:border-orange-900">
+                          <table className="w-full min-w-[720px] text-xs text-left">
+                            <thead className="bg-orange-100/70 dark:bg-orange-900/40 text-orange-900 dark:text-orange-100">
+                              <tr>
+                                <th className="px-2 py-2">Month / eligible dates</th>
+                                <th className="px-2 py-2 text-right">Days</th>
+                                <th className="px-2 py-2 text-right">Basic arrears</th>
+                                <th className="px-2 py-2 text-right">Gross arrears</th>
+                                <th className="px-2 py-2 text-right">Old PAYE</th>
+                                <th className="px-2 py-2 text-right">New PAYE</th>
+                                <th className="px-2 py-2 text-right">Arrears PAYE</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {detailsArrearsPreview.monthlyDetails.map((month: any, index: number) => (
+                                <tr key={`${month.month}-${index}`} className="border-t border-orange-200/70 dark:border-orange-900/70">
+                                  <td className="px-2 py-2">{month.month}<div className="text-orange-700 dark:text-orange-300">{month.effective_start_date} – {month.effective_end_date}</div></td>
+                                  <td className="px-2 py-2 text-right">{month.eligible_days}/{month.days_in_month}</td>
+                                  <td className="px-2 py-2 text-right">{formatCurrency(month.basic_amount)}</td>
+                                  <td className="px-2 py-2 text-right">{formatCurrency(month.gross_amount)}</td>
+                                  <td className="px-2 py-2 text-right">{formatCurrency(month.paye_old_monthly)}</td>
+                                  <td className="px-2 py-2 text-right">{formatCurrency(month.paye_new_monthly)}</td>
+                                  <td className="px-2 py-2 text-right">{formatCurrency(month.paye_amount)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div className="rounded-lg border border-orange-200 dark:border-orange-900 bg-white/60 dark:bg-orange-950/40 p-3">
                           <div className="text-xs text-orange-800 dark:text-orange-300 mb-2">Old Allowances</div>

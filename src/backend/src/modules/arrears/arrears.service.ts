@@ -917,7 +917,13 @@ export class ArrearsService {
     const isCalculatedManualArrears = arrearsDetails.some(
       (detail: any) => detail?.calculation_method === 'manual_salary_period_v1',
     );
-    if (arrearsForPeriodCheck?.reason !== 'promotion' && isCalculatedManualArrears && arrearsForPeriodCheck.effective_end_date) {
+    const isCalculatedPromotionArrears = arrearsDetails.some(
+      (detail: any) => detail?.calculation_method === 'promotion_salary_period_v1',
+    );
+    const shouldCheckArrearsPeriod =
+      (arrearsForPeriodCheck?.reason !== 'promotion' && isCalculatedManualArrears) ||
+      (arrearsForPeriodCheck?.reason === 'promotion' && isCalculatedPromotionArrears);
+    if (shouldCheckArrearsPeriod && arrearsForPeriodCheck.effective_end_date) {
       const toDateOnly = (value: any) => value instanceof Date
         ? value.toISOString().slice(0, 10)
         : String(value || '').slice(0, 10);
@@ -1019,7 +1025,14 @@ export class ArrearsService {
     }
     let totalArrears = this.roundCurrency(Number(arrears.total_arrears || 0));
 
-    if (arrears.reason === 'promotion') {
+    if (
+      arrears.reason === 'promotion' &&
+      details.some((item: any) => item?.calculation_method === 'promotion_salary_period_v1')
+    ) {
+      totalArrears = this.roundCurrency(
+        details.reduce((sum: number, item: any) => sum + Number(item?.gross_amount || item?.amount || 0), 0),
+      );
+    } else if (arrears.reason === 'promotion') {
       const monthsOwed = Math.max(0, Number(arrears.months_owed || 0));
       const { year, month, day } = this.getBusinessDateParts(arrears.effective_date);
       const daysInEffectiveMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();

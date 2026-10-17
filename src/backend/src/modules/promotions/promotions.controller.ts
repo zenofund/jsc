@@ -30,6 +30,7 @@ export class PromotionsController {
       body.effectiveDate,
       body.oldGradeLevel,
       body.oldStep,
+      body.effectiveEndDate || body.arrearsEndDate,
     );
   }
 
