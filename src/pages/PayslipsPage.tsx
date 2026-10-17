@@ -7,12 +7,14 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../components/Toast';
 import { payslipAPI, payrollAPI, settingsAPI } from '../lib/api-client';
 import { PageSkeleton } from '../components/PageLoader';
-import { FileText, Download, Eye } from 'lucide-react';
+import { FileText, Download, Eye, MoreVertical } from 'lucide-react';
 import { PayslipTemplate } from '../components/PayslipTemplate';
 import { formatCurrency } from '../utils/format';
 import { generatePayslipPDF } from '../utils/payslipGenerator';
 import { loadPdfMake } from '../utils/loadPdfMake';
 import { downloadPdfDocument } from '../utils/downloadPdf';
+import { Button } from '../components/ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../components/ui/dropdown-menu';
 
 export function PayslipsPage() {
   const { user } = useAuth();
@@ -160,27 +162,29 @@ export function PayslipsPage() {
     {
       header: 'Actions',
       accessor: (row: any) => (
-        <div className="flex items-center gap-2">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handleViewPayslip(row);
-            }}
-            className="flex items-center gap-1 px-2 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
-          >
-            <Eye className="w-4 h-4" />
-            View
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handleDownloadPayslip(row);
-            }}
-            className="flex items-center gap-1 px-2 py-1 bg-gray-500 text-white text-sm rounded hover:bg-gray-600"
-          >
-            <Download className="w-4 h-4" />
-            Download Payslip
-          </button>
+        <div onClick={(event) => event.stopPropagation()}>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-9 w-9 p-0"
+                aria-label={`Open payslip actions for ${row?.line?.staff_name || 'staff member'}, ${row.batch?.month || row.batch?.payroll_month || 'pay period'}`}
+              >
+                <MoreVertical className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => handleViewPayslip(row)}>
+                <Eye className="mr-2 h-4 w-4 text-blue-600" />
+                <span>View Payslip</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleDownloadPayslip(row)}>
+                <Download className="mr-2 h-4 w-4 text-muted-foreground" />
+                <span>Download Payslip</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       ),
     },

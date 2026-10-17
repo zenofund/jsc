@@ -26,7 +26,8 @@ import {
   User, FileText, Calendar, CreditCard, Award, Settings, 
   Edit, Download, Send, CheckCircle, XCircle, Clock, 
   Phone, Mail, MapPin, Building, Briefcase, DollarSign,
-  TrendingUp, Users, Eye, EyeOff, Plus, X, Check, LayoutDashboard, Wallet, Building2, Loader2
+  TrendingUp, Users, Eye, EyeOff, Plus, X, Check, LayoutDashboard, Wallet, Building2, Loader2,
+  MoreVertical,
 } from 'lucide-react';
 
 type TabType = 'dashboard' | 'profile' | 'payslips' | 'promotions' | 'leave' | 'requests' | 'documents' | 'loans' | 'cooperatives' | 'settings';
@@ -42,6 +43,7 @@ import { downloadPdfDocument } from '../utils/downloadPdf';
 import { formatStaffName } from '../lib/name-utils';
 import { isFeatureDisabledError } from '../lib/feature-toggle-errors';
 import { clearRequestIdempotencyKey, getRequestIdempotencyKey } from '../lib/request-idempotency';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../components/ui/dropdown-menu';
 
 export function StaffPortalPage() {
   const { user } = useAuth();
@@ -1093,27 +1095,32 @@ export function StaffPortalPage() {
                       <p className="text-sm text-muted-foreground">Batch: {payslip.batch?.batch_number}</p>
                     </div>
                   </div>
-                  <div className="flex flex-col sm:items-end gap-2 sm:gap-0 w-full sm:w-auto">
+                  <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
                     <p className="text-lg font-bold text-card-foreground">{formatCurrency(payslip.line?.net_pay)}</p>
-                    <div className="flex gap-2 mt-2 w-full sm:w-auto">
-                      <button
-                        onClick={() => {
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          className="h-10 w-10 flex items-center justify-center rounded-md text-muted-foreground hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          aria-label={`Open actions for payslip ${payslip.batch?.month || payslip.line?.payroll_month || ''}`}
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => {
                           setSelectedPayslip(payslip);
                           setShowPayslipModal(true);
-                        }}
-                        className="flex-1 sm:flex-none flex items-center justify-center gap-1 px-3 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-                      >
-                        <Eye className="h-4 w-4" />
-                        View
-                      </button>
-                      <button 
-                        onClick={() => handleDownloadPayslip(payslip)}
-                        className="flex-1 sm:flex-none flex items-center justify-center gap-1 px-3 py-2 text-sm bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors"
-                      >
-                        <Download className="h-4 w-4" />
-                        Download
-                      </button>
-                    </div>
+                        }}>
+                          <Eye className="mr-2 h-4 w-4 text-blue-600" />
+                          <span>View Payslip</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleDownloadPayslip(payslip)}>
+                          <Download className="mr-2 h-4 w-4 text-muted-foreground" />
+                          <span>Download Payslip</span>
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </div>
               </div>
