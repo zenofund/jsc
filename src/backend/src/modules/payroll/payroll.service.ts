@@ -241,6 +241,83 @@ export class PayrollService {
     };
   }
 
+  private getManualArrearsDetails(arrear: any) {
+    try {
+      const details = typeof arrear?.details === 'string' ? JSON.parse(arrear.details) : arrear?.details;
+      return Array.isArray(details) ? details : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private isCalculatedManualSalaryArrears(arrear: any) {
+    return this.getManualArrearsDetails(arrear).some(
+      (detail: any) => detail?.calculation_method === 'manual_salary_period_v1',
+    );
+  }
+
+  private calculateStoredManualArrearsDeductions(arrears: any[]) {
+    const itemsByCode = new Map<string, any>();
+    const payeReliefs = { pension: 0, nhf: 0, nhia: 0 };
+
+    for (const arrear of arrears) {
+      for (const detail of this.getManualArrearsDetails(arrear)) {
+        if (detail?.calculation_method !== 'manual_salary_period_v1') continue;
+        for (const item of Array.isArray(detail.deductions) ? detail.deductions : []) {
+          const code = String(item?.code || '').trim();
+          const amount = Number(item?.amount || 0);
+          if (!code || amount <= 0) continue;
+          const current = itemsByCode.get(code);
+          itemsByCode.set(code, current
+            ? { ...current, amount: this.roundCurrency(current.amount + amount) }
+            : { ...item, amount: this.roundCurrency(amount) });
+        }
+        payeReliefs.pension += Number(detail?.paye_reliefs?.pension || 0);
+        payeReliefs.nhf += Number(detail?.paye_reliefs?.nhf || 0);
+        payeReliefs.nhia += Number(detail?.paye_reliefs?.nhia || 0);
+      }
+    }
+
+    const items = Array.from(itemsByCode.values());
+    return {
+      items,
+      total: this.roundCurrency(items.reduce((sum, item) => sum + Number(item.amount || 0), 0)),
+      payeReliefs: {
+        pension: this.roundCurrency(payeReliefs.pension),
+        nhf: this.roundCurrency(payeReliefs.nhf),
+        nhia: this.roundCurrency(payeReliefs.nhia),
+      },
+    };
+  }
+
+  private combineManualArrearsDeductions(...summaries: any[]) {
+    const itemsByCode = new Map<string, any>();
+    const payeReliefs = { pension: 0, nhf: 0, nhia: 0 };
+    for (const summary of summaries) {
+      for (const item of summary?.items || []) {
+        const code = String(item?.code || '').trim();
+        if (!code) continue;
+        const current = itemsByCode.get(code);
+        itemsByCode.set(code, current
+          ? { ...current, amount: this.roundCurrency(current.amount + Number(item.amount || 0)) }
+          : { ...item, amount: this.roundCurrency(Number(item.amount || 0)) });
+      }
+      payeReliefs.pension += Number(summary?.payeReliefs?.pension || 0);
+      payeReliefs.nhf += Number(summary?.payeReliefs?.nhf || 0);
+      payeReliefs.nhia += Number(summary?.payeReliefs?.nhia || 0);
+    }
+    const items = Array.from(itemsByCode.values());
+    return {
+      items,
+      total: this.roundCurrency(items.reduce((sum, item) => sum + Number(item.amount || 0), 0)),
+      payeReliefs: {
+        pension: this.roundCurrency(payeReliefs.pension),
+        nhf: this.roundCurrency(payeReliefs.nhf),
+        nhia: this.roundCurrency(payeReliefs.nhia),
+      },
+    };
+  }
+
   private async getDisabledFeatureDeductionSummary(
     batchId: string,
     availability: { loan_management_enabled: boolean; cooperative_management_enabled: boolean },
@@ -1003,11 +1080,25 @@ export class PayrollService {
         if (normalizedCode === 'UNION' || normalizedName.includes('UNION')) arrearsUnionDeduction += amount;
       }
 
-      const manualArrearsDeductions = this.calculateManualArrearsDeductions(
+      const calculatedManualArrears = manualArrears.filter((arrear) => this.isCalculatedManualSalaryArrears(arrear));
+      const legacyManualArrears = manualArrears.filter((arrear) => !this.isCalculatedManualSalaryArrears(arrear));
+      const legacyManualArrearsGrossTotal = legacyManualArrears.reduce(
+        (sum, arrear) => sum + Number(arrear.total_arrears || arrear.amount || 0),
+        0,
+      );
+      const legacyManualArrearsBasicTotal = legacyManualArrears.reduce(
+        (sum, arrear) => sum + this.getArrearBasicAmount(arrear),
+        0,
+      );
+      const legacyManualArrearsDeductions = this.calculateManualArrearsDeductions(
         [...globalDeductions, ...staffSpecificDeductions],
-        manualArrearsBasicTotal,
-        manualArrearsGrossTotal,
+        legacyManualArrearsBasicTotal,
+        legacyManualArrearsGrossTotal,
         staffMember,
+      );
+      const manualArrearsDeductions = this.combineManualArrearsDeductions(
+        this.calculateStoredManualArrearsDeductions(calculatedManualArrears),
+        legacyManualArrearsDeductions,
       );
       for (const deduction of manualArrearsDeductions.items) {
         deductionsArray.push(deduction);
@@ -1117,19 +1208,28 @@ export class PayrollService {
       taxDetails.paye_on_promotion_arrears = round2(
         Math.max(0, taxDetails.monthly_tax - regularTaxDetails.monthly_tax),
       );
-      const manualArrearsPaye = this.payeCalculator.calculateOneOffAdditionalTax(
-        {
-          grossPay: round2(grossPay - manualArrearsGrossTotal),
-          allowances: allowancesWithoutManualArrears,
-          isContractStaff,
-          pensionDeduction: pensionWithoutManualArrears,
-          nhfDeduction: nhfWithoutManualArrears,
-          nhisDeduction: nhiaWithoutManualArrears,
-        },
-        manualArrearsGrossTotal,
-        manualArrearsDeductions.payeReliefs,
-        taxConfig,
+      const storedManualArrearsPaye = calculatedManualArrears.reduce(
+        (sum, arrear) => sum + this.getManualArrearsDetails(arrear)
+          .filter((detail: any) => detail?.calculation_method === 'manual_salary_period_v1')
+          .reduce((detailSum: number, detail: any) => detailSum + Number(detail?.paye_amount || 0), 0),
+        0,
       );
+      const legacyManualArrearsPaye = legacyManualArrearsGrossTotal > 0
+        ? this.payeCalculator.calculateOneOffAdditionalTax(
+            {
+              grossPay: round2(grossPay - manualArrearsGrossTotal),
+              allowances: allowancesWithoutManualArrears,
+              isContractStaff,
+              pensionDeduction: pensionWithoutManualArrears,
+              nhfDeduction: nhfWithoutManualArrears,
+              nhisDeduction: nhiaWithoutManualArrears,
+            },
+            legacyManualArrearsGrossTotal,
+            legacyManualArrearsDeductions.payeReliefs,
+            taxConfig,
+          )
+        : 0;
+      const manualArrearsPaye = round2(storedManualArrearsPaye + legacyManualArrearsPaye);
       taxDetails.manual_arrears_paye = manualArrearsPaye;
       taxDetails.monthly_tax = round2(taxDetails.monthly_tax + manualArrearsPaye);
       taxDetails.promotion_arrears_deductions = {

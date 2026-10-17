@@ -1,65 +1,13 @@
-/** @type {import('tailwindcss').Config} */
+import rootConfig from '../tailwind.config.js';
+
+// Keep both frontend entry points on the same theme and token mapping.
+// Only the content globs differ because this config runs with `src/` as root.
 export default {
-  darkMode: ['class'],
+  ...rootConfig,
   content: [
     './index.html',
     './**/*.{ts,tsx,js,jsx,html}',
     '!./backend/**/*',
     '!./node_modules/**/*',
   ],
-  theme: {
-    extend: {
-      colors: {
-        border: 'var(--border)',
-        input: 'var(--input)',
-        'input-background': 'var(--input-background)',
-        ring: 'var(--ring)',
-        background: 'var(--background)',
-        foreground: 'var(--foreground)',
-        primary: {
-          DEFAULT: 'var(--primary)',
-          foreground: 'var(--primary-foreground)',
-        },
-        secondary: {
-          DEFAULT: 'var(--secondary)',
-          foreground: 'var(--secondary-foreground)',
-        },
-        destructive: {
-          DEFAULT: 'var(--destructive)',
-          foreground: 'var(--destructive-foreground)',
-        },
-        muted: {
-          DEFAULT: 'var(--muted)',
-          foreground: 'var(--muted-foreground)',
-        },
-        accent: {
-          DEFAULT: 'var(--accent)',
-          foreground: 'var(--accent-foreground)',
-        },
-        popover: {
-          DEFAULT: 'var(--popover)',
-          foreground: 'var(--popover-foreground)',
-        },
-        card: {
-          DEFAULT: 'var(--card)',
-          foreground: 'var(--card-foreground)',
-        },
-      },
-      borderRadius: {
-        lg: 'var(--radius)',
-        md: 'calc(var(--radius) - 2px)',
-        sm: 'calc(var(--radius) - 4px)',
-      },
-      keyframes: {
-        'progress-indeterminate': {
-          '0%': { transform: 'translateX(-100%)' },
-          '100%': { transform: 'translateX(100%)' },
-        },
-      },
-      animation: {
-        'progress-indeterminate': 'progress-indeterminate 1.5s infinite linear',
-      },
-    },
-  },
-  plugins: [],
-}
+};

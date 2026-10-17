@@ -443,6 +443,7 @@ CREATE TABLE arrears (
     old_basic_salary DECIMAL(15, 2),
     new_basic_salary DECIMAL(15, 2),
     months_owed INTEGER,
+    effective_end_date DATE,
     total_arrears DECIMAL(15, 2),
     details JSONB,
     payroll_batch_id UUID REFERENCES payroll_batches(id),

@@ -25,6 +25,13 @@ export class ArrearsController {
     return this.arrearsService.createArrears(body, req.user.userId);
   }
 
+  @Post('preview')
+  @Roles('admin', 'payroll_officer', 'payroll_manager', 'hr_manager')
+  @ApiOperation({ summary: 'Preview calculated manual salary arrears' })
+  previewManualArrears(@Body() body: any) {
+    return this.arrearsService.previewManualSalaryArrears(body);
+  }
+
   @Post(':id/delete')
   @Roles('admin', 'payroll_officer', 'payroll_manager', 'hr_manager')
   @ApiOperation({ summary: 'Delete arrears' })

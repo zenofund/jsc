@@ -648,6 +648,13 @@ export const arrearsAPI = {
     return makeApiRequest('/arrears/pending');
   },
 
+  async previewManualArrears(data: any) {
+    return makeApiRequest('/arrears/preview', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
   async createArrears(data: any) {
     return makeApiRequest('/arrears/create', {
       method: 'POST',

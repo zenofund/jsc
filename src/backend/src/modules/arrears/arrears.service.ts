@@ -1,7 +1,9 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger, Optional } from '@nestjs/common';
 import { DatabaseService } from '@common/database/database.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationCategory, NotificationPriority, NotificationType } from '../notifications/dto/notification.dto';
+import { SalaryLookupService } from '../salary-structures/salary-lookup.service';
+import { PayeCalculatorService } from '@common/tax/paye-calculator.service';
 
 @Injectable()
 export class ArrearsService {
@@ -11,6 +13,8 @@ export class ArrearsService {
   constructor(
     private readonly databaseService: DatabaseService,
     private readonly notificationsService: NotificationsService,
+    @Optional() private readonly salaryLookupService?: SalaryLookupService,
+    @Optional() private readonly payeCalculator?: PayeCalculatorService,
   ) {}
 
   private roundCurrency(value: number) {
@@ -68,6 +72,344 @@ export class ArrearsService {
 
   private getStaffName(staff: any) {
     return [staff?.first_name, staff?.last_name].filter(Boolean).join(' ').trim();
+  }
+
+  private parseDateOnly(value: any, label: string) {
+    const raw = String(value ?? '').trim();
+    const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) throw new BadRequestException(`${label} must be a valid date.`);
+
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (
+      year < 1900 || year > 2100 ||
+      date.getUTCFullYear() !== year ||
+      date.getUTCMonth() !== month - 1 ||
+      date.getUTCDate() !== day
+    ) {
+      throw new BadRequestException(`${label} must be a valid date.`);
+    }
+
+    return { raw, year, month, day, date };
+  }
+
+  private getDateOnly(date: Date) {
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+  }
+
+  private getManualArrearsMonthRanges(start: Date, end: Date) {
+    const ranges: Array<{
+      month: string;
+      startDate: string;
+      endDate: string;
+      eligibleDays: number;
+      daysInMonth: number;
+      fraction: number;
+    }> = [];
+
+    let cursor = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
+    const lastMonth = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), 1));
+    while (cursor <= lastMonth) {
+      const year = cursor.getUTCFullYear();
+      const monthIndex = cursor.getUTCMonth();
+      const daysInMonth = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+      const monthStart = new Date(Date.UTC(year, monthIndex, 1));
+      const monthEnd = new Date(Date.UTC(year, monthIndex, daysInMonth));
+      const coveredStart = start > monthStart ? start : monthStart;
+      const coveredEnd = end < monthEnd ? end : monthEnd;
+      const eligibleDays = Math.floor((coveredEnd.getTime() - coveredStart.getTime()) / 86400000) + 1;
+
+      ranges.push({
+        month: this.buildMonthKey(year, monthIndex + 1),
+        startDate: this.getDateOnly(coveredStart),
+        endDate: this.getDateOnly(coveredEnd),
+        eligibleDays,
+        daysInMonth,
+        fraction: eligibleDays / daysInMonth,
+      });
+      cursor = new Date(Date.UTC(year, monthIndex + 1, 1));
+    }
+
+    return ranges;
+  }
+
+  private parseJsonArray(value: any): string[] {
+    try {
+      const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+      return Array.isArray(parsed) ? parsed.map((item) => String(item)) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private canonicalizeGrade(value: any) {
+    const stripped = String(value ?? '').replace(/[\s-]+/g, '').toUpperCase();
+    const numericMatch = stripped.match(/^(?:GL)?0*(\d+)$/);
+    return numericMatch ? numericMatch[1] : stripped;
+  }
+
+  private isExcludedFromManualArrears(item: any, staff: any) {
+    const grade = this.canonicalizeGrade(staff?.grade_level);
+    const employmentType = String(staff?.employment_type || '').trim().toLowerCase();
+    const excludedGrades = this.parseJsonArray(item?.excluded_grades).map((value) => this.canonicalizeGrade(value));
+    const excludedTypes = this.parseJsonArray(item?.excluded_employment_types).map((value) => value.trim().toLowerCase());
+    return (grade && excludedGrades.includes(grade)) || (employmentType && excludedTypes.includes(employmentType));
+  }
+
+  private getManualPayeReliefKind(deduction: any): 'pension' | 'nhf' | 'nhia' | null {
+    if (deduction?.is_paye_relief !== true) return null;
+    const code = String(deduction.code || deduction.deduction_code || '').trim().toUpperCase();
+    const name = String(deduction.name || deduction.deduction_name || '').trim().toUpperCase();
+    if (code === 'PENSION' || name.includes('PENSION')) return 'pension';
+    if (code === 'NHF' || name.includes('NHF') || name.includes('NATIONAL HOUSING FUND')) return 'nhf';
+    if (['NHIA', 'NHIS'].includes(code) || ['NHIA', 'NHIS', 'HEALTH INSURANCE'].some((term) => name.includes(term))) return 'nhia';
+    return null;
+  }
+
+  private async getManualArrearsAllowanceDefinitions(staffId: string, month: string) {
+    const globalAllowances = await this.databaseService.query(
+      `SELECT * FROM allowances WHERE status = 'active' AND applies_to_all = true`,
+    );
+    const staffAllowances = await this.databaseService.query(
+      `SELECT sa.*,
+              COALESCE(sa.custom_allowance_name, a.name) as allowance_name,
+              COALESCE(sa.custom_allowance_code, a.code) as allowance_code,
+              COALESCE(sa.custom_type, a.type) as type,
+              COALESCE(sa.custom_calculation_basis, a.calculation_basis, 'basic') as calculation_basis,
+              COALESCE(sa.custom_is_taxable, a.is_taxable, true) as is_taxable,
+              a.excluded_grades,
+              a.excluded_employment_types
+       FROM staff_allowances sa
+       LEFT JOIN allowances a ON sa.allowance_id = a.id
+       WHERE sa.staff_id = $1 AND sa.status = 'active'
+         AND sa.effective_from <= TO_DATE($2 || '-01', 'YYYY-MM-DD')
+         AND (sa.effective_to IS NULL OR sa.effective_to >= TO_DATE($2 || '-01', 'YYYY-MM-DD'))`,
+      [staffId, month],
+    );
+    return { globalAllowances, staffAllowances };
+  }
+
+  private async getManualArrearsDeductionDefinitions(staffId: string, month: string) {
+    const globalDeductions = await this.databaseService.query(
+      `SELECT * FROM deductions WHERE status = 'active' AND applies_to_all = true AND code != 'TAX'`,
+    );
+    const staffDeductions = await this.databaseService.query(
+      `SELECT sd.*,
+              COALESCE(sd.custom_deduction_name, d.name) as deduction_name,
+              COALESCE(sd.custom_deduction_code, d.code) as deduction_code,
+              COALESCE(sd.custom_type, d.type) as type,
+              COALESCE(sd.custom_calculation_basis, d.calculation_basis, 'basic') as calculation_basis,
+              d.is_paye_relief,
+              d.is_statutory,
+              d.excluded_grades,
+              d.excluded_employment_types
+       FROM staff_deductions sd
+       LEFT JOIN deductions d ON sd.deduction_id = d.id
+       WHERE sd.staff_id = $1 AND sd.status = 'active'
+         AND sd.effective_from <= TO_DATE($2 || '-01', 'YYYY-MM-DD')
+         AND (sd.effective_to IS NULL OR sd.effective_to >= TO_DATE($2 || '-01', 'YYYY-MM-DD'))`,
+      [staffId, month],
+    );
+    return { globalDeductions, staffDeductions };
+  }
+
+  private async calculateManualSalaryArrears(staffId: string, effectiveStartDate: any, effectiveEndDate: any) {
+    if (!this.salaryLookupService || !this.payeCalculator) {
+      throw new BadRequestException('Manual salary arrears calculation is unavailable. Please contact an administrator.');
+    }
+    const start = this.parseDateOnly(effectiveStartDate, 'Effective start date');
+    const end = this.parseDateOnly(effectiveEndDate, 'Effective end date');
+    if (start.date > end.date) {
+      throw new BadRequestException('Effective end date must be on or after the effective start date.');
+    }
+
+    const staff = await this.databaseService.queryOne('SELECT * FROM staff WHERE id = $1', [staffId]);
+    if (!staff) throw new NotFoundException(`Staff with ID ${staffId} not found`);
+
+    const basicSalary = await this.salaryLookupService.getBasicSalary(staff.grade_level, staff.step);
+    const adjustedBasicSalary = this.roundCurrency(basicSalary * (staff.status === 'interdiction' ? 0.5 : 1));
+    const systemSettings = await this.databaseService.queryOne(
+      `SELECT tax_configuration FROM system_settings WHERE key = 'general_settings'`,
+    );
+    const taxConfig = systemSettings?.tax_configuration || {};
+    const isContractStaff = staff.employment_type === 'Contract';
+    const monthRanges = this.getManualArrearsMonthRanges(start.date, end.date);
+    const details: any[] = [];
+
+    for (const range of monthRanges) {
+      const { globalAllowances, staffAllowances } = await this.getManualArrearsAllowanceDefinitions(staff.id, range.month);
+      const monthlyAllowances: any[] = [];
+      let totalMonthlyAllowances = 0;
+
+      const addAllowance = (allowance: any, isStaffSpecific: boolean) => {
+        if (this.isExcludedFromManualArrears(allowance, staff)) return;
+        const code = isStaffSpecific ? allowance.allowance_code : allowance.code;
+        const name = isStaffSpecific ? allowance.allowance_name : allowance.name;
+        const basis = String(allowance.calculation_basis || 'basic').toLowerCase() === 'gross' ? 'gross' : 'basic';
+        const type = String(allowance.type || '').toLowerCase();
+        let amount = 0;
+        if (type === 'fixed') amount = this.roundCurrency(Number(allowance.amount || 0));
+        if (type === 'percentage' && basis === 'basic') {
+          amount = this.roundCurrency((adjustedBasicSalary * Number(allowance.percentage || 0)) / 100);
+        }
+        if (amount <= 0) return;
+        monthlyAllowances.push({
+          code,
+          name,
+          type,
+          percentage: type === 'percentage' ? Number(allowance.percentage || 0) : null,
+          calculation_basis: basis,
+          is_taxable: allowance.is_taxable !== false,
+          monthly_amount: amount,
+        });
+        totalMonthlyAllowances += amount;
+      };
+
+      for (const allowance of globalAllowances) addAllowance(allowance, false);
+      for (const allowance of staffAllowances) addAllowance(allowance, true);
+
+      // Match payroll's configured gross basis: basic plus fixed/basic-based
+      // allowances, before adding any percentage-of-gross allowances.
+      const allowanceGrossBase = this.roundCurrency(adjustedBasicSalary + totalMonthlyAllowances);
+      const addGrossAllowance = (allowance: any, isStaffSpecific: boolean) => {
+        if (this.isExcludedFromManualArrears(allowance, staff)) return;
+        if (
+          String(allowance.type || '').toLowerCase() !== 'percentage' ||
+          String(allowance.calculation_basis || '').toLowerCase() !== 'gross'
+        ) return;
+        const amount = this.roundCurrency((allowanceGrossBase * Number(allowance.percentage || 0)) / 100);
+        if (amount <= 0) return;
+        monthlyAllowances.push({
+          code: isStaffSpecific ? allowance.allowance_code : allowance.code,
+          name: isStaffSpecific ? allowance.allowance_name : allowance.name,
+          type: 'percentage',
+          percentage: Number(allowance.percentage || 0),
+          calculation_basis: 'gross',
+          is_taxable: allowance.is_taxable !== false,
+          monthly_amount: amount,
+        });
+        totalMonthlyAllowances += amount;
+      };
+      for (const allowance of globalAllowances) addGrossAllowance(allowance, false);
+      for (const allowance of staffAllowances) addGrossAllowance(allowance, true);
+
+      const monthlyGross = this.roundCurrency(adjustedBasicSalary + totalMonthlyAllowances);
+      const monthlyAllowanceTotal = this.roundCurrency(totalMonthlyAllowances);
+      const { globalDeductions, staffDeductions } = await this.getManualArrearsDeductionDefinitions(staff.id, range.month);
+      const seenCodes = new Set<string>();
+      const deductionItems: any[] = [];
+      const monthlyPayeReliefs = { pension: 0, nhf: 0, nhia: 0 };
+      const addDeduction = (deduction: any) => {
+        if (this.isExcludedFromManualArrears(deduction, staff)) return;
+        const code = String(deduction.code || deduction.deduction_code || '').trim();
+        const normalizedCode = code.toUpperCase();
+        if (!normalizedCode || normalizedCode === 'TAX' || seenCodes.has(normalizedCode)) return;
+        seenCodes.add(normalizedCode);
+        const name = deduction.name || deduction.deduction_name || code;
+        const basis = String(deduction.calculation_basis || 'basic').toLowerCase() === 'gross' ? 'gross' : 'basic';
+        const type = String(deduction.type || '').toLowerCase();
+        const monthlyAmount = type === 'percentage'
+          ? this.roundCurrency(((basis === 'gross' ? monthlyGross : adjustedBasicSalary) * Number(deduction.percentage || 0)) / 100)
+          : type === 'fixed'
+            ? this.roundCurrency(Number(deduction.amount || 0))
+            : 0;
+        if (monthlyAmount <= 0) return;
+        const proratedAmount = this.roundCurrency(monthlyAmount * range.fraction);
+        const reliefKind = this.getManualPayeReliefKind({ ...deduction, code, name });
+        deductionItems.push({
+          code: `${code}_MANUAL_ARREARS`,
+          source_code: code,
+          name: `${name} (Manual Arrears)`,
+          amount: proratedAmount,
+          monthly_amount: monthlyAmount,
+          type,
+          calculation_basis: basis,
+          is_paye_relief: deduction.is_paye_relief === true,
+          is_arrears_deduction: true,
+        });
+        if (reliefKind) monthlyPayeReliefs[reliefKind] += monthlyAmount;
+      };
+      for (const deduction of globalDeductions) addDeduction(deduction);
+      for (const deduction of staffDeductions) addDeduction(deduction);
+
+      const monthlyTax = this.payeCalculator.calculate(
+        monthlyGross,
+        monthlyAllowances.map((allowance) => ({
+          code: allowance.code,
+          name: allowance.name,
+          amount: allowance.monthly_amount,
+          is_taxable: allowance.is_taxable,
+        })),
+        taxConfig,
+        isContractStaff,
+        monthlyPayeReliefs.pension,
+        monthlyPayeReliefs.nhf,
+        monthlyPayeReliefs.nhia,
+      ).monthly_tax;
+
+      const basicAmount = this.roundCurrency(adjustedBasicSalary * range.fraction);
+      const allowanceItems = monthlyAllowances.map((allowance) => ({
+        ...allowance,
+        amount: this.roundCurrency(allowance.monthly_amount * range.fraction),
+      }));
+      const grossAmount = this.roundCurrency(basicAmount + allowanceItems.reduce((sum, allowance) => sum + allowance.amount, 0));
+      const payeAmount = this.roundCurrency(monthlyTax * range.fraction);
+      const payeReliefs = {
+        pension: this.roundCurrency(monthlyPayeReliefs.pension * range.fraction),
+        nhf: this.roundCurrency(monthlyPayeReliefs.nhf * range.fraction),
+        nhia: this.roundCurrency(monthlyPayeReliefs.nhia * range.fraction),
+      };
+      const totalDeductions = this.roundCurrency(deductionItems.reduce((sum, item) => sum + item.amount, 0));
+
+      details.push({
+        calculation_method: 'manual_salary_period_v1',
+        month: range.month,
+        effective_start_date: range.startDate,
+        effective_end_date: range.endDate,
+        eligible_days: range.eligibleDays,
+        days_in_month: range.daysInMonth,
+        month_fraction: Number(range.fraction.toFixed(8)),
+        basic_amount: basicAmount,
+        monthly_basic_salary: adjustedBasicSalary,
+        allowances: allowanceItems,
+        allowance_amount: this.roundCurrency(allowanceItems.reduce((sum, allowance) => sum + allowance.amount, 0)),
+        monthly_allowance_amount: monthlyAllowanceTotal,
+        gross_amount: grossAmount,
+        monthly_gross: monthlyGross,
+        amount: grossAmount,
+        deductions: deductionItems,
+        total_deductions: totalDeductions,
+        paye_reliefs: payeReliefs,
+        monthly_paye: this.roundCurrency(monthlyTax),
+        paye_amount: payeAmount,
+        net_amount: this.roundCurrency(grossAmount - totalDeductions - payeAmount),
+      });
+    }
+
+    const sum = (key: string) => this.roundCurrency(details.reduce((total, item) => total + Number(item[key] || 0), 0));
+    const totalGross = sum('gross_amount');
+    const totalDeductions = sum('total_deductions');
+    const totalPaye = sum('paye_amount');
+    return {
+      staff,
+      effectiveStartDate: start.raw,
+      effectiveEndDate: end.raw,
+      monthsOwed: details.length,
+      details,
+      totalBasic: sum('basic_amount'),
+      totalAllowances: sum('allowance_amount'),
+      totalGross,
+      totalDeductions,
+      totalPaye,
+      totalNet: this.roundCurrency(totalGross - totalDeductions - totalPaye),
+    };
+  }
+
+  async previewManualSalaryArrears(data: any) {
+    if (!data?.staffId) throw new BadRequestException('Staff member is required.');
+    return this.calculateManualSalaryArrears(data.staffId, data.effectiveStartDate, data.effectiveEndDate);
   }
 
   private buildMonthlyBreakdown(
@@ -193,6 +535,10 @@ export class ArrearsService {
    * Create manual arrears/adjustment
    */
   async createArrears(data: any, userId: string) {
+    if (data?.effectiveStartDate !== undefined || data?.effectiveEndDate !== undefined) {
+      return this.createCalculatedManualArrears(data, userId);
+    }
+
     const {
       staffId, reason, amount, basicAmount: requestedBasicAmount, grossAmount: requestedGrossAmount, effectiveDate,
       monthsOwed = 1, description
@@ -275,6 +621,87 @@ export class ArrearsService {
 
     this.logger.log(`Manual arrears created for staff ${staff.staff_number} by user ${userId}`);
     return { message: 'Arrears created successfully' };
+  }
+
+  private async createCalculatedManualArrears(data: any, userId: string) {
+    if (!data?.staffId) throw new BadRequestException('Staff member is required.');
+    if (data.reason === 'promotion') {
+      throw new BadRequestException('Promotion arrears must use the promotion arrears workflow.');
+    }
+    const calculation = await this.calculateManualSalaryArrears(
+      data.staffId,
+      data.effectiveStartDate,
+      data.effectiveEndDate,
+    );
+    const { staff } = calculation;
+    const reason = data.reason || 'salary_adjustment';
+    const description = String(data.description || '').trim();
+    const details = calculation.details.map((item) => ({
+      ...item,
+      ...(description ? { description } : {}),
+    }));
+    const totalArrears = calculation.totalGross;
+    const arrearsRecord = await this.databaseService.queryOne(
+      `INSERT INTO arrears (
+        staff_id, reason, old_salary, new_salary,
+        old_basic_salary, new_basic_salary,
+        effective_date, effective_end_date, months_owed, total_arrears,
+        status, details, created_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      RETURNING *`,
+      [
+        data.staffId,
+        reason,
+        calculation.details[0]?.monthly_gross || 0,
+        calculation.details[0]?.monthly_gross || 0,
+        calculation.details[0]?.monthly_basic_salary || 0,
+        calculation.details[0]?.monthly_basic_salary || 0,
+        calculation.effectiveStartDate,
+        calculation.effectiveEndDate,
+        calculation.monthsOwed,
+        totalArrears,
+        'pending',
+        JSON.stringify(details),
+        userId,
+      ],
+    );
+
+    const staffName = this.getStaffName(staff);
+    await Promise.all(
+      ['admin', 'payroll_officer'].map((role) =>
+        this.notificationsService.createRoleNotification({
+          role,
+          type: NotificationType.ARREARS,
+          category: NotificationCategory.ACTION_REQUIRED,
+          title: 'Arrears approval required',
+          message: staffName
+            ? `Manual salary arrears for ${staffName} is pending approval (${totalArrears.toFixed(2)}).`
+            : `Manual salary arrears is pending approval (${totalArrears.toFixed(2)}).`,
+          link: '/arrears',
+          entity_type: 'arrears',
+          entity_id: arrearsRecord?.id,
+          priority: NotificationPriority.HIGH,
+          action_label: 'Review',
+          action_link: '/arrears',
+          created_by: userId,
+          metadata: { arrears_id: arrearsRecord?.id, staff_id: data.staffId },
+        }),
+      ),
+    );
+
+    this.logger.log(`Calculated manual arrears created for staff ${staff.staff_number} by user ${userId}`);
+    return {
+      message: 'Arrears created successfully',
+      arrears: arrearsRecord,
+      calculation: {
+        total_basic: calculation.totalBasic,
+        total_allowances: calculation.totalAllowances,
+        total_gross: calculation.totalGross,
+        total_deductions: calculation.totalDeductions,
+        total_paye: calculation.totalPaye,
+        total_net: calculation.totalNet,
+      },
+    };
   }
 
   /**
@@ -464,7 +891,7 @@ export class ArrearsService {
     }
 
     const payrollBatch = await this.databaseService.queryOne(
-      'SELECT id, status FROM payroll_batches WHERE id = $1',
+      'SELECT id, status, payroll_month, period_start, period_end FROM payroll_batches WHERE id = $1',
       [payrollBatchId],
     );
     if (!payrollBatch) {
@@ -472,6 +899,46 @@ export class ArrearsService {
     }
     if (payrollBatch.status !== 'draft') {
       throw new BadRequestException('Arrears can only be assigned to a draft payroll batch');
+    }
+
+    const arrearsForPeriodCheck = await this.databaseService.queryOne(
+      'SELECT id, reason, effective_date, effective_end_date, details FROM arrears WHERE id = $1',
+      [arrearsId],
+    );
+    let arrearsDetails: any[] = [];
+    try {
+      const parsedDetails = typeof arrearsForPeriodCheck?.details === 'string'
+        ? JSON.parse(arrearsForPeriodCheck.details)
+        : arrearsForPeriodCheck?.details;
+      arrearsDetails = Array.isArray(parsedDetails) ? parsedDetails : [];
+    } catch {
+      arrearsDetails = [];
+    }
+    const isCalculatedManualArrears = arrearsDetails.some(
+      (detail: any) => detail?.calculation_method === 'manual_salary_period_v1',
+    );
+    if (arrearsForPeriodCheck?.reason !== 'promotion' && isCalculatedManualArrears && arrearsForPeriodCheck.effective_end_date) {
+      const toDateOnly = (value: any) => value instanceof Date
+        ? value.toISOString().slice(0, 10)
+        : String(value || '').slice(0, 10);
+      const batchMonth = String(payrollBatch.payroll_month || '').slice(0, 7);
+      const payrollPeriodStart = toDateOnly(payrollBatch.period_start) || `${batchMonth}-01`;
+      const payrollPeriodEnd = toDateOnly(payrollBatch.period_end) || (() => {
+        const [year, month] = batchMonth.split('-').map(Number);
+        return year && month
+          ? this.getDateOnly(new Date(Date.UTC(year, month, 0)))
+          : '';
+      })();
+      const arrearsStart = toDateOnly(arrearsForPeriodCheck.effective_date);
+      const arrearsEnd = toDateOnly(arrearsForPeriodCheck.effective_end_date);
+      if (
+        payrollPeriodStart && payrollPeriodEnd && arrearsStart && arrearsEnd &&
+        arrearsStart <= payrollPeriodEnd && arrearsEnd >= payrollPeriodStart
+      ) {
+        throw new BadRequestException(
+          `Arrears period ${arrearsStart} to ${arrearsEnd} overlaps this payroll period. End the arrears period before ${payrollPeriodStart}; the current payroll handles these dates.`,
+        );
+      }
     }
 
     // Claim only unassigned, approved records; the conditional update prevents concurrent assignment.
@@ -543,7 +1010,13 @@ export class ArrearsService {
       throw new NotFoundException(`Arrears record with ID ${id} not found`);
     }
 
-    let details = Array.isArray(arrears.details) ? arrears.details : [];
+    let details: any[] = [];
+    try {
+      const parsedDetails = typeof arrears.details === 'string' ? JSON.parse(arrears.details) : arrears.details;
+      details = Array.isArray(parsedDetails) ? parsedDetails : [];
+    } catch {
+      details = [];
+    }
     let totalArrears = this.roundCurrency(Number(arrears.total_arrears || 0));
 
     if (arrears.reason === 'promotion') {
@@ -573,6 +1046,27 @@ export class ArrearsService {
       totalArrears = this.roundCurrency(
         details.reduce((sum, item) => sum + Number(item.amount || 0), 0),
       );
+    } else if (details.some((item: any) => item?.calculation_method === 'manual_salary_period_v1')) {
+      if (arrears.effective_date && arrears.effective_end_date) {
+        const existingDescription = details.find((item: any) => item?.description)?.description;
+        const toDateOnly = (value: any) => value instanceof Date
+          ? value.toISOString().slice(0, 10)
+          : String(value || '').slice(0, 10);
+        const calculation = await this.calculateManualSalaryArrears(
+          arrears.staff_id,
+          toDateOnly(arrears.effective_date),
+          toDateOnly(arrears.effective_end_date),
+        );
+        details = calculation.details.map((item) => ({
+          ...item,
+          ...(existingDescription ? { description: existingDescription } : {}),
+        }));
+        totalArrears = calculation.totalGross;
+      } else {
+        totalArrears = this.roundCurrency(
+          details.reduce((sum: number, item: any) => sum + Number(item?.gross_amount || item?.amount || 0), 0),
+        );
+      }
     } else if (arrears.effective_date) {
       const existingDetail = Array.isArray(details) ? details[0] : undefined;
       const description = existingDetail?.description || 'Manual Adjustment';

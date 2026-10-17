@@ -32,6 +32,20 @@ function formatBreakdownMonth(monthValue: string) {
   }).format(monthDate);
 }
 
+function formatCurrency(value: any) {
+  return `₦${Number(value || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function formatDateOnly(value: any) {
+  if (!value) return 'N/A';
+  const raw = String(value).slice(0, 10);
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return 'N/A';
+  return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))).toLocaleDateString('en-GB', {
+    day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC',
+  });
+}
+
 function getBusinessDateParts(value: string) {
   const rawValue = String(value || '').trim();
   const plainDateMatch = rawValue.match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -258,6 +272,10 @@ export function ArrearsPage() {
     }
   };
 
+  const handlePreviewManualArrears = async (data: any) => {
+    return arrearsAPI.previewManualArrears(data);
+  };
+
   const handleDeleteArrears = async (id: string) => {
     if (!await confirm({ title: 'Delete Arrears?', message: 'This action cannot be undone. Only pending arrears can be deleted.' })) return;
     try {
@@ -418,13 +436,13 @@ export function ArrearsPage() {
       ),
     },
     {
-      header: 'Effective Date',
+      header: 'Effective Period',
       accessor: (row: Arrears) => {
         if (!row.effective_date) return 'N/A';
-        const date = new Date(row.effective_date);
-        return isNaN(date.getTime()) || date.getFullYear() === 1970 
-          ? 'Invalid Date' 
-          : date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+        const startDate = formatDateOnly(row.effective_date);
+        return row.effective_end_date
+          ? `${startDate} – ${formatDateOnly(row.effective_end_date)}`
+          : startDate;
       },
     },
     {
@@ -533,6 +551,17 @@ export function ArrearsPage() {
     processed: arrears.filter(a => a.status === 'processed').length,
     totalAmount: arrears.reduce((sum, a) => sum + Number(a.total_arrears), 0),
   };
+  const rawSelectedDetails = selectedArrears?.details || selectedArrears?.arrears_details || [];
+  let selectedDetails: any[] = [];
+  try {
+    const parsedDetails = typeof rawSelectedDetails === 'string' ? JSON.parse(rawSelectedDetails) : rawSelectedDetails;
+    selectedDetails = Array.isArray(parsedDetails) ? parsedDetails : [];
+  } catch {
+    selectedDetails = [];
+  }
+  const hasCalculatedManualBreakdown = selectedDetails.some(
+    (detail: any) => detail?.calculation_method === 'manual_salary_period_v1',
+  );
 
   return (
     <div className="p-4 sm:p-6 space-y-6">
@@ -701,15 +730,10 @@ export function ArrearsPage() {
                 <p className="font-medium text-foreground capitalize">{selectedArrears.reason.replace('_', ' ')}</p>
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Effective Date</p>
+                <p className="text-sm text-muted-foreground">Effective Period</p>
                 <p className="font-medium text-foreground">
-                  {selectedArrears.effective_date 
-                    ? new Date(selectedArrears.effective_date).toLocaleDateString('en-GB', { 
-                        day: 'numeric', 
-                        month: 'short', 
-                        year: 'numeric' 
-                      })
-                    : 'N/A'}
+                  {formatDateOnly(selectedArrears.effective_date)}
+                  {selectedArrears.effective_end_date ? ` – ${formatDateOnly(selectedArrears.effective_end_date)}` : ''}
                 </p>
               </div>
               <div>
@@ -734,7 +758,64 @@ export function ArrearsPage() {
               </div>
             )}
 
-            {/* Breakdown Table */}
+            {hasCalculatedManualBreakdown && (
+              <div>
+                <h4 className="font-medium text-foreground mb-3">Calculated Arrears by Month</h4>
+                <div className="border border-border rounded-lg overflow-x-auto">
+                  <table className="min-w-[1050px] w-full text-sm">
+                    <thead className="bg-muted/30">
+                      <tr>
+                        <th className="px-3 py-2 text-left font-medium text-muted-foreground">Month / covered dates</th>
+                        <th className="px-3 py-2 text-right font-medium text-muted-foreground">Days</th>
+                        <th className="px-3 py-2 text-right font-medium text-muted-foreground">Basic</th>
+                        <th className="px-3 py-2 text-right font-medium text-muted-foreground">Allowances</th>
+                        <th className="px-3 py-2 text-right font-medium text-muted-foreground">Gross</th>
+                        <th className="px-3 py-2 text-right font-medium text-muted-foreground">Deductions</th>
+                        <th className="px-3 py-2 text-right font-medium text-muted-foreground">PAYE</th>
+                        <th className="px-3 py-2 text-right font-medium text-muted-foreground">Net</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedDetails.map((detail: any, index: number) => (
+                        <tr key={`${detail.month}-${index}`} className="border-t border-border">
+                          <td className="px-3 py-2 text-foreground">
+                            <div>{getBreakdownMonthLabel(selectedArrears, detail.month, index)}</div>
+                            <div className="text-xs text-muted-foreground">{formatDateOnly(detail.effective_start_date)} – {formatDateOnly(detail.effective_end_date)}</div>
+                          </td>
+                          <td className="px-3 py-2 text-right text-foreground">{detail.eligible_days}/{detail.days_in_month}</td>
+                          <td className="px-3 py-2 text-right text-foreground">{formatCurrency(detail.basic_amount)}</td>
+                          <td className="px-3 py-2 text-right text-foreground" title={(detail.allowances || []).map((item: any) => `${item.name}: ${formatCurrency(item.amount)}`).join('\n')}>{formatCurrency(detail.allowance_amount)}</td>
+                          <td className="px-3 py-2 text-right text-foreground">{formatCurrency(detail.gross_amount)}</td>
+                          <td className="px-3 py-2 text-right text-foreground" title={(detail.deductions || []).map((item: any) => `${item.name}: ${formatCurrency(item.amount)}`).join('\n')}>
+                            {formatCurrency(detail.total_deductions)}
+                            <div className="text-left text-[10px] text-muted-foreground">
+                              PAYE reliefs: P {formatCurrency(detail.paye_reliefs?.pension)} · NHF {formatCurrency(detail.paye_reliefs?.nhf)} · NHIA {formatCurrency(detail.paye_reliefs?.nhia)}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 text-right text-foreground">{formatCurrency(detail.paye_amount)}</td>
+                          <td className="px-3 py-2 text-right text-foreground">{formatCurrency(detail.net_amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="bg-muted/30 border-t border-border">
+                      <tr>
+                        <td className="px-3 py-2 font-medium text-foreground">Total ({selectedArrears.months_owed} months)</td>
+                        <td className="px-3 py-2 text-right text-muted-foreground">—</td>
+                        <td className="px-3 py-2 text-right font-semibold text-foreground">{formatCurrency(selectedDetails.reduce((sum, detail) => sum + Number(detail.basic_amount || 0), 0))}</td>
+                        <td className="px-3 py-2 text-right font-semibold text-foreground">{formatCurrency(selectedDetails.reduce((sum, detail) => sum + Number(detail.allowance_amount || 0), 0))}</td>
+                        <td className="px-3 py-2 text-right font-semibold text-foreground">{formatCurrency(selectedArrears.total_arrears)}</td>
+                        <td className="px-3 py-2 text-right font-semibold text-foreground">{formatCurrency(selectedDetails.reduce((sum, detail) => sum + Number(detail.total_deductions || 0), 0))}</td>
+                        <td className="px-3 py-2 text-right font-semibold text-foreground">{formatCurrency(selectedDetails.reduce((sum, detail) => sum + Number(detail.paye_amount || 0), 0))}</td>
+                        <td className="px-3 py-2 text-right font-semibold text-foreground">{formatCurrency(selectedDetails.reduce((sum, detail) => sum + Number(detail.net_amount || 0), 0))}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Legacy Breakdown Table */}
+            {!hasCalculatedManualBreakdown && (
             <div>
               <h4 className="font-medium text-foreground mb-3">Breakdown by Month</h4>
               <div className="border border-border rounded-lg overflow-hidden">
@@ -746,13 +827,13 @@ export function ArrearsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {(selectedArrears.details || selectedArrears.arrears_details || []).map((detail: any, index: number) => (
+                    {selectedDetails.map((detail: any, index: number) => (
                       <tr key={index} className="border-t border-border">
                         <td className="px-4 py-2 text-foreground">{getBreakdownMonthLabel(selectedArrears, detail.month, index)}</td>
                         <td className="px-4 py-2 text-foreground text-right">₦{Number(detail.amount).toLocaleString()}</td>
                       </tr>
                     ))}
-                    {(!(selectedArrears.details || selectedArrears.arrears_details) || (selectedArrears.details || selectedArrears.arrears_details).length === 0) && (
+                    {selectedDetails.length === 0 && (
                       <tr>
                         <td colSpan={2} className="px-4 py-6 text-center text-muted-foreground">
                           No breakdown details available
@@ -769,6 +850,7 @@ export function ArrearsPage() {
                 </table>
               </div>
             </div>
+            )}
           </div>
         </Modal>
       )}
@@ -796,6 +878,7 @@ export function ArrearsPage() {
       <CreateArrearsModal
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
+        onPreview={handlePreviewManualArrears}
         onSubmit={handleCreateArrears}
       />
     </div>

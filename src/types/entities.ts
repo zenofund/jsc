@@ -350,6 +350,7 @@ export interface Arrears {
   new_step?: number;
   adjustment_amount?: number;
   effective_date: string;
+  effective_end_date?: string | null;
   months_owed: number;
   total_arrears: number;
   status: 'pending' | 'approved' | 'rejected' | 'processed' | 'paid';
