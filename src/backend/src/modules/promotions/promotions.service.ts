@@ -887,29 +887,6 @@ export class PromotionsService {
   }
 
   /**
-   * Check if a staff member has an existing pending promotion.
-   * Returns the pending promotion if found, null otherwise.
-   */
-  private async getStaffPendingPromotion(staffId: string, excludePromotionId?: string) {
-    const whereClauses = ['staff_id = $1', "status = 'pending'"];
-    const params: any[] = [staffId];
-
-    if (excludePromotionId) {
-      params.push(excludePromotionId);
-      whereClauses.push(`id != $${params.length}`);
-    }
-
-    return this.databaseService.queryOne(
-      `SELECT *
-       FROM promotions
-       WHERE ${whereClauses.join(' AND ')}
-       ORDER BY created_at DESC
-       LIMIT 1`,
-      params,
-    );
-  }
-
-  /**
    * Delete a promotion. Only pending or rejected promotions can be deleted.
    */
   async deletePromotion(id: string, userId: string) {
@@ -973,26 +950,6 @@ export class PromotionsService {
       }
     }
     
-    // Get current staff details
-    const staff = await this.databaseService.queryOne(
-      'SELECT * FROM staff WHERE id = $1',
-      [staffId]
-    );
-
-    if (!staff) {
-      throw new NotFoundException(`Staff member with ID ${staffId} does not exist.`);
-    }
-
-    this.assertPromotionAdvances(staff.grade_level, staff.step, newGradeLevel, newStep);
-
-    // Prevent duplicate pending promotions for the same staff
-    const existingPending = await this.getStaffPendingPromotion(staffId);
-    if (existingPending) {
-      throw new BadRequestException(
-        `A pending promotion already exists for this staff member. Please review or delete the existing pending promotion (ID: ${existingPending.id}) before creating a new one.`,
-      );
-    }
-
     const canonicalEffectiveDate = this.canonicalizePromotionEffectiveDate(effectiveDate, new Date());
     const rawArrearsEndDate = dto.arrearsEndDate || dto.arrears_end_date || this.getDefaultPromotionArrearsEndDate();
     const canonicalArrearsEndDate = this.canonicalizeBusinessDate(rawArrearsEndDate, new Date());
@@ -1000,25 +957,70 @@ export class PromotionsService {
       throw new BadRequestException('Promotion arrears end date must be before the current payroll month.');
     }
     
-    // Create promotion record
-    const result = await this.databaseService.queryOne(
-      `INSERT INTO promotions (
-        staff_id, old_grade_level, old_step, old_basic_salary,
-        new_grade_level, new_step, new_basic_salary,
-        promotion_date, effective_date, arrears_end_date, promotion_type, remarks, status, created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::date, $11, $12, $13, $14) RETURNING *`,
-      [
-        staffId, staff.grade_level, staff.step, staff.current_basic_salary,
-        newGradeLevel, newStep, newBasicSalary,
-        canonicalEffectiveDate,
-        canonicalEffectiveDate,
-        canonicalArrearsEndDate,
-        promotionType || 'regular',
-        remarks,
-        status,
-        userId,
-      ]
-    );
+    // Lock the staff row while checking and inserting so concurrent retries cannot
+    // both pass the pending-promotion check.
+    const { staff, result } = await this.databaseService.transaction(async (client) => {
+      const staffResult = await client.query(
+        'SELECT * FROM staff WHERE id = $1 FOR UPDATE',
+        [staffId],
+      );
+      const staff = staffResult.rows[0];
+      if (!staff) {
+        throw new NotFoundException(`Staff member with ID ${staffId} does not exist.`);
+      }
+
+      this.assertPromotionAdvances(staff.grade_level, staff.step, newGradeLevel, newStep);
+
+      const existingPromotion = await client.query(
+        `SELECT id, status
+         FROM promotions
+         WHERE staff_id = $1
+           AND (
+             status = 'pending'
+             OR (
+               status = 'approved'
+               AND new_grade_level = $2
+               AND new_step = $3
+               AND effective_date::date = $4::date
+             )
+           )
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [staffId, newGradeLevel, newStep, canonicalEffectiveDate],
+      );
+      if (existingPromotion.rows[0]) {
+        const existing = existingPromotion.rows[0];
+        if (existing.status === 'pending') {
+          throw new BadRequestException(
+            `A pending promotion already exists for this staff member. Please review or delete the existing pending promotion (ID: ${existing.id}) before creating a new one.`,
+          );
+        }
+        throw new BadRequestException(
+          `This promotion has already been created and approved (ID: ${existing.id}).`,
+        );
+      }
+
+      const promotionResult = await client.query(
+        `INSERT INTO promotions (
+          staff_id, old_grade_level, old_step, old_basic_salary,
+          new_grade_level, new_step, new_basic_salary,
+          promotion_date, effective_date, arrears_end_date, promotion_type, remarks, status, created_by
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::date, $11, $12, $13, $14) RETURNING *`,
+        [
+          staffId, staff.grade_level, staff.step, staff.current_basic_salary,
+          newGradeLevel, newStep, newBasicSalary,
+          canonicalEffectiveDate,
+          canonicalEffectiveDate,
+          canonicalArrearsEndDate,
+          promotionType || 'regular',
+          remarks,
+          status,
+          userId,
+        ],
+      );
+
+      return { staff, result: promotionResult.rows[0] };
+    });
 
     this.logger.log(`Promotion request created for staff ${staff.staff_number}`);
 

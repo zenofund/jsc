@@ -6,6 +6,11 @@
 // ============================================
 
 import type { User, Staff, PayrollBatch, PayrollLine, LoanApplication, CooperativeContribution, Allowance, Deduction, CooperativeMember, SystemSettings } from '../types/entities';
+import {
+  clearRequestIdempotencyKey,
+  getRequestIdempotencyKey,
+  getRequestIdempotencyUserContext,
+} from './request-idempotency';
 
 // Configuration for API backend
 const API_CONFIG = {
@@ -96,11 +101,29 @@ function normalizeErrorMessage(payload: unknown, fallback: string): string {
 async function makeApiRequest(endpoint: string, options: RequestInit = {}): Promise<any> {
   const url = `${API_CONFIG.baseURL}${endpoint}`;
   const requestHeaders = new Headers(options.headers ?? {});
+  const method = String(options.method || 'GET').toUpperCase();
+  let automaticIdempotency: { key: string; storageKey: string } | null = null;
   requestHeaders.set('Content-Type', 'application/json');
   requestHeaders.set('Authorization', `Bearer ${localStorage.getItem('jsc_auth_token') || ''}`);
   Object.entries(getGeoContextHeaders()).forEach(([key, value]) => {
     requestHeaders.set(key, value);
   });
+
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && !requestHeaders.has('Idempotency-Key')) {
+    automaticIdempotency = await getRequestIdempotencyKey(
+      endpoint,
+      method,
+      options.body,
+      getRequestIdempotencyUserContext(),
+    );
+    requestHeaders.set('Idempotency-Key', automaticIdempotency.key);
+  }
+
+  const clearAutomaticIdempotencyKey = () => {
+    if (automaticIdempotency) {
+      clearRequestIdempotencyKey(automaticIdempotency.storageKey, automaticIdempotency.key);
+    }
+  };
 
   try {
     const response = await fetch(url, {
@@ -144,21 +167,29 @@ async function makeApiRequest(endpoint: string, options: RequestInit = {}): Prom
     }
 
     if (response.status === 204) {
+      clearAutomaticIdempotencyKey();
       return null;
     }
 
     const contentType = response.headers.get('content-type') || '';
     if (contentType.includes('application/json')) {
       const text = await response.text();
-      if (!text) return null;
+      if (!text) {
+        clearAutomaticIdempotencyKey();
+        return null;
+      }
       try {
-        return JSON.parse(text);
+        const parsed = JSON.parse(text);
+        clearAutomaticIdempotencyKey();
+        return parsed;
       } catch {
         return null;
       }
     }
 
-    return response.text();
+    const text = await response.text();
+    clearAutomaticIdempotencyKey();
+    return text;
   } catch (error: any) {
     // Check if it's a network error (backend not running)
     if (error.message === 'Failed to fetch' || error.name === 'TypeError') {
@@ -735,9 +766,10 @@ export const arrearsAPI = {
 // ============================================
 
 export const promotionAPI = {
-  async createPromotion(promotionData: any) {
+  async createPromotion(promotionData: any, idempotencyKey?: string) {
     return makeApiRequest('/promotions/create', {
       method: 'POST',
+      headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
       body: JSON.stringify(promotionData),
     });
   },

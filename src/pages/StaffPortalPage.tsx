@@ -41,6 +41,7 @@ import { loadPdfMake } from '../utils/loadPdfMake';
 import { downloadPdfDocument } from '../utils/downloadPdf';
 import { formatStaffName } from '../lib/name-utils';
 import { isFeatureDisabledError } from '../lib/feature-toggle-errors';
+import { clearRequestIdempotencyKey, getRequestIdempotencyKey } from '../lib/request-idempotency';
 
 export function StaffPortalPage() {
   const { user } = useAuth();
@@ -1898,12 +1899,19 @@ export function StaffPortalPage() {
           applicationData.cooperative_name = selectedCooperative?.name;
         }
         
-        const application = await loanApplicationAPI.create(applicationData);
+        const createRequestKey = await getRequestIdempotencyKey(
+          `/staff-portal/loan-submission/${user.staff_id}`,
+          'POST',
+          JSON.stringify(applicationData),
+          user.staff_id,
+        );
+        const application = await loanAPI.create(applicationData, createRequestKey.key);
         
         // Submit the application (whether it has guarantors or not)
         // For loans without guarantors, we pass an empty array
         const guarantorsList = loanForm.guarantors.map(g => ({ staff_id: g }));
         await loanApplicationAPI.submit(application.id, guarantorsList);
+        clearRequestIdempotencyKey(createRequestKey.storageKey, createRequestKey.key);
         
         showToast('success', 'Loan application submitted successfully');
         setShowLoanModal(false);

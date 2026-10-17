@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { DataTable } from '../components/DataTable';
 import { StatusBadge } from '../components/StatusBadge';
 import { Modal } from '../components/Modal';
+import { ViewPayrollLinesModal } from '../components/ViewPayrollLinesModal';
 import { useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
 import { useSystemSettings } from '../contexts/SystemSettingsContext';
@@ -28,6 +29,7 @@ import type {
   PaymentBatch,
   Arrear,
   Promotion,
+  PayrollLine,
 } from '../types/entities';
 import {
   CheckCircle,
@@ -46,6 +48,7 @@ import {
   User,
   Info,
   Sliders,
+  FileSpreadsheet,
 } from 'lucide-react';
 
 type ApprovalType = 'payroll' | 'loan' | 'leave' | 'payment' | 'arrear' | 'promotion' | 'adjustment';
@@ -75,6 +78,16 @@ export function ApprovalsPageEnhanced() {
   const [comments, setComments] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const [myActions, setMyActions] = useState<any[]>([]);
+  const [showPayrollLinesModal, setShowPayrollLinesModal] = useState(false);
+  const [approvalPayrollBatch, setApprovalPayrollBatch] = useState<PayrollBatch | null>(null);
+  const [approvalPayrollLines, setApprovalPayrollLines] = useState<PayrollLine[]>([]);
+  const [approvalPayrollLinesLoading, setApprovalPayrollLinesLoading] = useState(false);
+  const [approvalPayrollPage, setApprovalPayrollPage] = useState(1);
+  const [approvalPayrollTotalPages, setApprovalPayrollTotalPages] = useState(1);
+  const [approvalPayrollTotalLines, setApprovalPayrollTotalLines] = useState(0);
+  const [approvalPayrollSearch, setApprovalPayrollSearch] = useState('');
+  const [approvalPayrollSort, setApprovalPayrollSort] = useState<'asc' | 'desc'>('desc');
+  const approvalPayrollLinesRequestId = useRef(0);
 
   // Stats
   const [stats, setStats] = useState({
@@ -365,6 +378,116 @@ export function ApprovalsPageEnhanced() {
     if (daysUntilStart <= 5) return 'high';
     if (daysUntilStart <= 10) return 'medium';
     return 'low';
+  };
+
+  const loadApprovalPayrollLines = async (
+    batch: PayrollBatch,
+    options: { page?: number; search?: string; sort?: 'asc' | 'desc' } = {},
+  ) => {
+    const requestId = ++approvalPayrollLinesRequestId.current;
+    const page = options.page ?? 1;
+    const search = options.search ?? '';
+    const sort = options.sort ?? approvalPayrollSort;
+
+    setApprovalPayrollLinesLoading(true);
+    try {
+      const response = await payrollAPI.getPayrollLines(batch.id, {
+        page,
+        limit: 100,
+        search,
+        sort,
+      });
+      if (requestId !== approvalPayrollLinesRequestId.current) return;
+
+      const lines = Array.isArray(response) ? response : (response.data || []);
+      const meta = !Array.isArray(response) && response.meta
+        ? response.meta
+        : { total: lines.length, page, limit: 100, totalPages: 1 };
+
+      setApprovalPayrollLines(lines);
+      setApprovalPayrollPage(Number(meta.page) || page);
+      setApprovalPayrollTotalPages(Number(meta.totalPages) || 1);
+      setApprovalPayrollTotalLines(Number(meta.total) || lines.length);
+    } catch (error: any) {
+      if (requestId === approvalPayrollLinesRequestId.current) {
+        setApprovalPayrollLines([]);
+        setApprovalPayrollTotalPages(1);
+        setApprovalPayrollTotalLines(0);
+        showToast('error', error.message || 'Failed to load payroll lines');
+      }
+    } finally {
+      if (requestId === approvalPayrollLinesRequestId.current) {
+        setApprovalPayrollLinesLoading(false);
+      }
+    }
+  };
+
+  const handleOpenApprovalPayrollLines = async () => {
+    if (!selectedItem || selectedItem.type !== 'payroll') return;
+
+    const data = selectedItem.data;
+    const batch = {
+      ...data,
+      id: selectedItem.id,
+      month: data.month || data.payroll_month,
+      total_staff: Number(data.total_staff ?? data.totalStaff ?? 0),
+      total_gross: Number(data.total_gross ?? data.totalGross ?? 0),
+      total_deductions: Number(data.total_deductions ?? data.totalDeductions ?? 0),
+      total_net: Number(data.total_net ?? data.total_net_pay ?? data.totalNet ?? 0),
+    } as PayrollBatch;
+
+    setApprovalPayrollBatch(batch);
+    setApprovalPayrollLines([]);
+    setApprovalPayrollPage(1);
+    setApprovalPayrollTotalPages(1);
+    setApprovalPayrollTotalLines(0);
+    setApprovalPayrollSearch('');
+    setApprovalPayrollSort('desc');
+    setShowApprovalModal(false);
+    setShowPayrollLinesModal(true);
+    await loadApprovalPayrollLines(batch, { page: 1, search: '', sort: 'desc' });
+  };
+
+  const handleCloseApprovalPayrollLines = () => {
+    approvalPayrollLinesRequestId.current += 1;
+    setShowPayrollLinesModal(false);
+    setApprovalPayrollBatch(null);
+    setApprovalPayrollLines([]);
+    setApprovalPayrollLinesLoading(false);
+    setApprovalPayrollSearch('');
+    if (selectedItem?.type === 'payroll') {
+      setShowApprovalModal(true);
+    }
+  };
+
+  const handleApprovalPayrollPageChange = async (page: number) => {
+    if (approvalPayrollBatch) {
+      await loadApprovalPayrollLines(approvalPayrollBatch, {
+        page,
+        search: approvalPayrollSearch,
+        sort: approvalPayrollSort,
+      });
+    }
+  };
+
+  const handleApprovalPayrollSearchChange = async (search: string) => {
+    if (!approvalPayrollBatch) return;
+    setApprovalPayrollSearch(search);
+    await loadApprovalPayrollLines(approvalPayrollBatch, {
+      page: 1,
+      search,
+      sort: approvalPayrollSort,
+    });
+  };
+
+  const handleApprovalPayrollSortChange = async (sort: 'asc' | 'desc') => {
+    if (!approvalPayrollBatch) return;
+    setApprovalPayrollSort(sort);
+    await loadApprovalPayrollLines(approvalPayrollBatch, {
+      page: approvalPayrollPage,
+      search: approvalPayrollSearch,
+      sort,
+    });
   };
 
   const handleApprove = async () => {
@@ -721,6 +844,28 @@ export function ApprovalsPageEnhanced() {
                 <p className="font-medium text-foreground">{formatCurrency(data.total_net_pay || data.total_net || 0)}</p>
               </div>
             </div>
+            <div className="flex flex-col gap-3 rounded-xl bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-start gap-3">
+                <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <FileSpreadsheet className="h-5 w-5" />
+                </span>
+                <div>
+                  <p className="font-medium text-foreground">Audit payroll lines</p>
+                  <p className="mt-0.5 text-sm text-muted-foreground">
+                    Review staff-level pay and export the full batch before deciding.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleOpenApprovalPayrollLines}
+                disabled={actionLoading}
+                className="inline-flex min-h-10 flex-shrink-0 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Eye className="h-4 w-4" />
+                Review lines & export
+              </button>
+            </div>
           </div>
         );
 
@@ -1058,6 +1203,23 @@ export function ApprovalsPageEnhanced() {
           </div>
         )}
       </Modal>
+
+      <ViewPayrollLinesModal
+        isOpen={showPayrollLinesModal}
+        onClose={handleCloseApprovalPayrollLines}
+        title={`Payroll Lines${approvalPayrollBatch?.batch_number ? ` - ${approvalPayrollBatch.batch_number}` : ''}`}
+        size="xl"
+        batch={approvalPayrollBatch}
+        lines={approvalPayrollLines}
+        isLoading={approvalPayrollLinesLoading}
+        totalLines={approvalPayrollTotalLines}
+        currentPage={approvalPayrollPage}
+        totalPages={approvalPayrollTotalPages}
+        onPageChange={handleApprovalPayrollPageChange}
+        onSearchChange={handleApprovalPayrollSearchChange}
+        onSortChange={handleApprovalPayrollSortChange}
+        sortDirection={approvalPayrollSort}
+      />
     </div>
   );
 }

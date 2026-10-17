@@ -9,24 +9,36 @@ import type {
   CooperativeMember,
   CooperativeContribution,
 } from '../types/entities';
+import {
+  clearRequestIdempotencyKey,
+  getRequestIdempotencyKey,
+  getRequestIdempotencyUserContext,
+} from './request-idempotency';
 
 // Helper function to make API requests
 const API_BASE_URL = import.meta.env?.VITE_API_URL || 'http://localhost:3000/api/v1';
 
 async function makeApiRequest(endpoint: string, options: RequestInit = {}): Promise<any> {
   const url = `${API_BASE_URL}${endpoint}`;
-  
-  const defaultHeaders = {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${localStorage.getItem('jsc_auth_token') || ''}`,
-  };
+
+  const headers = new Headers(options.headers ?? {});
+  headers.set('Content-Type', 'application/json');
+  headers.set('Authorization', `Bearer ${localStorage.getItem('jsc_auth_token') || ''}`);
+  const method = String(options.method || 'GET').toUpperCase();
+  let automaticIdempotency: { key: string; storageKey: string } | null = null;
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && !headers.has('Idempotency-Key')) {
+    automaticIdempotency = await getRequestIdempotencyKey(
+      endpoint,
+      method,
+      options.body,
+      getRequestIdempotencyUserContext(),
+    );
+    headers.set('Idempotency-Key', automaticIdempotency.key);
+  }
 
   const response = await fetch(url, {
     ...options,
-    headers: {
-      ...defaultHeaders,
-      ...options.headers,
-    },
+    headers,
   });
 
   if (!response.ok) {
@@ -34,7 +46,14 @@ async function makeApiRequest(endpoint: string, options: RequestInit = {}): Prom
     throw new Error(error.message || `HTTP ${response.status}: ${response.statusText}`);
   }
 
-  return response.json();
+  if (response.status === 204) {
+    if (automaticIdempotency) clearRequestIdempotencyKey(automaticIdempotency.storageKey, automaticIdempotency.key);
+    return null;
+  }
+
+  const result = await response.json();
+  if (automaticIdempotency) clearRequestIdempotencyKey(automaticIdempotency.storageKey, automaticIdempotency.key);
+  return result;
 }
 
 // ==================== LOAN TYPES MANAGEMENT ====================
@@ -118,7 +137,7 @@ export const loanApplicationAPI = {
     requestedAmount?: number;
     tenureMonths?: number;
     guarantors?: Array<{ staff_id?: string; staffId?: string; remarks?: string }>;
-  }) {
+  }, idempotencyKey?: string) {
     const staffId = data.staffId || data.staff_id;
     const loanTypeId = data.loanTypeId || data.loan_type_id;
     const requestedAmount = data.requestedAmount ?? data.amount_requested;
@@ -137,7 +156,11 @@ export const loanApplicationAPI = {
       })),
     };
 
-    return makeApiRequest('/loans/applications', { method: 'POST', body: JSON.stringify(payload) });
+    return makeApiRequest('/loans/applications', {
+      method: 'POST',
+      headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+      body: JSON.stringify(payload),
+    });
   },
 
   async update(id: string, data: {
@@ -188,7 +211,8 @@ export const loanApplicationAPI = {
     approverName: string,
     action: 'approved' | 'rejected',
     comments?: string,
-    approvedAmount?: number
+    approvedAmount?: number,
+    idempotencyKey?: string,
   ) {
     if (action === 'approved') {
       let amount = approvedAmount;
@@ -204,12 +228,20 @@ export const loanApplicationAPI = {
         approvedAmount: amount,
         remarks: comments
       };
-      return makeApiRequest(`/loans/applications/${id}/approve`, { method: 'PATCH', body: JSON.stringify(payload) });
+      return makeApiRequest(`/loans/applications/${id}/approve`, {
+        method: 'PATCH',
+        headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+        body: JSON.stringify(payload),
+      });
     } else {
       const payload = {
         remarks: comments || 'No reason provided'
       };
-      return makeApiRequest(`/loans/applications/${id}/reject`, { method: 'PATCH', body: JSON.stringify(payload) });
+      return makeApiRequest(`/loans/applications/${id}/reject`, {
+        method: 'PATCH',
+        headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+        body: JSON.stringify(payload),
+      });
     }
   },
 
@@ -364,10 +396,12 @@ export const disbursementAPI = {
     disbursement_date?: string;
     remarks?: string;
     account_name?: string;
-  }) {
+  }, idempotencyKey?: string) {
     const application = await makeApiRequest(`/loans/applications/${data.loan_application_id}`, { method: 'GET' });
     if (!application) throw new Error('Application not found');
-    if (application.status !== 'approved') throw new Error('Only approved applications can be disbursed');
+    if (application.status !== 'approved' && !(idempotencyKey && application.status === 'disbursed')) {
+      throw new Error('Only approved applications can be disbursed');
+    }
 
     // Use backend logic instead of client-side logic
     const payload = {
@@ -380,7 +414,11 @@ export const disbursementAPI = {
       accountName: data.account_name,
     };
 
-    return makeApiRequest('/loans/disbursements', { method: 'POST', body: JSON.stringify(payload) });
+    return makeApiRequest('/loans/disbursements', {
+      method: 'POST',
+      headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+      body: JSON.stringify(payload),
+    });
   },
 
   // Get loan statement

@@ -609,50 +609,41 @@ export class PayrollService {
   async createBatch(createDto: CreatePayrollBatchDto, userId: string) {
     const { payrollMonth, periodStart, periodEnd } = createDto;
 
-    // Check if batch already exists for this month
-    const existing = await this.databaseService.queryOne(
-      'SELECT id FROM payroll_batches WHERE payroll_month = $1',
-      [payrollMonth],
-    );
-
-    if (existing) {
-      throw new BadRequestException(`Payroll batch for ${payrollMonth} already exists`);
-    }
-
     // Generate batch number
     const year = payrollMonth.split('-')[0];
     const month = payrollMonth.split('-')[1];
     const batchNumber = `PAY/${year}/${month}/${Date.now().toString().slice(-4)}`;
 
     try {
-      // Create batch using transaction to ensure uniqueness check is atomic if isolation level allows,
-      // or rely on unique constraint on payroll_month if it exists. 
-      // Since we don't know if unique constraint exists, we'll try to insert and catch error, 
-      // or double check within a transaction with locking (if needed, but insert catch is better for concurrency).
-      // Ideally, payroll_month should be unique.
-      
-      const batch = await this.databaseService.queryOne(
-        `INSERT INTO payroll_batches (
-          batch_number, payroll_month, period_start, period_end,
-          status, created_by
-        ) VALUES ($1, $2, $3, $4, 'draft', $5)
-        RETURNING *`,
-        [batchNumber, payrollMonth, periodStart, periodEnd, userId],
-      );
+      const batch = await this.databaseService.transaction(async (client) => {
+        // Serialize same-month creation even when historical duplicate months
+        // prevent the migration from adding the unique index.
+        await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`payroll-batch:${payrollMonth}`]);
+
+        const existing = await client.query(
+          'SELECT id FROM payroll_batches WHERE payroll_month = $1 LIMIT 1',
+          [payrollMonth],
+        );
+        if (existing.rows[0]) {
+          throw new BadRequestException(`Payroll batch for ${payrollMonth} already exists`);
+        }
+
+        const inserted = await client.query(
+          `INSERT INTO payroll_batches (
+            batch_number, payroll_month, period_start, period_end,
+            status, created_by
+          ) VALUES ($1, $2, $3, $4, 'draft', $5)
+          RETURNING *`,
+          [batchNumber, payrollMonth, periodStart, periodEnd, userId],
+        );
+        return inserted.rows[0];
+      });
 
       this.logger.log(`Payroll batch ${batchNumber} created by user ${userId}`);
       return batch;
     } catch (error: any) {
-      if (error.code === '23505') { // Unique violation
-         throw new BadRequestException(`Payroll batch for ${payrollMonth} already exists`);
-      }
-      // If no unique constraint, the previous check might have failed due to race condition.
-      // Let's re-check manually if insertion failed for other reasons but duplicate exists.
-      const existing = await this.databaseService.queryOne(
-        'SELECT id FROM payroll_batches WHERE payroll_month = $1',
-        [payrollMonth],
-      );
-      if (existing) {
+      if (error instanceof BadRequestException) throw error;
+      if (error.code === '23505') {
         throw new BadRequestException(`Payroll batch for ${payrollMonth} already exists`);
       }
       throw error;
@@ -1403,75 +1394,146 @@ export class PayrollService {
 
     // Bulk insert payroll lines using PostgreSQL transaction
     await this.databaseService.transaction(async (client) => {
-      // Delete existing lines if any
-      await client.query('DELETE FROM payroll_lines WHERE payroll_batch_id = $1', [batchId]);
+      // Serialize generation against approval/submission and retain each existing
+      // staff line's ID. Other records may refer to that ID, and recreating every
+      // row needlessly breaks those references.
+      const lockedBatch = await client.query(
+        `SELECT id, status FROM payroll_batches WHERE id = $1 FOR UPDATE`,
+        [batchId],
+      );
+      if (!lockedBatch.rows[0]) {
+        throw new NotFoundException('Payroll batch not found');
+      }
+      if (lockedBatch.rows[0].status !== 'draft') {
+        throw new BadRequestException('Can only generate lines for draft batches');
+      }
 
-      // Bulk insert new lines - Process in chunks of 100 to avoid query parameter limits (approx 65535 params max)
-      // Each line has 14 parameters, so 100 lines = 1400 params (safe)
-      const CHUNK_SIZE = 100;
-      
-      if (payrollLines.length > 0) {
-        for (let i = 0; i < payrollLines.length; i += CHUNK_SIZE) {
-          const chunk = payrollLines.slice(i, i + CHUNK_SIZE);
-          const values = [];
-          const placeholders = [];
-          let paramIndex = 1;
-
-          chunk.forEach((line) => {
-            const rowPlaceholders = [];
-            rowPlaceholders.push(`$${paramIndex++}`); // id
-            rowPlaceholders.push(`$${paramIndex++}`); // payroll_batch_id
-            rowPlaceholders.push(`$${paramIndex++}`); // staff_id
-            rowPlaceholders.push(`$${paramIndex++}`); // staff_number
-            rowPlaceholders.push(`$${paramIndex++}`); // staff_name
-            rowPlaceholders.push(`$${paramIndex++}`); // grade_level
-            rowPlaceholders.push(`$${paramIndex++}`); // step
-            rowPlaceholders.push(`$${paramIndex++}`); // basic_salary
-            rowPlaceholders.push(`$${paramIndex++}`); // allowances
-            rowPlaceholders.push(`$${paramIndex++}`); // deductions
-            rowPlaceholders.push(`$${paramIndex++}`); // gross_pay
-            rowPlaceholders.push(`$${paramIndex++}`); // total_deductions
-            rowPlaceholders.push(`$${paramIndex++}`); // net_pay
-            rowPlaceholders.push(`$${paramIndex++}`); // tax_details
-            rowPlaceholders.push(`$${paramIndex++}`); // bank_name
-            rowPlaceholders.push(`$${paramIndex++}`); // bank_group_id
-            rowPlaceholders.push(`$${paramIndex++}`); // bank_group_name
-            rowPlaceholders.push(`$${paramIndex++}`); // account_number
-
-            placeholders.push(`(${rowPlaceholders.join(', ')})`);
-
-            values.push(
-              line.id,
-              line.payroll_batch_id,
-              line.staff_id,
-              line.staff_number,
-              line.staff_name,
-              line.grade_level,
-              line.step,
-              line.basic_salary,
-              line.allowances,
-              line.deductions,
-              line.gross_pay,
-              line.total_deductions,
-              line.net_pay,
-              line.tax_details,
-              line.bank_name,
-              line.bank_group_id,
-              line.bank_group_name,
-              line.account_number,
-            );
-          });
-
-          const insertQuery = `
-            INSERT INTO payroll_lines (
-              id, payroll_batch_id, staff_id, staff_number, staff_name,
-              grade_level, step, basic_salary, allowances, deductions,
-              gross_pay, total_deductions, net_pay, tax_details, bank_name, bank_group_id, bank_group_name, account_number
-            ) VALUES ${placeholders.join(', ')}
-          `;
-
-          await client.query(insertQuery, values);
+      const existingLinesResult = await client.query(
+        `SELECT id, staff_id
+         FROM payroll_lines
+         WHERE payroll_batch_id = $1
+         ORDER BY created_at ASC NULLS FIRST, id ASC
+         FOR UPDATE`,
+        [batchId],
+      );
+      const existingLineIds = new Set<string>();
+      const existingLineByStaff = new Map<string, string>();
+      for (const existingLine of existingLinesResult.rows) {
+        existingLineIds.add(existingLine.id);
+        if (existingLine.staff_id && !existingLineByStaff.has(existingLine.staff_id)) {
+          // If historical duplicate rows exist, keep the earliest line for the
+          // staff member and remove the extras, matching the prior regenerate result.
+          existingLineByStaff.set(existingLine.staff_id, existingLine.id);
         }
+      }
+
+      const retainedLineIds = new Set<string>();
+      for (const line of payrollLines) {
+        const existingLineId = existingLineByStaff.get(line.staff_id);
+        if (existingLineId) {
+          line.id = existingLineId;
+          retainedLineIds.add(existingLineId);
+        }
+      }
+
+      await client.query(
+        `DELETE FROM payroll_lines
+         WHERE payroll_batch_id = $1
+           AND NOT (id = ANY($2::uuid[]))`,
+        [batchId, Array.from(retainedLineIds)],
+      );
+
+      // Process in chunks of 100 to stay well below PostgreSQL's parameter limit.
+      // Each line uses 18 parameters, so each chunk has at most 1800 parameters.
+      const CHUNK_SIZE = 100;
+
+      const lineValues = (line: any) => [
+        line.id,
+        line.payroll_batch_id,
+        line.staff_id,
+        line.staff_number,
+        line.staff_name,
+        line.grade_level,
+        line.step,
+        line.basic_salary,
+        line.allowances,
+        line.deductions,
+        line.gross_pay,
+        line.total_deductions,
+        line.net_pay,
+        line.tax_details,
+        line.bank_name,
+        line.bank_group_id,
+        line.bank_group_name,
+        line.account_number,
+      ];
+
+      const insertLines = payrollLines.filter((line) => !existingLineIds.has(line.id));
+      const updateLines = payrollLines.filter((line) => existingLineIds.has(line.id));
+
+      for (let i = 0; i < updateLines.length; i += CHUNK_SIZE) {
+        const chunk = updateLines.slice(i, i + CHUNK_SIZE);
+        const values: any[] = [];
+        const placeholders: string[] = [];
+        let paramIndex = 1;
+
+        for (const line of chunk) {
+          const rowPlaceholders = Array.from({ length: 18 }, () => `$${paramIndex++}`);
+          placeholders.push(`(${rowPlaceholders.join(', ')})`);
+          values.push(...lineValues(line));
+        }
+
+        await client.query(
+          `UPDATE payroll_lines AS current_line
+           SET payroll_batch_id = generated.payroll_batch_id,
+               staff_id = generated.staff_id,
+               staff_number = generated.staff_number,
+               staff_name = generated.staff_name,
+               grade_level = generated.grade_level,
+               step = generated.step,
+               basic_salary = generated.basic_salary,
+               allowances = generated.allowances,
+               deductions = generated.deductions,
+               gross_pay = generated.gross_pay,
+               total_deductions = generated.total_deductions,
+               net_pay = generated.net_pay,
+               tax_details = generated.tax_details,
+               bank_name = generated.bank_name,
+               bank_group_id = generated.bank_group_id,
+               bank_group_name = generated.bank_group_name,
+               account_number = generated.account_number
+           FROM (VALUES ${placeholders.join(', ')}) AS generated(
+             id, payroll_batch_id, staff_id, staff_number, staff_name,
+             grade_level, step, basic_salary, allowances, deductions,
+             gross_pay, total_deductions, net_pay, tax_details, bank_name,
+             bank_group_id, bank_group_name, account_number
+           )
+           WHERE current_line.id = generated.id`,
+          values,
+        );
+      }
+
+      for (let i = 0; i < insertLines.length; i += CHUNK_SIZE) {
+        const chunk = insertLines.slice(i, i + CHUNK_SIZE);
+        const values: any[] = [];
+        const placeholders: string[] = [];
+        let paramIndex = 1;
+
+        for (const line of chunk) {
+          const rowPlaceholders = Array.from({ length: 18 }, () => `$${paramIndex++}`);
+          placeholders.push(`(${rowPlaceholders.join(', ')})`);
+          values.push(...lineValues(line));
+        }
+
+        await client.query(
+          `INSERT INTO payroll_lines (
+            id, payroll_batch_id, staff_id, staff_number, staff_name,
+            grade_level, step, basic_salary, allowances, deductions,
+            gross_pay, total_deductions, net_pay, tax_details, bank_name,
+            bank_group_id, bank_group_name, account_number
+          ) VALUES ${placeholders.join(', ')}`,
+          values,
+        );
       }
 
       // Update batch totals

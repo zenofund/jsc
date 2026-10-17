@@ -657,7 +657,7 @@ export function PayrollPage() {
       <ConfirmDialog
         isOpen={showConfirmDialog}
         title="Regenerate Payroll Lines?"
-        message="This will recalculate all payroll lines for this batch. Any manual adjustments or existing values will be overwritten. This action cannot be undone."
+        message="This recalculates the payroll lines from the current salary structure and saved payroll inputs. Saved staff allowance and deduction adjustments remain in place and are included again when eligible for this month. Any direct edits to payroll line amounts will be replaced."
         onConfirm={handleConfirmRegenerate}
         onCancel={() => {
           setShowConfirmDialog(false);

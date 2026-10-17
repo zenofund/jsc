@@ -1,14 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { StatusBadge } from '../components/StatusBadge';
-import { Modal } from '../components/Modal';
 import { useAuth } from '../contexts/AuthContext';
 import { payrollAPI } from '../lib/api-client';
 import { PageSkeleton } from '../components/PageLoader';
 import { toast } from 'sonner';
 import { 
   DollarSign, CheckCircle, Clock, TrendingUp, 
-  Calendar, AlertCircle, Receipt, CreditCard, FileText 
+  Calendar, Receipt, FileText
 } from 'lucide-react';
 import { formatCurrency, formatCompactCurrency } from '../utils/format';
 
@@ -35,10 +34,7 @@ export function CashierDashboardPage() {
   const [pendingPayments, setPendingPayments] = useState<PayrollBatch[]>([]);
   const [recentlyPaid, setRecentlyPaid] = useState<PayrollBatch[]>([]);
   const [paidBatches, setPaidBatches] = useState<PayrollBatch[]>([]);
-  const [selectedBatch, setSelectedBatch] = useState<PayrollBatch | null>(null);
-  const [paymentReference, setPaymentReference] = useState('');
   const [loading, setLoading] = useState(true);
-  const [executing, setExecuting] = useState(false);
 
   useEffect(() => {
     loadDashboardData();
@@ -71,28 +67,13 @@ export function CashierDashboardPage() {
     }
   };
 
-  const handleExecutePayment = async () => {
-    if (!selectedBatch || !paymentReference.trim()) {
-      toast.error('Please enter a bank reference number');
-      return;
-    }
-
+  const openPaymentBatchJourney = (batch: PayrollBatch) => {
     try {
-      setExecuting(true);
-      await payrollAPI.executePayment(
-        selectedBatch.id,
-        paymentReference.trim()
-      );
-      toast.success('Payment executed successfully');
-      setSelectedBatch(null);
-      setPaymentReference('');
-      loadDashboardData();
-    } catch (error: any) {
-      console.error('Error executing payment:', error);
-      toast.error(error.message || 'Failed to execute payment');
-    } finally {
-      setExecuting(false);
+      sessionStorage.setItem('cashier-payment-batch-payroll-id', batch.id);
+    } catch (error) {
+      console.warn('Could not store the selected payroll batch for payment navigation', error);
     }
+    (window as any).navigateTo?.('bank-payments');
   };
 
   if (loading) {
@@ -210,10 +191,10 @@ export function CashierDashboardPage() {
                       {formatCurrency(batch.total_net)}
                     </p>
                     <button
-                      onClick={() => setSelectedBatch(batch)}
+                      onClick={() => openPaymentBatchJourney(batch)}
                       className="mt-2 px-3 py-1.5 bg-primary hover:bg-primary/90 active:bg-primary/80 text-primary-foreground rounded text-xs sm:text-sm transition-colors"
                     >
-                      Execute Payment
+                      Open Payment Batches
                     </button>
                   </div>
                 </div>
@@ -304,104 +285,6 @@ export function CashierDashboardPage() {
         </div>
       </div>
 
-      {/* Payment Execution Modal */}
-      {selectedBatch && (
-        <Modal
-          isOpen={true}
-          title="Execute Payment"
-          onClose={() => {
-            setSelectedBatch(null);
-            setPaymentReference('');
-          }}
-        >
-          <div className="space-y-4">
-            {/* Batch Details */}
-            <div className="bg-muted/30 rounded-lg p-4 space-y-2">
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Batch Number:</span>
-                <span className="font-medium text-foreground">{selectedBatch.batch_number}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Period:</span>
-                <span className="font-medium text-foreground">{selectedBatch.month} {selectedBatch.year}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Total Staff:</span>
-                <span className="font-medium text-foreground">{selectedBatch.total_staff}</span>
-              </div>
-              <div className="flex justify-between items-center pt-2 border-t border-border">
-                <span className="text-sm text-muted-foreground">Net Amount:</span>
-                <span className="text-lg font-semibold text-primary">
-                  {formatCurrency(selectedBatch.total_net)}
-                </span>
-              </div>
-            </div>
-
-            {/* Payment Reference Input */}
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">
-                Bank Reference Number <span className="text-destructive">*</span>
-              </label>
-              <div className="relative">
-                <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <input
-                  type="text"
-                  placeholder="e.g., TXN202412240001"
-                  value={paymentReference}
-                  onChange={(e) => setPaymentReference(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 bg-input-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring text-foreground placeholder:text-muted-foreground"
-                  autoFocus
-                />
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Enter the transaction reference from your bank system
-              </p>
-            </div>
-
-            {/* Warning */}
-            <div className="bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-900/30 rounded-lg p-3 flex gap-3">
-              <AlertCircle className="w-5 h-5 text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-medium text-yellow-900 dark:text-yellow-200">Payment Confirmation</p>
-                <p className="text-xs text-yellow-700 dark:text-yellow-300 mt-1">
-                  This action will mark the payroll as paid and cannot be undone. Please ensure the bank transfer has been completed.
-                </p>
-              </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex gap-3 pt-2">
-              <button
-                onClick={() => {
-                  setSelectedBatch(null);
-                  setPaymentReference('');
-                }}
-                className="flex-1 px-4 py-2.5 bg-muted hover:bg-muted/80 active:bg-muted/60 text-foreground rounded-lg transition-colors"
-                disabled={executing}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleExecutePayment}
-                disabled={executing}
-                className="flex-1 px-4 py-2.5 bg-primary hover:bg-primary/90 active:bg-primary/80 text-primary-foreground rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                {executing ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin"></div>
-                    Processing...
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle className="w-4 h-4" />
-                    Confirm Payment
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </Modal>
-      )}
     </div>
   );
 }

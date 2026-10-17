@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { DataTable } from '../components/DataTable';
 import { StatusBadge } from '../components/StatusBadge';
@@ -40,9 +40,16 @@ import {
   AlertTriangle,
   FileText,
   Users,
+  MoreVertical,
 } from 'lucide-react';
 import { formatCurrency } from '../utils/format';
 import { Button } from '../components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu';
 import { PageSkeleton } from '../components/PageLoader';
 
 type TabType =
@@ -69,6 +76,18 @@ type BulkAssignableStaff = {
   status?: string | null;
   department_id?: string | null;
   department_name?: string | null;
+};
+
+const CASHIER_PAYMENT_BATCH_LAUNCH_KEY = 'cashier-payment-batch-payroll-id';
+
+const readCashierPaymentBatchLaunchId = () => {
+  try {
+    return typeof window === 'undefined'
+      ? ''
+      : window.sessionStorage.getItem(CASHIER_PAYMENT_BATCH_LAUNCH_KEY) || '';
+  } catch {
+    return '';
+  }
 };
 
 const normalizeBankName = (value: unknown) => String(value ?? '').trim().toLowerCase();
@@ -99,7 +118,10 @@ export function BankPaymentsPage() {
   const { user } = useAuth();
   const { showToast } = useToast();
   const confirm = useConfirm();
-  const [activeTab, setActiveTab] = useState<TabType>('overview');
+  const [launchPayrollBatchId] = useState(readCashierPaymentBatchLaunchId);
+  const launchIntentHandled = useRef(false);
+  const [activeTab, setActiveTab] = useState<TabType>(() => launchPayrollBatchId ? 'payments' : 'overview');
+  const [autoOpenPaymentBatchId, setAutoOpenPaymentBatchId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -204,6 +226,47 @@ export function BankPaymentsPage() {
           (p.payment_status !== 'pending' && p.payment_status !== 'processing' && p.payment_status !== 'completed')
         );
         setAvailablePayrolls(approved);
+
+        if (launchPayrollBatchId && !launchIntentHandled.current) {
+          launchIntentHandled.current = true;
+          try {
+            window.sessionStorage.removeItem(CASHIER_PAYMENT_BATCH_LAUNCH_KEY);
+          } catch {
+            // The in-memory launch intent is still handled if session storage is unavailable.
+          }
+
+          const existingBatch = batches.find(
+            (batch: PaymentBatch) =>
+              batch.payroll_batch_id === launchPayrollBatchId && batch.status !== 'failed',
+          );
+          const failedBatchExists = batches.some(
+            (batch: PaymentBatch) =>
+              batch.payroll_batch_id === launchPayrollBatchId && batch.status === 'failed',
+          );
+          const payrollCanStartBatch = payrolls.some(
+            (payroll: PayrollBatch) =>
+              payroll.id === launchPayrollBatchId &&
+              (payroll.status === 'approved' || payroll.status === 'ready_for_payment') &&
+              (payroll.payment_status !== 'processing' && payroll.payment_status !== 'completed') &&
+              (payroll.payment_status !== 'pending' || failedBatchExists),
+          );
+
+          if (existingBatch) {
+            setAutoOpenPaymentBatchId(existingBatch.id);
+            showToast(
+              'info',
+              `Payment batch ${existingBatch.batch_number} already exists. Continue from its available action.`,
+            );
+          } else if (approved.some((payroll: PayrollBatch) => payroll.id === launchPayrollBatchId) || payrollCanStartBatch) {
+            setNewPaymentForm((current) => ({
+              ...current,
+              payroll_batch_id: launchPayrollBatchId,
+            }));
+            setShowCreatePaymentModal(true);
+          } else {
+            showToast('warning', 'This payroll is no longer eligible for a new payment batch.');
+          }
+        }
       }
     } catch (error) {
       console.error('Error loading bank payments data:', error);
@@ -678,41 +741,70 @@ export function BankPaymentsPage() {
     {
       header: 'Actions',
       accessor: (row: PaymentBatch) => (
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => handleViewBatchDetails(row)}
-            className="p-1 hover:bg-accent rounded"
-            title="View Details"
+        <div onClick={(event) => event.stopPropagation()}>
+          <DropdownMenu
+            open={autoOpenPaymentBatchId === row.id}
+            onOpenChange={(open) => {
+              setAutoOpenPaymentBatchId((current) =>
+                open ? row.id : current === row.id ? null : current,
+              );
+            }}
           >
-            <FileText className="w-4 h-4 text-blue-600" />
-          </button>
-          {(row.status === 'draft' || row.status === 'pending_approval' || row.status === 'approved') && !row.file_generated && (
-            <button
-              onClick={() => handleGenerateFile(row)}
-              className="p-1 hover:bg-accent rounded"
-              title="Generate Payment File"
-            >
-              <Download className="w-4 h-4 text-green-600" />
-            </button>
-          )}
-          {row.status === 'approved' && (
-            <button
-              onClick={() => handleProcessBatch(row)}
-              className="p-1 hover:bg-accent rounded"
-              title="Process Payment"
-            >
-              <Play className="w-4 h-4 text-primary" />
-            </button>
-          )}
-          {row.status === 'processing' && (
-            <button
-              onClick={() => handleExecuteBatch(row)}
-              className="p-1 hover:bg-accent rounded"
-              title="Execute Payment"
-            >
-              <CheckCircle className="w-4 h-4 text-green-600" />
-            </button>
-          )}
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-8 w-8 p-0"
+                aria-label={`Actions for payment batch ${row.batch_number}`}
+              >
+                <MoreVertical className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleViewBatchDetails(row);
+                }}
+              >
+                <FileText className="mr-2 h-4 w-4 text-blue-600" />
+                <span>View Details</span>
+              </DropdownMenuItem>
+              {(row.status === 'draft' || row.status === 'pending_approval' || row.status === 'approved') && !row.file_generated && (
+                <DropdownMenuItem
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleGenerateFile(row);
+                  }}
+                >
+                  <Download className="mr-2 h-4 w-4 text-green-600" />
+                  <span>Generate Payment File</span>
+                </DropdownMenuItem>
+              )}
+              {row.status === 'approved' && (
+                <DropdownMenuItem
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleProcessBatch(row);
+                  }}
+                >
+                  <Play className="mr-2 h-4 w-4 text-primary" />
+                  <span>Process Payment</span>
+                </DropdownMenuItem>
+              )}
+              {row.status === 'processing' && (
+                <DropdownMenuItem
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleExecuteBatch(row);
+                  }}
+                >
+                  <CheckCircle className="mr-2 h-4 w-4 text-green-600" />
+                  <span>Execute Payment</span>
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       ),
     },

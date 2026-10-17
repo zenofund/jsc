@@ -109,6 +109,7 @@ export function PromotionsPage() {
   const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number; width: number } | null>(null);
   const staffSelectRef = useRef<HTMLDivElement>(null);
   const arrearsPreviewRequestRef = useRef(0);
+  const promotionCreateIdempotencyRef = useRef<{ key: string; payload: string } | null>(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -514,22 +515,29 @@ export function PromotionsPage() {
 
     try {
       setIsSubmitting(true);
-      await promotionAPI.createPromotion(
-        {
-          staff_id: formData.staff_id,
-          old_grade_level: formData.old_grade_level,
-          old_step: formData.old_step,
-          new_grade_level: formData.new_grade_level,
-          new_step: formData.new_step,
-          effective_date: formData.effective_date,
-          arrears_end_date: formData.arrears_end_date,
-          remarks: formData.justification,
-          status: 'pending',
-          arrears_calculated: false,
-          created_by: user!.id,
-          created_by_email: user!.email
-        }
-      );
+      const promotionData = {
+        staff_id: formData.staff_id,
+        old_grade_level: formData.old_grade_level,
+        old_step: formData.old_step,
+        new_grade_level: formData.new_grade_level,
+        new_step: formData.new_step,
+        effective_date: formData.effective_date,
+        arrears_end_date: formData.arrears_end_date,
+        remarks: formData.justification,
+        status: 'pending',
+        arrears_calculated: false,
+        created_by: user!.id,
+        created_by_email: user!.email,
+      };
+      const payloadSignature = JSON.stringify(promotionData);
+      const pendingCreate = promotionCreateIdempotencyRef.current?.payload === payloadSignature
+        ? promotionCreateIdempotencyRef.current
+        : {
+          key: crypto.randomUUID(),
+          payload: payloadSignature,
+        };
+      promotionCreateIdempotencyRef.current = pendingCreate;
+      await promotionAPI.createPromotion(promotionData, pendingCreate.key);
       showToast('success', 'Promotion request created successfully');
       setShowModal(false);
       resetForm();
@@ -635,6 +643,7 @@ export function PromotionsPage() {
     setArrearsPreview(null);
     setArrearsPreviewError(null);
     setApprovalComment('');
+    promotionCreateIdempotencyRef.current = null;
   };
 
   const getStaffName = (staffId: string): string => {
@@ -984,7 +993,10 @@ export function PromotionsPage() {
         </div>
         {(user?.role === 'admin' || user?.role === 'payroll_officer' || user?.role === 'hr_manager') && (
           <button
-            onClick={() => setShowModal(true)}
+            onClick={() => {
+              promotionCreateIdempotencyRef.current = null;
+              setShowModal(true);
+            }}
             className="w-full sm:w-auto bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90 flex items-center justify-center sm:justify-start gap-2 transition-colors"
           >
             <Plus className="w-4 h-4" />

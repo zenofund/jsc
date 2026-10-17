@@ -18,6 +18,7 @@ import { exportSpreadsheet } from '../utils/exportSpreadsheet';
 import { Modal } from '../components/Modal';
 import { NumberInput } from '../components/NumberInput';
 import { formatStaffName } from '../lib/name-utils';
+import { clearRequestIdempotencyKey, getRequestIdempotencyKey } from '../lib/request-idempotency';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -453,10 +454,27 @@ function ApplicationsTab({
           guarantors: [] // Admin assigning usually overrides guarantor requirement or handles offline
         };
         
-        const newApp = await loanApplicationAPI.create(createPayload);
+        const createRequestKey = await getRequestIdempotencyKey(
+          '/loan-management/assign/create',
+          'POST',
+          JSON.stringify(createPayload),
+          currentUser.id || '',
+        );
+        const newApp = await loanApplicationAPI.create(createPayload, createRequestKey.key);
         
         // 2. Auto Approve & Disburse if checked
         if (assignLoanData.autoApproveDisburse && newApp && newApp.id) {
+          const approvalPayload = {
+            approvedAmount: assignLoanData.requestedAmount,
+            remarks: 'Admin Auto-Approved during assignment',
+          };
+          const approvalRequestKey = await getRequestIdempotencyKey(
+            `/loan-management/assign/${newApp.id}/approve`,
+            'PATCH',
+            JSON.stringify(approvalPayload),
+            currentUser.id || '',
+          );
+
           // Approve
           await loanApplicationAPI.processApproval(
             newApp.id, 
@@ -464,27 +482,40 @@ function ApplicationsTab({
             currentUser.full_name, 
             'approved', 
             'Admin Auto-Approved during assignment', 
-            assignLoanData.requestedAmount
+            assignLoanData.requestedAmount,
+            approvalRequestKey.key,
           );
           
           // Fetch staff bank details for disbursement
           const staff = staffDirectory.find(s => s.id === assignLoanData.staffId);
-          
-          // Disburse
-          await disbursementAPI.create({
+          const disbursementData = {
             loan_application_id: newApp.id,
-            disbursement_method: 'bank_transfer',
+            disbursement_method: 'bank_transfer' as const,
             bank_name: staff?.salary_info?.bank_name || 'N/A',
             account_number: staff?.salary_info?.account_number || 'N/A',
-            reference_number: `AUTO-${Date.now()}`,
+            reference_number: `AUTO-${newApp.id.replace(/-/g, '').slice(0, 12).toUpperCase()}`,
             disbursed_by: currentUser.id,
             amount: assignLoanData.requestedAmount,
-          });
+            disbursement_date: newApp.created_at || undefined,
+          };
+          const disbursementRequestKey = await getRequestIdempotencyKey(
+            `/loan-management/assign/${newApp.id}/disburse`,
+            'POST',
+            JSON.stringify(disbursementData),
+            currentUser.id || '',
+          );
+
+          // Disburse
+          await disbursementAPI.create(disbursementData, disbursementRequestKey.key);
+          clearRequestIdempotencyKey(approvalRequestKey.storageKey, approvalRequestKey.key);
+          clearRequestIdempotencyKey(disbursementRequestKey.storageKey, disbursementRequestKey.key);
           
           showToast.success('Loan assigned, approved, and disbursed successfully');
         } else {
           showToast.success('Loan assigned successfully', 'It is ready for admin approval');
         }
+
+        clearRequestIdempotencyKey(createRequestKey.storageKey, createRequestKey.key);
         
         setShowAssignModal(false);
         setStaffSearchTerm('');
