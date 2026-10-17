@@ -5,6 +5,7 @@ interface ConfirmDialogProps {
   isOpen: boolean;
   title: string;
   message: string;
+  confirmLabel?: string;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -13,6 +14,7 @@ export function ConfirmDialog({
   isOpen,
   title,
   message,
+  confirmLabel = 'OK',
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -56,7 +58,7 @@ export function ConfirmDialog({
             onClick={onConfirm}
             className="px-3 py-1.5 text-xs font-medium text-white bg-primary hover:bg-primary/90 rounded-md shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-1 dark:focus:ring-offset-slate-800"
           >
-            OK
+            {confirmLabel}
           </button>
         </div>
       </div>

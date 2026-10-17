@@ -36,6 +36,7 @@ export function PayrollPage() {
   const [processingAction, setProcessingAction] = useState<'generate' | 'regenerate' | 'submit' | 'lock' | null>(null);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [batchToRegenerate, setBatchToRegenerate] = useState<string | null>(null);
+  const [batchToSubmit, setBatchToSubmit] = useState<string | null>(null);
   const [showTraceModal, setShowTraceModal] = useState(false);
   const [traceLoading, setTraceLoading] = useState(false);
   const [traceData, setTraceData] = useState<any>(null);
@@ -141,6 +142,14 @@ export function PayrollPage() {
       handleGenerateLines(batchToRegenerate, 'regenerate');
       setShowConfirmDialog(false);
       setBatchToRegenerate(null);
+    }
+  };
+
+  const handleConfirmSubmit = () => {
+    if (batchToSubmit) {
+      handleSubmitForApproval(batchToSubmit);
+      setShowConfirmDialog(false);
+      setBatchToSubmit(null);
     }
   };
 
@@ -446,7 +455,8 @@ export function PayrollPage() {
                   disabled={processingBatchId === row.id}
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleSubmitForApproval(row.id);
+                    setBatchToSubmit(row.id);
+                    setShowConfirmDialog(true);
                   }}
                 >
                   {processingBatchId === row.id ? (
@@ -656,12 +666,16 @@ export function PayrollPage() {
 
       <ConfirmDialog
         isOpen={showConfirmDialog}
-        title="Regenerate Payroll Lines?"
-        message="This recalculates the payroll lines from the current salary structure and saved payroll inputs. Saved staff allowance and deduction adjustments remain in place and are included again when eligible for this month. Any direct edits to payroll line amounts will be replaced."
-        onConfirm={handleConfirmRegenerate}
+        title={batchToSubmit ? 'Submit Payroll for Approval?' : 'Regenerate Payroll Lines?'}
+        message={batchToSubmit
+          ? 'This will send the payroll batch and its generated lines into the configured approval workflow. Continue?'
+          : 'This recalculates the payroll lines from the current salary structure and saved payroll inputs. Saved staff allowance and deduction adjustments remain in place and are included again when eligible for this month. Any direct edits to payroll line amounts will be replaced.'}
+        confirmLabel={batchToSubmit ? 'Submit' : 'OK'}
+        onConfirm={batchToSubmit ? handleConfirmSubmit : handleConfirmRegenerate}
         onCancel={() => {
           setShowConfirmDialog(false);
           setBatchToRegenerate(null);
+          setBatchToSubmit(null);
         }}
       />
 
