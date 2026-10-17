@@ -44,6 +44,10 @@ export default {
           DEFAULT: 'var(--card)',
           foreground: 'var(--card-foreground)',
         },
+        dialog: {
+          DEFAULT: 'var(--dialog)',
+          foreground: 'var(--dialog-foreground)',
+        },
       },
       borderRadius: {
         lg: 'var(--radius)',

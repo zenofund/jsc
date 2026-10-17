@@ -14,27 +14,27 @@ export function Modal({ isOpen, onClose, title, children, size = 'md', footer }:
   if (!isOpen) return null;
 
   const sizeClasses = {
-    sm: 'max-w-md',
-    md: 'max-w-2xl',
-    lg: 'max-w-4xl',
-    xl: 'max-w-6xl',
-    full: 'max-w-full mx-2 sm:mx-4',
+    sm: 'sm:max-w-md',
+    md: 'sm:max-w-2xl',
+    lg: 'sm:max-w-4xl',
+    xl: 'sm:max-w-6xl',
+    full: 'sm:max-w-full sm:mx-4',
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
-      <div className="flex min-h-screen items-end sm:items-center justify-center p-0 sm:p-4">
+    <div className="fixed inset-0 z-50 overflow-hidden sm:overflow-y-auto">
+      <div className="flex min-h-dvh items-end sm:items-center justify-center p-0 sm:p-4">
         {/* Backdrop */}
         <div
-          className="fixed inset-0 bg-background/30 backdrop-blur-md transition-opacity"
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm transition-opacity"
           onClick={onClose}
         />
 
         {/* Modal */}
-        <div className={`relative bg-card rounded-t-2xl sm:rounded-lg shadow-xl w-full ${sizeClasses[size]} max-h-[95vh] sm:max-h-[90vh] flex flex-col`}>
+        <div className={`relative flex max-h-[94dvh] w-full flex-col rounded-t-3xl bg-dialog text-dialog-foreground pb-[env(safe-area-inset-bottom)] sm:max-h-[90vh] sm:rounded-lg sm:pb-0 ${sizeClasses[size]}`}>
           {/* Header */}
-          <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-border flex-shrink-0">
-            <h3 className="font-semibold text-card-foreground text-base sm:text-lg truncate pr-2">{title}</h3>
+          <div className="flex flex-shrink-0 items-center justify-between px-4 py-3 sm:px-6 sm:py-4">
+            <h3 className="truncate pr-2 text-base font-semibold text-dialog-foreground sm:text-lg">{title}</h3>
             <button
               onClick={onClose}
               className="p-1.5 sm:p-2 hover:bg-accent rounded-lg flex-shrink-0 transition-colors"
@@ -44,13 +44,13 @@ export function Modal({ isOpen, onClose, title, children, size = 'md', footer }:
           </div>
 
           {/* Content */}
-          <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 sm:py-6">
+          <div className="min-h-0 flex-auto overflow-y-auto px-4 py-4 sm:px-6 sm:py-6">
             {children}
           </div>
 
           {/* Footer */}
           {footer && (
-            <div className="px-4 sm:px-6 py-3 sm:py-4 border-t border-border bg-muted/30 rounded-b-2xl sm:rounded-b-lg flex-shrink-0">
+            <div className="flex-shrink-0 bg-muted/30 px-4 py-3 sm:rounded-b-lg sm:px-6 sm:py-4">
               {footer}
             </div>
           )}
