@@ -212,7 +212,32 @@ export function ViewPayrollLinesModal({
     return `${gl}/${String(line.step ?? '').trim()}`;
   };
 
+  const isArrearsDeduction = (item: any) => {
+    const code = String(item?.code ?? '').trim();
+    const name = String(item?.name ?? '').trim();
+    return item?.is_arrears_deduction === true ||
+      /_(?:(?:manual|promotion)_)?arrears$/i.test(code) ||
+      /\((?:manual|promotion) arrears\)$/i.test(name);
+  };
+
+  const getArrearsDeductionParts = (item: any) => {
+    const code = String(item?.code ?? '').trim();
+    const name = String(item?.name ?? '').trim();
+    const baseCode = code.replace(/_(?:(?:manual|promotion)_)?arrears$/i, '').trim();
+    const baseName = (name || code)
+      .replace(/\s*\((?:manual|promotion) arrears\)\s*$/i, '')
+      .replace(/\s+arrears\s*$/i, '')
+      .trim();
+    return { baseCode, baseName };
+  };
+
   const itemKey = (item: any) => {
+    if (isArrearsDeduction(item)) {
+      const { baseCode, baseName } = getArrearsDeductionParts(item);
+      return baseCode
+        ? `arrears:${baseCode.toUpperCase()}`
+        : `arrears:name:${baseName.toUpperCase()}`;
+    }
     const code = String(item?.code ?? '').trim();
     const name = String(item?.name ?? '').trim();
     if (code && name) return `${code}__${name}`;
@@ -221,6 +246,10 @@ export function ViewPayrollLinesModal({
   };
 
   const itemBaseLabel = (item: any) => {
+    if (isArrearsDeduction(item)) {
+      const { baseName } = getArrearsDeductionParts(item);
+      return `${baseName || 'Deduction'} Arrears`;
+    }
     const code = String(item?.code ?? '').trim();
     const name = String(item?.name ?? '').trim();
     return name || code;
@@ -303,7 +332,7 @@ export function ViewPayrollLinesModal({
     ];
 
     const isEmptyColumn = (col: typeof columns[number]) => {
-      if (col.id === 'sn' || col.id === 'staff_id' || col.id === 'staff_name' || col.id === 'grade_step' || col.id === 'basic_salary' || col.id === 'allowances' || col.id === 'total_allowances' || col.id === 'total_deductions' || col.id === 'net_pay') {
+      if (col.id === 'sn' || col.id === 'staff_id' || col.id === 'staff_name' || col.id === 'grade_step' || col.id === 'basic_salary' || col.id === 'total_allowances' || col.id === 'total_deductions' || col.id === 'net_pay') {
         return false;
       }
       if (col.isMoney) {
