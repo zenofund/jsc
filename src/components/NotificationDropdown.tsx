@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Bell, BellOff, X, Check, CheckCheck, Trash2, ExternalLink } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
 import { toast } from 'sonner';
@@ -6,6 +6,12 @@ import type { Notification as AppNotification } from '../types/entities';
 import { notificationAPI } from '../lib/api-client'; // ✅ Changed from notificationAPI import
 import { useAuth } from '../contexts/AuthContext';
 import { resolveNotificationNavigationTarget } from '../lib/notification-navigation';
+import {
+  disableBrowserPushNotifications,
+  enableBrowserPushNotifications,
+  getCurrentPushSubscription,
+} from '../lib/push-notifications';
+import { getPushSupportMessage, isPushNotificationsSupported } from '../lib/pwa-service-worker';
 
 interface NotificationDropdownProps {
   onNavigate?: (link: string) => void;
@@ -20,18 +26,34 @@ export function NotificationDropdown({ onNavigate }: NotificationDropdownProps) 
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
   const [pushSupported, setPushSupported] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushSupportMessage, setPushSupportMessage] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Check push support
+  // Register the service worker before offering the push notification controls.
   useEffect(() => {
-    if ('serviceWorker' in navigator && 'PushManager' in window) {
-      setPushSupported(true);
-      navigator.serviceWorker.ready.then(registration => {
-        registration.pushManager.getSubscription().then(subscription => {
-          setPushEnabled(!!subscription);
-        });
-      });
+    if (!isPushNotificationsSupported()) {
+      setPushSupported(false);
+      setPushSupportMessage(getPushSupportMessage());
+      return;
     }
+
+    let active = true;
+    setPushSupported(true);
+    getCurrentPushSubscription()
+      .then((subscription) => {
+        if (active) setPushEnabled(!!subscription);
+      })
+      .catch((error) => {
+        console.error('Push notification service worker is unavailable:', error);
+        if (active) {
+          setPushSupported(false);
+          setPushSupportMessage(error instanceof Error ? error.message : getPushSupportMessage());
+        }
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   // Fetch notifications
@@ -130,96 +152,60 @@ export function NotificationDropdown({ onNavigate }: NotificationDropdownProps) 
     };
   }, [user]);
 
-  const enablePushNotifications = async () => {
+  const enablePushNotifications = useCallback(async () => {
     if (!pushSupported) return;
-
     try {
-      const permission = await Notification.requestPermission();
-      if (permission !== 'granted') {
-        toast.error('Permission denied for push notifications');
-        return;
-      }
-
-      const registration = await navigator.serviceWorker.ready;
-      const vapidKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
-      
-      if (!vapidKey) {
-        console.warn('VITE_VAPID_PUBLIC_KEY not set');
-        toast.error('Push notification configuration missing');
-        return;
-      }
-
-      let subscription = await registration.pushManager.getSubscription();
-      if (!subscription) {
-        subscription = await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(vapidKey)
-        });
-      }
-
-      // Format subscription for backend
-      const subJson = subscription.toJSON();
-      const subscriptionDto = {
-        endpoint: subJson.endpoint,
-        p256dh: subJson.keys?.p256dh,
-        auth: subJson.keys?.auth
-      };
-
-      await notificationAPI.subscribe(subscriptionDto);
+      await enableBrowserPushNotifications();
       setPushEnabled(true);
       toast.success('Push notifications enabled!');
     } catch (error) {
       console.error('Failed to enable push:', error);
-      toast.error('Failed to enable push notifications');
+      toast.error(error instanceof Error ? error.message : 'Failed to enable push notifications');
     }
-  };
+  }, [pushSupported]);
 
-  const disablePushNotifications = async () => {
+  const disablePushNotifications = useCallback(async () => {
     if (!pushSupported) return;
     try {
-      const registration = await navigator.serviceWorker.ready;
-      const subscription = await registration.pushManager.getSubscription();
-      if (subscription) {
-        await notificationAPI.unsubscribe({ endpoint: subscription.endpoint });
-        await subscription.unsubscribe();
-      } else {
-        await notificationAPI.unsubscribe({});
-      }
+      await disableBrowserPushNotifications();
       setPushEnabled(false);
       toast.success('Push notifications disabled');
     } catch (error) {
       console.error('Failed to disable push:', error);
-      toast.error('Failed to disable push notifications');
+      toast.error(error instanceof Error ? error.message : 'Failed to disable push notifications');
     }
-  };
+  }, [pushSupported]);
 
   useEffect(() => {
     if (!user || !pushSupported) return;
     const promptKey = `push_prompted_${user.id}`;
     if (sessionStorage.getItem(promptKey)) return;
     const runPrompt = async () => {
-      const permission = Notification.permission;
-      const registration = await navigator.serviceWorker.ready;
-      const subscription = await registration.pushManager.getSubscription();
-      const enabled = !!subscription;
-      setPushEnabled(enabled);
-      if (!enabled) {
-        if (permission === 'denied') {
-          toast('Notifications are blocked in your browser', {
-            description: 'Enable notifications in browser settings to receive approvals.',
-            duration: 6000,
-          });
-        } else {
-          toast('Turn on notifications for approvals', {
-            description: 'Get instant alerts for approval requests and key updates.',
-            duration: 6000,
-            action: {
-              label: 'Enable',
-              onClick: enablePushNotifications,
-            },
-          });
+      try {
+        const permission = Notification.permission;
+        const subscription = await getCurrentPushSubscription();
+        const enabled = !!subscription;
+        setPushEnabled(enabled);
+        if (!enabled) {
+          if (permission === 'denied') {
+            toast('Notifications are blocked in your browser', {
+              description: 'Enable notifications in browser settings to receive approvals.',
+              duration: 6000,
+            });
+          } else {
+            toast('Turn on notifications for approvals', {
+              description: 'Get instant alerts for approval requests and key updates.',
+              duration: 6000,
+              action: {
+                label: 'Enable',
+                onClick: enablePushNotifications,
+              },
+            });
+          }
+          sessionStorage.setItem(promptKey, 'true');
         }
-        sessionStorage.setItem(promptKey, 'true');
+      } catch (error) {
+        console.error('Failed to check push notification registration:', error);
       }
     };
     runPrompt();
@@ -401,6 +387,11 @@ export function NotificationDropdown({ onNavigate }: NotificationDropdownProps) 
                   <X className="w-4 h-4 text-muted-foreground" />
                 </button>
               </div>
+              {!pushSupported && (
+                <p className="mb-3 text-xs text-muted-foreground">
+                  {pushSupportMessage || getPushSupportMessage()}
+                </p>
+              )}
 
               {/* Filter Tabs */}
               <div className="flex gap-2">
@@ -562,19 +553,4 @@ export function NotificationDropdown({ onNavigate }: NotificationDropdownProps) 
       )}
     </div>
   );
-}
-
-function urlBase64ToUint8Array(base64String: string) {
-  const padding = '='.repeat((4 - base64String.length % 4) % 4);
-  const base64 = (base64String + padding)
-    .replace(/-/g, '+')
-    .replace(/_/g, '/');
-
-  const rawData = window.atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
-
-  for (let i = 0; i < rawData.length; ++i) {
-    outputArray[i] = rawData.charCodeAt(i);
-  }
-  return outputArray;
 }

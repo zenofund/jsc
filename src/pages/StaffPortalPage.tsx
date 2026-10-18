@@ -1,5 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { ActionMenuEllipsis } from '../components/ui/action-menu-trigger';
+import {
+  disableBrowserPushNotifications,
+  enableBrowserPushNotifications,
+  getCurrentPushSubscription,
+} from '../lib/push-notifications';
+import { getPushSupportMessage, isPushNotificationsSupported } from '../lib/pwa-service-worker';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
@@ -60,6 +66,7 @@ export function StaffPortalPage() {
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [pushSupported, setPushSupported] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushSupportMessage, setPushSupportMessage] = useState('');
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: '',
     newPassword: '',
@@ -93,12 +100,29 @@ export function StaffPortalPage() {
   const [payslips, setPayslips] = useState<any[]>([]);
 
   useEffect(() => {
-    if ('serviceWorker' in navigator && 'PushManager' in window) {
-      setPushSupported(true);
-      navigator.serviceWorker.ready
-        .then((registration) => registration.pushManager.getSubscription())
-        .then((subscription) => setPushEnabled(!!subscription));
+    if (!isPushNotificationsSupported()) {
+      setPushSupported(false);
+      setPushSupportMessage(getPushSupportMessage());
+      return;
     }
+
+    let active = true;
+    setPushSupported(true);
+    getCurrentPushSubscription()
+      .then((subscription) => {
+        if (active) setPushEnabled(!!subscription);
+      })
+      .catch((error) => {
+        console.error('Push notification service worker is unavailable:', error);
+        if (active) {
+          setPushSupported(false);
+          setPushSupportMessage(error instanceof Error ? error.message : getPushSupportMessage());
+        }
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
   const [selectedPayslip, setSelectedPayslip] = useState<any>(null);
   const [showPayslipModal, setShowPayslipModal] = useState(false);
@@ -1707,53 +1731,22 @@ export function StaffPortalPage() {
         return;
       }
       try {
-        const permission = await Notification.requestPermission();
-        if (permission !== 'granted') {
-          showToast('error', 'Permission denied for push notifications');
-          setPushEnabled(false);
-          return;
-        }
-        const registration = await navigator.serviceWorker.ready;
-        const vapidKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
-        if (!vapidKey) {
-          showToast('error', 'Push notification configuration missing');
-          return;
-        }
-        let subscription = await registration.pushManager.getSubscription();
-        if (!subscription) {
-          subscription = await registration.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey: urlBase64ToUint8Array(vapidKey),
-          });
-        }
-        const subJson = subscription.toJSON();
-        await notificationAPI.subscribe({
-          endpoint: subJson.endpoint,
-          p256dh: subJson.keys?.p256dh,
-          auth: subJson.keys?.auth,
-        });
+        await enableBrowserPushNotifications();
         setPushEnabled(true);
         showToast('success', 'Push notifications enabled');
       } catch (error) {
         setPushEnabled(false);
-        showToast('error', 'Failed to enable push notifications');
+        showToast('error', error instanceof Error ? error.message : 'Failed to enable push notifications');
       }
     };
 
     const disablePushNotifications = async () => {
       try {
-        const registration = await navigator.serviceWorker.ready;
-        const subscription = await registration.pushManager.getSubscription();
-        if (subscription) {
-          await notificationAPI.unsubscribe({ endpoint: subscription.endpoint });
-          await subscription.unsubscribe();
-        } else {
-          await notificationAPI.unsubscribe({});
-        }
+        await disableBrowserPushNotifications();
         setPushEnabled(false);
         showToast('success', 'Push notifications disabled');
       } catch (error) {
-        showToast('error', 'Failed to disable push notifications');
+        showToast('error', error instanceof Error ? error.message : 'Failed to disable push notifications');
       }
     };
 
@@ -1869,7 +1862,7 @@ export function StaffPortalPage() {
             </label>
             {!pushSupported && (
               <p className="text-xs text-muted-foreground">
-                Push notifications are not supported in this browser.
+                {pushSupportMessage || getPushSupportMessage()}
               </p>
             )}
           </div>
@@ -2568,17 +2561,4 @@ export function StaffPortalPage() {
       )}
     </div>
   );
-}
-
-function urlBase64ToUint8Array(base64String: string) {
-  const padding = '='.repeat((4 - base64String.length % 4) % 4);
-  const base64 = (base64String + padding)
-    .replace(/-/g, '+')
-    .replace(/_/g, '/');
-  const rawData = window.atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
-  for (let i = 0; i < rawData.length; ++i) {
-    outputArray[i] = rawData.charCodeAt(i);
-  }
-  return outputArray;
 }

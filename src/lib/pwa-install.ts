@@ -35,7 +35,7 @@ export function getPwaInstallPromptState({
       isAndroid,
       title: 'Install JSC PMS',
       message: 'Install this app for a faster, app-like experience.',
-      actionLabel: 'Install',
+      actionLabel: hasDeferredPrompt ? 'Install' : 'Got it',
     };
   }
 
@@ -47,7 +47,7 @@ export function getPwaInstallPromptState({
       isAndroid: false,
       title: 'Install JSC PMS on your iPhone',
       message: 'Open the Share menu and choose Add to Home Screen to install this app on your home screen.',
-      actionLabel: 'Install',
+      actionLabel: hasDeferredPrompt ? 'Install' : 'Got it',
     };
   }
 
@@ -59,7 +59,7 @@ export function getPwaInstallPromptState({
       isAndroid: true,
       title: 'Install JSC PMS on your phone',
       message: 'Use the browser menu to install this app and keep quick access to payroll tools.',
-      actionLabel: 'Install',
+      actionLabel: hasDeferredPrompt ? 'Install' : 'Got it',
     };
   }
 
@@ -70,6 +70,6 @@ export function getPwaInstallPromptState({
     isAndroid,
     title: 'Install JSC PMS',
     message: 'Install this app for a faster, app-like experience.',
-    actionLabel: 'Install',
+    actionLabel: hasDeferredPrompt ? 'Install' : 'Got it',
   };
 }

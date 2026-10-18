@@ -70,6 +70,12 @@ export class NotificationsController {
     return this.notificationsService.createPushSubscription(req.user.userId, dto);
   }
 
+  @Get('push/public-key')
+  @ApiOperation({ summary: 'Get the public application server key for web push' })
+  getPushPublicKey() {
+    return this.notificationsService.getPushPublicKey();
+  }
+
   @Delete('subscribe')
   @ApiOperation({ summary: 'Remove push subscription for current user' })
   unsubscribe(@Request() req, @Body() dto: RemovePushSubscriptionDto) {

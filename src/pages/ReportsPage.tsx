@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { DataTable } from '../components/DataTable';
 import { Modal } from '../components/Modal';
+import { CompactAmount } from '../components/CompactAmount';
 import { useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
 import { useSystemSettings } from '../contexts/SystemSettingsContext';

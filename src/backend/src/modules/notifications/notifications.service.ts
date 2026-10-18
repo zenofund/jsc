@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DatabaseService } from '@common/database/database.service';
 import { NotificationsGateway } from './notifications.gateway';
@@ -16,6 +16,7 @@ import {
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
+  private readonly pushConfigured: boolean;
 
   constructor(
     private databaseService: DatabaseService,
@@ -25,12 +26,21 @@ export class NotificationsService {
     const publicKey = this.configService.get<string>('VAPID_PUBLIC_KEY');
     const privateKey = this.configService.get<string>('VAPID_PRIVATE_KEY');
     const subject = this.configService.get<string>('VAPID_SUBJECT', 'mailto:admin@jsc.gov.ng');
+    this.pushConfigured = Boolean(publicKey && privateKey);
 
     if (publicKey && privateKey) {
       webpush.setVapidDetails(subject, publicKey, privateKey);
     } else {
       this.logger.warn('VAPID keys not configured. Push notifications will not work.');
     }
+  }
+
+  getPushPublicKey() {
+    const publicKey = this.configService.get<string>('VAPID_PUBLIC_KEY');
+    if (!this.pushConfigured || !publicKey) {
+      throw new ServiceUnavailableException('Web push notifications are not configured on the server.');
+    }
+    return { publicKey };
   }
 
   private shouldSendPush(dto: CreateNotificationDto): boolean {
@@ -47,6 +57,10 @@ export class NotificationsService {
    * Register a push subscription
    */
   async createPushSubscription(userId: string, dto: CreatePushSubscriptionDto) {
+    if (!this.pushConfigured) {
+      throw new ServiceUnavailableException('Web push notifications are not configured on the server.');
+    }
+
     return this.databaseService.queryOne(
       `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth) 
        VALUES ($1, $2, $3, $4) 
@@ -90,7 +104,7 @@ export class NotificationsService {
         actions: payload.actions,
       });
 
-      Promise.all(subscriptions.map(async (sub) => {
+      await Promise.all(subscriptions.map(async (sub) => {
         const pushSubscription = {
           endpoint: sub.endpoint,
           keys: {

@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import './styles/globals.css';
 import { AuthProvider } from './contexts/AuthContext';
+import { registerAppServiceWorker } from './lib/pwa-service-worker';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
@@ -14,6 +15,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`);
+    registerAppServiceWorker().catch((error) => {
+      console.error('Failed to register the app service worker:', error);
+    });
   });
 }

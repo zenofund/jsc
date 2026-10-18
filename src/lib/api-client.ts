@@ -1823,6 +1823,9 @@ export const notificationAPI = {
       body: JSON.stringify(subscription),
     });
   },
+  getPushPublicKey: async (): Promise<{ publicKey: string }> => {
+    return makeApiRequest('/notifications/push/public-key');
+  },
   unsubscribe: async (payload: { endpoint?: string }) => {
     return makeApiRequest('/notifications/subscribe', {
       method: 'DELETE',
