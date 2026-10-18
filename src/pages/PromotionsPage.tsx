@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { ActionMenuEllipsis } from '../components/ui/action-menu-trigger';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { DataTable } from '../components/DataTable';
 import { StatusBadge } from '../components/StatusBadge';
@@ -12,8 +13,9 @@ import { arrearsAPI, promotionAPI, staffAPI, settingsAPI } from '../lib/api-clie
 import { formatStaffLabelWithId, formatStaffName } from '../lib/name-utils';
 import { Promotion, Staff } from '../types/entities';
 import { PageSkeleton } from '../components/PageLoader';
-import { TrendingUp, Plus, CheckCircle, XCircle, Eye, AlertCircle, Calendar, Loader2, MoreVertical, Trash2 } from 'lucide-react';
+import { TrendingUp, Plus, CheckCircle, XCircle, Eye, AlertCircle, Calendar, Loader2, Trash2 } from 'lucide-react';
 import { formatCurrency } from '../utils/format';
+import { CompactAmount } from '../components/CompactAmount';
 
 function normalizePromotionDate(value: string | null | undefined): string {
   const rawValue = String(value || '').trim();
@@ -847,19 +849,11 @@ export function PromotionsPage() {
         return (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                onClick={(e) => e.stopPropagation()}
-                disabled={isProcessing}
-                className="p-2 hover:bg-accent rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                aria-label={`Open actions for promotion ${row.id}`}
-              >
-                {isRowProcessing ? (
-                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                ) : (
-                  <MoreVertical className="w-4 h-4 text-muted-foreground" />
-                )}
-              </button>
+              <ActionMenuEllipsis
+                label={`Open actions for promotion ${row.id}`}
+                loading={isRowProcessing}
+                onClick={(event) => event.stopPropagation()}
+              />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem
@@ -1436,11 +1430,11 @@ export function PromotionsPage() {
                             <tr key={`${month.month}-${index}`} className="border-t border-orange-200/70 dark:border-orange-900/70">
                               <td className="px-2 py-2">{month.month}<div className="text-orange-700 dark:text-orange-300">{month.effective_start_date} – {month.effective_end_date}</div></td>
                               <td className="px-2 py-2 text-right">{month.eligible_days}/{month.days_in_month}</td>
-                              <td className="px-2 py-2 text-right">{formatCurrency(month.basic_amount)}</td>
-                              <td className="px-2 py-2 text-right">{formatCurrency(month.gross_amount)}</td>
-                              <td className="px-2 py-2 text-right">{formatCurrency(month.paye_old_monthly)}</td>
-                              <td className="px-2 py-2 text-right">{formatCurrency(month.paye_new_monthly)}</td>
-                              <td className="px-2 py-2 text-right">{formatCurrency(month.paye_amount)}</td>
+                              <td className="px-2 py-2 text-right"><CompactAmount amount={month.basic_amount} /></td>
+                              <td className="px-2 py-2 text-right"><CompactAmount amount={month.gross_amount} /></td>
+                              <td className="px-2 py-2 text-right"><CompactAmount amount={month.paye_old_monthly} /></td>
+                              <td className="px-2 py-2 text-right"><CompactAmount amount={month.paye_new_monthly} /></td>
+                              <td className="px-2 py-2 text-right"><CompactAmount amount={month.paye_amount} /></td>
                             </tr>
                           ))}
                         </tbody>
@@ -1800,11 +1794,11 @@ export function PromotionsPage() {
                                 <tr key={`${month.month}-${index}`} className="border-t border-orange-200/70 dark:border-orange-900/70">
                                   <td className="px-2 py-2">{month.month}<div className="text-orange-700 dark:text-orange-300">{month.effective_start_date} – {month.effective_end_date}</div></td>
                                   <td className="px-2 py-2 text-right">{month.eligible_days}/{month.days_in_month}</td>
-                                  <td className="px-2 py-2 text-right">{formatCurrency(month.basic_amount)}</td>
-                                  <td className="px-2 py-2 text-right">{formatCurrency(month.gross_amount)}</td>
-                                  <td className="px-2 py-2 text-right">{formatCurrency(month.paye_old_monthly)}</td>
-                                  <td className="px-2 py-2 text-right">{formatCurrency(month.paye_new_monthly)}</td>
-                                  <td className="px-2 py-2 text-right">{formatCurrency(month.paye_amount)}</td>
+                                <td className="px-2 py-2 text-right"><CompactAmount amount={month.basic_amount} /></td>
+                                <td className="px-2 py-2 text-right"><CompactAmount amount={month.gross_amount} /></td>
+                                <td className="px-2 py-2 text-right"><CompactAmount amount={month.paye_old_monthly} /></td>
+                                <td className="px-2 py-2 text-right"><CompactAmount amount={month.paye_new_monthly} /></td>
+                                <td className="px-2 py-2 text-right"><CompactAmount amount={month.paye_amount} /></td>
                                 </tr>
                               ))}
                             </tbody>

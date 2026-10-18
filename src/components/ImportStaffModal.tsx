@@ -3,6 +3,7 @@ import { Upload, X, FileText, Check, AlertCircle, Download } from 'lucide-react'
 import { Button } from './ui/button';
 import { useToast } from './Toast';
 import { staffAPI } from '../lib/api-client';
+import { CompactAmount } from './CompactAmount';
 
 interface ImportStaffModalProps {
   isOpen: boolean;
@@ -229,9 +230,11 @@ export function ImportStaffModal({ isOpen, onClose, onSuccess }: ImportStaffModa
                   <tbody className="divide-y divide-gray-200">
                     {previewData.map((row, i) => (
                       <tr key={i}>
-                        {Object.values(row).map((val: any, j) => (
+                        {Object.entries(row).map(([field, val]: [string, any], j) => (
                           <td key={j} className="px-3 py-2 whitespace-nowrap text-gray-700">
-                            {val}
+                            {/amount|salary|pay|gross|net|deduction|balance|contribution|capital|disbursed|repaid|outstanding|remittance|variance|arrears|principal|interest/i.test(field) && Math.abs(Number(String(val ?? '').replace(/[^\d.-]/g, ''))) >= 1_000_000
+                              ? <CompactAmount amount={Number(String(val).replace(/[^\d.-]/g, ''))} />
+                              : val}
                           </td>
                         ))}
                       </tr>

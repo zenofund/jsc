@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { ActionMenuEllipsis } from '../components/ui/action-menu-trigger';
 import { useAuth } from '../contexts/AuthContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { arrearsAPI, payrollAPI } from '../lib/api-client';
@@ -8,12 +9,12 @@ import { AlertCircle, TrendingUp, DollarSign, RefreshCw, Trash2, Plus, Check, Lo
 import { showToast } from '../utils/toast';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { DataTable } from '../components/DataTable';
+import { CompactAmount } from '../components/CompactAmount';
 import { StatusBadge } from '../components/StatusBadge';
 import { Modal } from '../components/Modal';
 import { MergeArrearsModal } from '../components/MergeArrearsModal';
 import { CreateArrearsModal } from '../components/CreateArrearsModal';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../components/ui/dropdown-menu';
-import { MoreVertical } from 'lucide-react';
 
 function formatBreakdownMonth(monthValue: string) {
   const match = String(monthValue || '').match(/^(\d{4})-(\d{2})$/);
@@ -471,19 +472,11 @@ export function ArrearsPage() {
         return (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                onClick={(e) => e.stopPropagation()}
-                disabled={isProcessing}
-                className="p-2 hover:bg-accent rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                aria-label={`Open actions for arrears ${row.id}`}
-              >
-                {isProcessing ? (
-                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                ) : (
-                  <MoreVertical className="w-4 h-4 text-muted-foreground" />
-                )}
-              </button>
+              <ActionMenuEllipsis
+                label={`Open actions for arrears ${row.id}`}
+                loading={isProcessing}
+                onClick={(event) => event.stopPropagation()}
+              />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               {row.status === 'pending' && (
@@ -787,17 +780,17 @@ export function ArrearsPage() {
                             <div className="text-xs text-muted-foreground">{formatDateOnly(detail.effective_start_date)} – {formatDateOnly(detail.effective_end_date)}</div>
                           </td>
                           <td className="px-3 py-2 text-right text-foreground">{detail.eligible_days}/{detail.days_in_month}</td>
-                          <td className="px-3 py-2 text-right text-foreground">{formatCurrency(detail.basic_amount)}</td>
-                          <td className="px-3 py-2 text-right text-foreground" title={(detail.allowances || []).map((item: any) => `${item.name}: ${formatCurrency(item.amount)}`).join('\n')}>{formatCurrency(detail.allowance_amount)}</td>
-                          <td className="px-3 py-2 text-right text-foreground">{formatCurrency(detail.gross_amount)}</td>
+                          <td className="px-3 py-2 text-right text-foreground"><CompactAmount amount={detail.basic_amount} /></td>
+                          <td className="px-3 py-2 text-right text-foreground" title={(detail.allowances || []).map((item: any) => `${item.name}: ${formatCurrency(item.amount)}`).join('\n')}><CompactAmount amount={detail.allowance_amount} /></td>
+                          <td className="px-3 py-2 text-right text-foreground"><CompactAmount amount={detail.gross_amount} /></td>
                           <td className="px-3 py-2 text-right text-foreground" title={(detail.deductions || []).map((item: any) => `${item.name}: ${formatCurrency(item.amount)}`).join('\n')}>
-                            {formatCurrency(detail.total_deductions)}
+                            <CompactAmount amount={detail.total_deductions} />
                             <div className="text-left text-[10px] text-muted-foreground">
-                              PAYE reliefs: P {formatCurrency(detail.paye_reliefs?.pension)} · NHF {formatCurrency(detail.paye_reliefs?.nhf)} · NHIA {formatCurrency(detail.paye_reliefs?.nhia)}
+                              PAYE reliefs: P <CompactAmount amount={detail.paye_reliefs?.pension} /> · NHF <CompactAmount amount={detail.paye_reliefs?.nhf} /> · NHIA <CompactAmount amount={detail.paye_reliefs?.nhia} />
                             </div>
                           </td>
-                          <td className="px-3 py-2 text-right text-foreground">{formatCurrency(detail.paye_amount)}</td>
-                          <td className="px-3 py-2 text-right text-foreground">{formatCurrency(detail.net_amount)}</td>
+                          <td className="px-3 py-2 text-right text-foreground"><CompactAmount amount={detail.paye_amount} /></td>
+                          <td className="px-3 py-2 text-right text-foreground"><CompactAmount amount={detail.net_amount} /></td>
                         </tr>
                       ))}
                     </tbody>
@@ -805,12 +798,12 @@ export function ArrearsPage() {
                       <tr>
                         <td className="px-3 py-2 font-medium text-foreground">Total ({selectedArrears.months_owed} months)</td>
                         <td className="px-3 py-2 text-right text-muted-foreground">—</td>
-                        <td className="px-3 py-2 text-right font-semibold text-foreground">{formatCurrency(selectedDetails.reduce((sum, detail) => sum + Number(detail.basic_amount || 0), 0))}</td>
-                        <td className="px-3 py-2 text-right font-semibold text-foreground">{formatCurrency(selectedDetails.reduce((sum, detail) => sum + Number(detail.allowance_amount || 0), 0))}</td>
-                        <td className="px-3 py-2 text-right font-semibold text-foreground">{formatCurrency(selectedArrears.total_arrears)}</td>
-                        <td className="px-3 py-2 text-right font-semibold text-foreground">{formatCurrency(selectedDetails.reduce((sum, detail) => sum + Number(detail.total_deductions || 0), 0))}</td>
-                        <td className="px-3 py-2 text-right font-semibold text-foreground">{formatCurrency(selectedDetails.reduce((sum, detail) => sum + Number(detail.paye_amount || 0), 0))}</td>
-                        <td className="px-3 py-2 text-right font-semibold text-foreground">{formatCurrency(selectedDetails.reduce((sum, detail) => sum + Number(detail.net_amount || 0), 0))}</td>
+                        <td className="px-3 py-2 text-right font-semibold text-foreground"><CompactAmount amount={selectedDetails.reduce((sum, detail) => sum + Number(detail.basic_amount || 0), 0)} /></td>
+                        <td className="px-3 py-2 text-right font-semibold text-foreground"><CompactAmount amount={selectedDetails.reduce((sum, detail) => sum + Number(detail.allowance_amount || 0), 0)} /></td>
+                        <td className="px-3 py-2 text-right font-semibold text-foreground"><CompactAmount amount={selectedArrears.total_arrears} /></td>
+                        <td className="px-3 py-2 text-right font-semibold text-foreground"><CompactAmount amount={selectedDetails.reduce((sum, detail) => sum + Number(detail.total_deductions || 0), 0)} /></td>
+                        <td className="px-3 py-2 text-right font-semibold text-foreground"><CompactAmount amount={selectedDetails.reduce((sum, detail) => sum + Number(detail.paye_amount || 0), 0)} /></td>
+                        <td className="px-3 py-2 text-right font-semibold text-foreground"><CompactAmount amount={selectedDetails.reduce((sum, detail) => sum + Number(detail.net_amount || 0), 0)} /></td>
                       </tr>
                     </tfoot>
                   </table>
@@ -846,14 +839,14 @@ export function ArrearsPage() {
                               <div className="text-xs text-muted-foreground">{formatDateOnly(detail.effective_start_date)} – {formatDateOnly(detail.effective_end_date)}</div>
                             </td>
                             <td className="px-3 py-2 text-right text-foreground">{detail.eligible_days}/{detail.days_in_month}</td>
-                            <td className="px-3 py-2 text-right text-foreground">{formatCurrency(detail.basic_amount)}</td>
-                            <td className="px-3 py-2 text-right text-foreground">{formatCurrency(detail.old_gross)}</td>
-                            <td className="px-3 py-2 text-right text-foreground">{formatCurrency(detail.new_gross)}</td>
-                            <td className="px-3 py-2 text-right text-foreground">{formatCurrency(detail.gross_amount)}</td>
-                            <td className="px-3 py-2 text-right text-foreground">{formatCurrency(detail.total_deductions)}</td>
-                            <td className="px-3 py-2 text-right text-foreground">{formatCurrency(detail.paye_old_monthly)} → {formatCurrency(detail.paye_new_monthly)}</td>
-                            <td className="px-3 py-2 text-right text-foreground">{formatCurrency(detail.paye_amount)}</td>
-                            <td className="px-3 py-2 text-right text-foreground">{formatCurrency(detail.net_amount)}</td>
+                            <td className="px-3 py-2 text-right text-foreground"><CompactAmount amount={detail.basic_amount} /></td>
+                            <td className="px-3 py-2 text-right text-foreground"><CompactAmount amount={detail.old_gross} /></td>
+                            <td className="px-3 py-2 text-right text-foreground"><CompactAmount amount={detail.new_gross} /></td>
+                            <td className="px-3 py-2 text-right text-foreground"><CompactAmount amount={detail.gross_amount} /></td>
+                            <td className="px-3 py-2 text-right text-foreground"><CompactAmount amount={detail.total_deductions} /></td>
+                            <td className="px-3 py-2 text-right text-foreground"><CompactAmount amount={detail.paye_old_monthly} /> → <CompactAmount amount={detail.paye_new_monthly} /></td>
+                            <td className="px-3 py-2 text-right text-foreground"><CompactAmount amount={detail.paye_amount} /></td>
+                            <td className="px-3 py-2 text-right text-foreground"><CompactAmount amount={detail.net_amount} /></td>
                           </tr>
                           <tr className="border-t border-border bg-muted/20">
                             <td colSpan={10} className="px-3 py-2">
@@ -895,13 +888,13 @@ export function ArrearsPage() {
                       <tr>
                         <td className="px-3 py-2 font-medium text-foreground">Total</td>
                         <td className="px-3 py-2 text-right text-muted-foreground">—</td>
-                        <td className="px-3 py-2 text-right font-semibold text-foreground">{formatCurrency(selectedDetails.reduce((sum, detail) => sum + (detail?.calculation_method === 'promotion_salary_period_v1' ? Number(detail.basic_amount || 0) : 0), 0))}</td>
+                        <td className="px-3 py-2 text-right font-semibold text-foreground"><CompactAmount amount={selectedDetails.reduce((sum, detail) => sum + (detail?.calculation_method === 'promotion_salary_period_v1' ? Number(detail.basic_amount || 0) : 0), 0)} /></td>
                         <td colSpan={2} className="px-3 py-2 text-right text-muted-foreground">Monthly package values</td>
-                        <td className="px-3 py-2 text-right font-semibold text-foreground">{formatCurrency(selectedDetails.reduce((sum, detail) => sum + (detail?.calculation_method === 'promotion_salary_period_v1' ? Number(detail.gross_amount || 0) : 0), 0))}</td>
-                        <td className="px-3 py-2 text-right font-semibold text-foreground">{formatCurrency(selectedDetails.reduce((sum, detail) => sum + (detail?.calculation_method === 'promotion_salary_period_v1' ? Number(detail.total_deductions || 0) : 0), 0))}</td>
+                        <td className="px-3 py-2 text-right font-semibold text-foreground"><CompactAmount amount={selectedDetails.reduce((sum, detail) => sum + (detail?.calculation_method === 'promotion_salary_period_v1' ? Number(detail.gross_amount || 0) : 0), 0)} /></td>
+                        <td className="px-3 py-2 text-right font-semibold text-foreground"><CompactAmount amount={selectedDetails.reduce((sum, detail) => sum + (detail?.calculation_method === 'promotion_salary_period_v1' ? Number(detail.total_deductions || 0) : 0), 0)} /></td>
                         <td className="px-3 py-2 text-right text-muted-foreground">—</td>
-                        <td className="px-3 py-2 text-right font-semibold text-foreground">{formatCurrency(selectedDetails.reduce((sum, detail) => sum + (detail?.calculation_method === 'promotion_salary_period_v1' ? Number(detail.paye_amount || 0) : 0), 0))}</td>
-                        <td className="px-3 py-2 text-right font-semibold text-foreground">{formatCurrency(selectedDetails.reduce((sum, detail) => sum + (detail?.calculation_method === 'promotion_salary_period_v1' ? Number(detail.net_amount || 0) : 0), 0))}</td>
+                        <td className="px-3 py-2 text-right font-semibold text-foreground"><CompactAmount amount={selectedDetails.reduce((sum, detail) => sum + (detail?.calculation_method === 'promotion_salary_period_v1' ? Number(detail.paye_amount || 0) : 0), 0)} /></td>
+                        <td className="px-3 py-2 text-right font-semibold text-foreground"><CompactAmount amount={selectedDetails.reduce((sum, detail) => sum + (detail?.calculation_method === 'promotion_salary_period_v1' ? Number(detail.net_amount || 0) : 0), 0)} /></td>
                       </tr>
                     </tfoot>
                   </table>
@@ -925,7 +918,7 @@ export function ArrearsPage() {
                     {selectedDetails.map((detail: any, index: number) => (
                       <tr key={index} className="border-t border-border">
                         <td className="px-4 py-2 text-foreground">{getBreakdownMonthLabel(selectedArrears, detail.month, index)}</td>
-                        <td className="px-4 py-2 text-foreground text-right">₦{Number(detail.amount).toLocaleString()}</td>
+                        <td className="px-4 py-2 text-foreground text-right"><CompactAmount amount={Number(detail.amount)} /></td>
                       </tr>
                     ))}
                     {selectedDetails.length === 0 && (
@@ -939,7 +932,7 @@ export function ArrearsPage() {
                   <tfoot className="bg-muted/30 border-t border-border">
                     <tr>
                       <td className="px-4 py-2 font-medium text-foreground">Total ({selectedArrears.months_owed} months)</td>
-                      <td className="px-4 py-2 font-semibold text-foreground text-right">₦{Number(selectedArrears.total_arrears).toLocaleString()}</td>
+                      <td className="px-4 py-2 font-semibold text-foreground text-right"><CompactAmount amount={Number(selectedArrears.total_arrears)} /></td>
                     </tr>
                   </tfoot>
                 </table>

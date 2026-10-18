@@ -1,16 +1,17 @@
 import React, { useState, useEffect } from 'react';
+import { ActionMenuEllipsis } from '../components/ui/action-menu-trigger';
 import { 
   Check, 
   X, 
   Search, 
   Filter,
-  MoreVertical
 } from 'lucide-react';
 import { staffAllowanceAPI, staffDeductionAPI } from '../lib/api-client';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { StatusBadge } from '../components/StatusBadge';
+import { CompactAmount } from '../components/CompactAmount';
 import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Button } from '../components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../components/ui/dropdown-menu';
@@ -385,7 +386,7 @@ const StaffAdjustmentApprovalPage: React.FC = () => {
                     </td>
                     <td className="px-4 py-3 font-medium text-foreground">
                        {item.type === 'fixed' 
-                        ? `₦${parseFloat(item.amount as string).toLocaleString()}` 
+                        ? <CompactAmount amount={parseFloat(item.amount as string)} />
                         : `${item.percentage}% (of Basic)`}
                     </td>
                     <td className="px-4 py-3">
@@ -395,13 +396,7 @@ const StaffAdjustmentApprovalPage: React.FC = () => {
                       {canShowRowActions(item.status) && (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <button
-                              type="button"
-                              className="p-2 hover:bg-accent rounded"
-                              aria-label={`Open actions for adjustment ${item.id}`}
-                            >
-                              <MoreVertical className="w-4 h-4 text-muted-foreground" />
-                            </button>
+                            <ActionMenuEllipsis label={`Open actions for adjustment ${item.id}`} />
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem onClick={() => handleApprove(item.id)}>

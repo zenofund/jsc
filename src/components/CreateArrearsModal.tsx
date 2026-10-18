@@ -3,6 +3,7 @@ import { Modal } from './Modal';
 import { Staff } from '../types/entities';
 import { Loader2 } from 'lucide-react';
 import { StaffSearch } from './ui/StaffSearch';
+import { CompactAmount } from './CompactAmount';
 
 interface CreateArrearsModalProps {
   isOpen: boolean;
@@ -208,18 +209,18 @@ export function CreateArrearsModal({ isOpen, onClose, onPreview, onSubmit }: Cre
                         <div className="text-muted-foreground">{detail.effective_start_date} – {detail.effective_end_date}</div>
                       </td>
                       <td className="px-2 py-2 text-right">{detail.eligible_days}/{detail.days_in_month}</td>
-                      <td className="px-2 py-2 text-right">{formatCurrency(detail.basic_amount)}</td>
+                      <td className="px-2 py-2 text-right"><CompactAmount amount={detail.basic_amount} /></td>
                       <td className="px-2 py-2 text-right" title={(detail.allowances || []).map((item: any) => `${item.name}: ${formatCurrency(item.amount)}`).join('\n')}>
-                        {formatCurrency(detail.allowance_amount)}
+                        <CompactAmount amount={detail.allowance_amount} />
                       </td>
-                      <td className="px-2 py-2 text-right">{formatCurrency(detail.gross_amount)}</td>
+                      <td className="px-2 py-2 text-right"><CompactAmount amount={detail.gross_amount} /></td>
                       <td className="px-2 py-2 text-right" title={(detail.deductions || []).map((item: any) => `${item.name}: ${formatCurrency(item.amount)}`).join('\n')}>
-                        {formatCurrency(detail.total_deductions)}
+                        <CompactAmount amount={detail.total_deductions} />
                         <div className="text-left text-[10px] text-muted-foreground">
-                          PAYE reliefs: P {formatCurrency(detail.paye_reliefs?.pension)} · NHF {formatCurrency(detail.paye_reliefs?.nhf)} · NHIA {formatCurrency(detail.paye_reliefs?.nhia)}
+                          PAYE reliefs: P <CompactAmount amount={detail.paye_reliefs?.pension} /> · NHF <CompactAmount amount={detail.paye_reliefs?.nhf} /> · NHIA <CompactAmount amount={detail.paye_reliefs?.nhia} />
                         </div>
                       </td>
-                      <td className="px-2 py-2 text-right">{formatCurrency(detail.paye_amount)}</td>
+                      <td className="px-2 py-2 text-right"><CompactAmount amount={detail.paye_amount} /></td>
                     </tr>
                   ))}
                 </tbody>

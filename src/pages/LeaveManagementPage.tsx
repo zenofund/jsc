@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { ActionMenuEllipsis } from '../components/ui/action-menu-trigger';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../contexts/ConfirmContext';
@@ -11,6 +12,7 @@ import { Breadcrumb } from '../components/Breadcrumb';
 import { DataTable } from '../components/DataTable';
 import { StatusBadge } from '../components/StatusBadge';
 import { Modal } from '../components/Modal';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../components/ui/dropdown-menu';
 
 export function LeaveManagementPage() {
   const { user } = useAuth();
@@ -151,47 +153,44 @@ export function LeaveManagementPage() {
     {
       header: 'Actions',
       accessor: (row: LeaveRequest) => (
-        <div className="flex items-center gap-2">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <ActionMenuEllipsis
+              label={`Open actions for leave request ${row.id}`}
+              loading={processingLeaveId === row.id}
+              onClick={(event) => event.stopPropagation()}
+            />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={(event) => {
+              event.stopPropagation();
               setSelectedLeave(row);
               setShowDetailsModal(true);
-            }}
-            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
-            title="View Details"
-          >
-            <FileText className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-          </button>
-          {row.status === 'pending' && (
-            <>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
+            }}>
+              <FileText className="h-4 w-4" />
+              View details
+            </DropdownMenuItem>
+            {row.status === 'pending' && (
+              <>
+                <DropdownMenuItem disabled={processingLeaveId === row.id} onClick={(event) => {
+                  event.stopPropagation();
                   handleApprove(row.id);
-                }}
-                disabled={processingLeaveId === row.id}
-                className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
-              >
-                {processingLeaveId === row.id && <Loader2 className="w-3 h-3 animate-spin" />}
-                Approve
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
+                }}>
+                  <CheckCircle className="h-4 w-4 text-green-600" />
+                  Approve
+                </DropdownMenuItem>
+                <DropdownMenuItem disabled={processingLeaveId === row.id} onClick={(event) => {
+                  event.stopPropagation();
                   setSelectedLeave(row);
                   setShowRejectModal(true);
-                }}
-                disabled={processingLeaveId === row.id}
-                className="px-2 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Reject
-              </button>
-            </>
-          )}
-        </div>
+                }} className="text-destructive focus:text-destructive">
+                  <XCircle className="h-4 w-4" />
+                  Reject
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
       ),
     },
   ];

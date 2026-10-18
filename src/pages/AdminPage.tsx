@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { ActionMenuEllipsis } from '../components/ui/action-menu-trigger';
 import { useAuth } from '../contexts/AuthContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { useSystemSettings } from '../contexts/SystemSettingsContext';
 import { userAPI, settingsAPI, auditAPI } from '../lib/api-client';
 import { User, SystemSettings } from '../types/entities';
-import { Users, Shield, Settings as SettingsIcon, Activity, Plus, Edit, Trash2, Loader2, Save, X, Eye, EyeOff, Lock, Image as ImageIcon, MoreVertical } from 'lucide-react';
+import { Users, Shield, Settings as SettingsIcon, Activity, Plus, Edit, Trash2, Loader2, Save, X, Eye, EyeOff, Lock, Image as ImageIcon } from 'lucide-react';
 import { Building } from 'lucide-react';
 import { showToast } from '../utils/toast';
 import { Modal } from '../components/Modal';
@@ -598,15 +599,11 @@ export function AdminPage() {
       accessor: (row: User) => (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              onClick={(e) => e.stopPropagation()}
-              className="inline-flex items-center justify-center p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground"
-              aria-label="Actions"
-              disabled={deletingUserId === row.id}
-            >
-              <MoreVertical className="w-4 h-4" />
-            </button>
+            <ActionMenuEllipsis
+              label={`Open actions for ${row.email}`}
+              loading={deletingUserId === row.id}
+              onClick={(event) => event.stopPropagation()}
+            />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem

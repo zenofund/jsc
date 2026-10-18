@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { ActionMenuEllipsis } from '../components/ui/action-menu-trigger';
 import {
   Building2, Plus, Edit, Users, DollarSign, TrendingUp,
   Search, Filter, RefreshCw, X, Trash2, Eye, UserPlus,
   Receipt, FileText, AlertCircle, CheckCircle, XCircle,
   Calendar, CreditCard, Shield, Mail, Phone, Wallet, Loader2,
-  Minus, PieChart, Download, Upload, MoreVertical
+  Minus, PieChart, Download, Upload
 } from 'lucide-react';
 import { cooperativeAPI, loanMigrationAPI } from '../lib/loanAPI';
 import { staffAPI } from '../lib/api-client';
@@ -12,6 +13,7 @@ import { PageSkeleton } from '../components/PageLoader';
 import { Modal } from '../components/Modal';
 import { NumberInput } from '../components/NumberInput';
 import { StatusBadge } from '../components/StatusBadge';
+import { CompactAmount } from '../components/CompactAmount';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -1256,10 +1258,10 @@ function MembersView({
                 <td className="px-4 py-3 text-sm">{member.cooperative_name}</td>
                 <td className="px-4 py-3 text-sm">{member.department}</td>
                 <td className="px-4 py-3 text-sm text-right">
-                  {formatCurrency(member.monthly_contribution)}
+                  <CompactAmount amount={member.monthly_contribution} />
                 </td>
                 <td className="px-4 py-3 text-sm text-right font-medium">
-                  {formatCurrency(member.total_contributions)}
+                  <CompactAmount amount={member.total_contributions} />
                 </td>
                 <td className="px-4 py-3 text-sm text-right">{member.shares_owned}</td>
                 <td className="px-4 py-3 text-center">
@@ -1268,17 +1270,10 @@ function MembersView({
                 <td className="px-4 py-3 text-center">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <button
-                        className="p-1 hover:bg-accent rounded"
-                        title="Actions"
-                        disabled={updatingStatusId === member.id}
-                      >
-                        {updatingStatusId === member.id ? (
-                          <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                        ) : (
-                          <MoreVertical className="w-4 h-4 text-muted-foreground" />
-                        )}
-                      </button>
+                      <ActionMenuEllipsis
+                        label={`Open actions for ${member.staff_name}`}
+                        loading={updatingStatusId === member.id}
+                      />
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={() => onEdit(member)}>
@@ -1431,22 +1426,27 @@ function ContributionsView({
                     {contrib.payment_method.replace('_', ' ')}
                   </td>
                   <td className="px-4 py-3 text-sm text-right font-medium">
-                    {formatCurrency(contrib.amount)}
+                    <CompactAmount amount={contrib.amount} />
                   </td>
                   <td className="px-4 py-3 text-sm">{contrib.receipt_number || '-'}</td>
                   <td className="px-4 py-3 text-center">
-                    <button
-                      onClick={() => onDelete(contrib)}
-                      className="p-1 hover:bg-accent rounded text-destructive"
-                      title="Delete Contribution"
-                      disabled={updatingStatusId === contrib.id}
-                    >
-                      {updatingStatusId === contrib.id ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Trash2 className="w-4 h-4" />
-                      )}
-                    </button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <ActionMenuEllipsis
+                          label={`Open actions for contribution by ${contrib.staff_name}`}
+                          loading={updatingStatusId === contrib.id}
+                        />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onClick={() => onDelete(contrib)}
+                          className="text-destructive focus:text-destructive"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          Delete contribution
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </td>
                 </tr>
               ))}
@@ -2789,10 +2789,10 @@ function StatementModal({
                     <td className={`px-4 py-2 text-right font-medium ${
                       Number(item.amount) < 0 ? 'text-red-600' : 'text-green-600'
                     }`}>
-                      {formatCurrency(item.amount)}
+                      <CompactAmount amount={item.amount} />
                     </td>
                     <td className="px-4 py-2 text-right font-medium">
-                      {formatCurrency(item.running_balance)}
+                      <CompactAmount amount={item.running_balance} />
                     </td>
                   </tr>
                 ))}

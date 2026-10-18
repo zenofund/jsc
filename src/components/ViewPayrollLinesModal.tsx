@@ -4,6 +4,7 @@ import { PayrollBatch, PayrollLine } from '../types/entities';
 import { User, Calculator, CalendarClock, Loader2, Download, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { getProrationBadgeText } from '../lib/proration-calculator';
 import { formatCurrency } from '../utils/format';
+import { CompactAmount } from './CompactAmount';
 import { payrollAPI } from '../lib/api-client';
 import { getBankByName } from '../constants/banks';
 import { exportSpreadsheet } from '../utils/exportSpreadsheet';
@@ -548,19 +549,19 @@ export function ViewPayrollLinesModal({
                         GL {line.grade_level} / {line.step}
                       </td>
                       <td className="px-4 py-3 text-right font-medium text-foreground">
-                        {formatCurrency(line.basic_salary)}
+                        <CompactAmount amount={line.basic_salary} />
                       </td>
                       <td className="px-4 py-3 text-right text-green-600">
-                        {formatCurrency(line.total_allowances || (line.gross_pay - line.basic_salary))}
+                        <CompactAmount amount={line.total_allowances || (line.gross_pay - line.basic_salary)} />
                       </td>
                       <td className="px-4 py-3 text-right font-bold text-foreground">
-                        {formatCurrency(line.gross_pay)}
+                        <CompactAmount amount={line.gross_pay} />
                       </td>
                       <td className="px-4 py-3 text-right text-red-600">
-                        {formatCurrency(line.total_deductions)}
+                        <CompactAmount amount={line.total_deductions} />
                       </td>
                       <td className="px-4 py-3 text-right font-bold text-primary">
-                        {formatCurrency(line.net_pay)}
+                        <CompactAmount amount={line.net_pay} />
                       </td>
                     </tr>
                   ))}

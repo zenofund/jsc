@@ -1,14 +1,16 @@
 import { useState, useEffect } from 'react';
+import { ActionMenuEllipsis } from '../components/ui/action-menu-trigger';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { useAuth } from '../contexts/AuthContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { salaryStructureAPI, allowanceAPI, deductionAPI } from '../lib/api-client';
-import { Plus, Edit, Trash2, Table, X, Save, Download, Check, AlertCircle, Upload, Loader2, MoreVertical } from 'lucide-react';
+import { Plus, Edit, Trash2, Table, X, Save, Download, Check, AlertCircle, Upload, Loader2 } from 'lucide-react';
 import { StatusBadge } from '../components/StatusBadge';
 import { showToast } from '../utils/toast';
 import { exportSpreadsheet } from '../utils/exportSpreadsheet';
 import { SalaryStructureUpload } from '../components/SalaryStructureUpload';
 import { PageSkeleton } from '../components/PageLoader';
+import { CompactAmount } from '../components/CompactAmount';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../components/ui/dropdown-menu';
 
 type TabType = 'structures' | 'allowances' | 'deductions';
@@ -684,7 +686,7 @@ export function PayrollSetupPage() {
                                   />
                                 ) : (
                                   <span className="text-card-foreground">
-                                    ₦{value.toLocaleString()}
+                                    <CompactAmount amount={value} />
                                   </span>
                                 )}
                               </td>
@@ -760,7 +762,7 @@ export function PayrollSetupPage() {
                         </td>
                         <td className="px-6 py-4 text-sm text-card-foreground">
                           {allowance.type === 'fixed'
-                            ? `₦${allowance.amount?.toLocaleString() || 0}`
+                            ? <CompactAmount amount={allowance.amount ?? 0} />
                             : `${allowance.percentage || 0}% of ${allowance.calculation_basis === 'gross' ? 'Gross' : 'Basic'}`}
                         </td>
                         <td className="px-6 py-4 text-sm text-card-foreground">
@@ -802,18 +804,10 @@ export function PayrollSetupPage() {
                         <td className="px-6 py-4">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <button
-                                type="button"
-                                className="p-2 hover:bg-accent rounded transition-colors"
-                                aria-label={`Open actions for ${allowance.name}`}
-                                disabled={deletingId === allowance.id}
-                              >
-                                {deletingId === allowance.id ? (
-                                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                                ) : (
-                                  <MoreVertical className="w-4 h-4 text-muted-foreground" />
-                                )}
-                              </button>
+                              <ActionMenuEllipsis
+                                label={`Open actions for ${allowance.name}`}
+                                loading={deletingId === allowance.id}
+                              />
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem
@@ -913,7 +907,7 @@ export function PayrollSetupPage() {
                         </td>
                         <td className="px-6 py-4 text-sm text-card-foreground">
                           {deduction.type === 'fixed'
-                            ? `₦${deduction.amount?.toLocaleString() || 0}`
+                            ? <CompactAmount amount={deduction.amount ?? 0} />
                             : `${deduction.percentage || 0}% of ${deduction.calculation_basis === 'gross' ? 'Gross' : 'Basic'}`}
                         </td>
                         <td className="px-6 py-4 text-sm text-card-foreground">
@@ -957,18 +951,10 @@ export function PayrollSetupPage() {
                         <td className="px-6 py-4">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <button
-                                type="button"
-                                className="p-2 hover:bg-accent rounded transition-colors"
-                                aria-label={`Open actions for ${deduction.name}`}
-                                disabled={deletingId === deduction.id}
-                              >
-                                {deletingId === deduction.id ? (
-                                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                                ) : (
-                                  <MoreVertical className="w-4 h-4 text-muted-foreground" />
-                                )}
-                              </button>
+                              <ActionMenuEllipsis
+                                label={`Open actions for ${deduction.name}`}
+                                loading={deletingId === deduction.id}
+                              />
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem

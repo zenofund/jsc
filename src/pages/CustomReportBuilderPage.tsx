@@ -29,6 +29,7 @@ import {
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { PageSkeleton } from '../components/PageLoader';
+import { CompactAmount } from '../components/CompactAmount';
 
 const REPORT_BUILDER_EDIT_KEY = 'jsc_report_builder_template_id';
 const REPORTS_LIST_FOCUS_TEMPLATE_KEY = 'jsc_reports_list_focus_template_id';
@@ -1213,8 +1214,8 @@ const CustomReportBuilderPage: React.FC = () => {
                       <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
                         {previewData.map((row, idx) => (
                           <tr key={idx}>
-                            {Object.values(row).map((value: any, cellIdx) => (
-                              <td key={cellIdx} className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">{formatCellValue(value)}</td>
+                            {Object.entries(row).map(([field, value]: [string, any], cellIdx) => (
+                              <td key={cellIdx} className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">{typeof value !== 'object' && /amount|salary|pay|gross|net|deduction|balance|contribution|capital|disbursed|repaid|outstanding|remittance|variance|arrears|principal|interest/i.test(field) && Math.abs(Number(String(value ?? '').replace(/[^\d.-]/g, ''))) >= 1_000_000 ? <CompactAmount amount={Number(String(value).replace(/[^\d.-]/g, ''))} /> : formatCellValue(value)}</td>
                             ))}
                           </tr>
                         ))}
@@ -1409,7 +1410,7 @@ const CustomReportBuilderPage: React.FC = () => {
                 ) : (
                   <div className="space-y-4">
                     <div className="flex items-center justify-between"><p className="text-xs text-muted-foreground">Page {previewMeta?.page || 1} of {previewMeta?.totalPages || 1}</p><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => executeReport(Math.max((previewMeta?.page || 1) - 1, 1))} disabled={(previewMeta?.page || 1) <= 1 || executing}>Previous</Button><Button size="sm" variant="outline" onClick={() => executeReport((previewMeta?.page || 1) + 1)} disabled={!previewMeta?.hasNextPage || executing}>Next</Button></div></div>
-                    <div className="max-h-[600px] overflow-auto"><table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700"><thead className="bg-gray-50 dark:bg-gray-800 sticky top-0"><tr>{Object.keys(previewData[0] || {}).map((key) => (<th key={key} className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400">{humanizeLabel(key)}</th>))}</tr></thead><tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">{previewData.map((row, idx) => (<tr key={idx}>{Object.values(row).map((value: any, cellIdx) => (<td key={cellIdx} className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">{formatCellValue(value)}</td>))}</tr>))}</tbody></table></div>
+                    <div className="max-h-[600px] overflow-auto"><table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700"><thead className="bg-gray-50 dark:bg-gray-800 sticky top-0"><tr>{Object.keys(previewData[0] || {}).map((key) => (<th key={key} className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400">{humanizeLabel(key)}</th>))}</tr></thead><tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">{previewData.map((row, idx) => (<tr key={idx}>{Object.entries(row).map(([field, value]: [string, any], cellIdx) => (<td key={cellIdx} className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">{typeof value !== 'object' && /amount|salary|pay|gross|net|deduction|balance|contribution|capital|disbursed|repaid|outstanding|remittance|variance|arrears|principal|interest/i.test(field) && Math.abs(Number(String(value ?? '').replace(/[^\d.-]/g, ''))) >= 1_000_000 ? <CompactAmount amount={Number(String(value).replace(/[^\d.-]/g, ''))} /> : formatCellValue(value)}</td>))}</tr>))}</tbody></table></div>
                     <p className="text-xs text-gray-500 text-center">Showing {previewMeta?.returnedRows || previewData.length} rows for this page</p>
                   </div>
                 )}

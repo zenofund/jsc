@@ -1028,7 +1028,7 @@ export function ReportsPage() {
         <div className="space-y-6">
           {/* Filters */}
           <div className="bg-card rounded-lg border border-border p-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm mb-1 text-card-foreground">
                   Department
@@ -1514,7 +1514,7 @@ export function ReportsPage() {
                             totals.variance += getVarianceDelta(nextValue, previousValue) || delta?.variance || 0;
                             return totals;
                           }, { variance: 0 });
-                          return <tr key={`${item.type}-${item.key}`} className="border-b border-border/60"><td className="p-2">{item.label}</td><td className="p-2">{item.type}</td><td className="p-2 text-right font-medium">{formatCurrency(values.variance)}</td></tr>;
+                          return <tr key={`${item.type}-${item.key}`} className="border-b border-border/60"><td className="p-2">{item.label}</td><td className="p-2">{item.type}</td><td className="p-2 text-right font-medium"><CompactAmount amount={values.variance} /></td></tr>;
                         })}
                     </tbody>
                   </table>
@@ -1588,7 +1588,7 @@ export function ReportsPage() {
         <div className="space-y-6">
           {/* Filters */}
           <div className="bg-card rounded-lg border border-border p-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm mb-1 text-card-foreground">
                   Select Month
@@ -1649,12 +1649,12 @@ export function ReportsPage() {
           {reportData ? (
             <>
               {/* Summary */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-card rounded-lg border border-border p-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-card rounded-lg border border-border p-4 sm:p-6">
                   <div className="text-sm text-muted-foreground mb-1">Total Staff</div>
                   <div className="text-2xl font-semibold text-foreground">{reportData.total_staff || 0}</div>
                 </div>
-                <div className="bg-card rounded-lg border border-border p-6">
+                <div className="bg-card rounded-lg border border-border p-4 sm:p-6">
                   <div className="text-sm text-muted-foreground mb-1">Total Remittance</div>
                   <div className="text-2xl font-semibold text-blue-700">{formatCurrency(reportData.total_amount)}</div>
                 </div>
@@ -1668,7 +1668,7 @@ export function ReportsPage() {
                 {remittanceType === 'tax' && Array.isArray(reportData.grouped_by_state) ? (
                   <div className="space-y-6">
                     {reportData.grouped_by_state.map((g: any) => (
-                      <div key={g.state || 'FCT'} className="rounded-lg border border-border p-4 bg-muted/20">
+                      <div key={g.state || 'FCT'} className="border-t border-border py-4">
                         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-3">
                           <div className="font-semibold text-card-foreground">
                             PAYE (Tax) Remittance - {g.state || 'FCT'}

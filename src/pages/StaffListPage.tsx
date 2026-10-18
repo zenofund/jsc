@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { ActionMenuEllipsis } from '../components/ui/action-menu-trigger';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../components/Toast';
 import { staffAPI, departmentAPI, bankAPI, settingsAPI } from '../lib/api-client';
@@ -16,6 +17,7 @@ import { PageSkeleton } from '../components/PageLoader';
 import { loadPdfMake } from '../utils/loadPdfMake';
 import { Skeleton } from '../components/ui/skeleton';
 import { Button } from '../components/ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../components/ui/dropdown-menu';
 import { formatStaffName, formatStaffFirstLastName } from '../lib/name-utils';
 import Papa from 'papaparse';
 
@@ -1224,29 +1226,31 @@ export function StaffListPage() {
           {
             header: 'Actions',
             accessor: (row: Staff) => (
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <ActionMenuEllipsis
+                    label={`Open actions for ${formatStaffName(row)}`}
+                    onClick={(event) => event.stopPropagation()}
+                  />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={(event) => {
+                    event.stopPropagation();
                     setViewingStaff(row);
                     setShowViewModal(true);
-                  }}
-                  className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded transition-colors"
-                  title="View Details"
-                >
-                  <Eye className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
+                  }}>
+                    <Eye className="h-4 w-4" />
+                    View details
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={(event) => {
+                    event.stopPropagation();
                     openEditModal(row);
-                  }}
-                  className="p-1.5 text-green-600 hover:bg-green-50 dark:hover:bg-green-950/30 rounded transition-colors"
-                  title="Edit Staff"
-                >
-                  <Edit className="w-4 h-4" />
-                </button>
-              </div>
+                  }}>
+                    <Edit className="h-4 w-4" />
+                    Edit staff
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             ),
           },
         ]

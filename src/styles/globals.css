@@ -141,6 +141,17 @@ body {
   -webkit-overflow-scrolling: touch;
 }
 
+table th {
+  white-space: nowrap;
+}
+
+/* Keep table framing square and open across custom table screens too. */
+div:has(> table),
+div:has(> div > table) {
+  border: 0 !important;
+  border-radius: 0 !important;
+}
+
 * {
   scrollbar-width: thin;
   scrollbar-color: color-mix(in oklab, var(--primary) 70%, #0000) color-mix(in oklab, var(--muted) 70%, #0000);
@@ -226,4 +237,15 @@ input, select, textarea {
   .page-title {
     @apply text-foreground mb-1 sm:mb-2 text-lg sm:text-2xl;
   }
+}
+
+/* Flatten only cards that are nested inside another card. */
+main div[class~="bg-card"] div[class~="bg-card"],
+main div[class~="bg-card"] div[data-slot="card"],
+main div[data-slot="card"] div[class~="bg-card"],
+main div[data-slot="card"] div[data-slot="card"] {
+  background-color: transparent !important;
+  border-color: transparent !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
 }

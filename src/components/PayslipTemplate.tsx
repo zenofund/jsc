@@ -1,5 +1,6 @@
 import React from 'react';
 import { formatCurrency } from '../utils/format';
+import { CompactAmount } from './CompactAmount';
 import { Shield, Printer } from 'lucide-react';
 
 interface PayslipTemplateProps {
@@ -204,14 +205,14 @@ const SectionRow = ({ title }: { title: string }) => (
 const TableRow = ({ label, value }: { label: string; value: number }) => (
   <tr className="border-b border-border last:border-0 hover:bg-muted/10 transition-colors">
     <td className="px-3.5 py-2.5 truncate max-w-[300px] text-foreground">{label}</td>
-    <td className="px-3.5 py-2.5 text-right font-mono text-foreground whitespace-nowrap">{formatCurrency(value)}</td>
+    <td className="px-3.5 py-2.5 text-right font-mono text-foreground whitespace-nowrap"><CompactAmount amount={value} /></td>
   </tr>
 );
 
 const TotalRow = ({ label, value }: { label: string; value: number }) => (
   <tr className="bg-muted/20 font-black text-foreground">
     <td className="px-3.5 py-2.5">{label}</td>
-    <td className="px-3.5 py-2.5 text-right font-mono">{formatCurrency(value)}</td>
+    <td className="px-3.5 py-2.5 text-right font-mono"><CompactAmount amount={value} /></td>
   </tr>
 );
 

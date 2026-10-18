@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { CompactAmount } from './CompactAmount';
 
 interface Column<T> {
   header: React.ReactNode;
@@ -143,6 +144,22 @@ export function DataTable<T extends Record<string, any>>({
     });
   };
 
+  const isAmountColumn = (header: React.ReactNode) => {
+    const label = typeof header === 'string' || typeof header === 'number' ? String(header) : '';
+    return /amount|salary|allowance|gross|net pay|deduction|balance|contribution|capital|disbursed|repaid|outstanding|remittance|variance|arrears|principal|interest/i.test(label);
+  };
+
+  const renderCellValue = (column: Column<T>, row: T) => {
+    const value = typeof column.accessor === 'function'
+      ? column.accessor(row)
+      : row[column.accessor as keyof T];
+
+    if (!isAmountColumn(column.header) || (typeof value !== 'number' && typeof value !== 'string')) return value;
+    const amount = typeof value === 'number' ? value : Number(value.replace(/[^\d.-]/g, ''));
+    if (!Number.isFinite(amount) || Math.abs(amount) < 1_000_000) return value;
+    return <CompactAmount amount={amount} />;
+  };
+
   return (
     <div className="space-y-4">
       {(searchable || searchControls) && (
@@ -166,7 +183,7 @@ export function DataTable<T extends Record<string, any>>({
         </div>
       )}
 
-      <div className="bg-card border border-border rounded-lg overflow-hidden">
+      <div className="bg-card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px]">
             <thead className="bg-muted/50 border-b border-border">
@@ -174,7 +191,7 @@ export function DataTable<T extends Record<string, any>>({
                 {columns.map((column, index) => (
                   <th
                     key={index}
-                    className={`px-3 sm:px-6 py-3 sm:py-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider ${
+                    className={`px-3 sm:px-6 py-3 sm:py-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap ${
                       column.sortable ? 'cursor-pointer hover:bg-muted/80 hover:text-foreground transition-colors' : ''
                     }`}
                     onClick={() => column.sortable && handleSort(index)}
@@ -217,9 +234,7 @@ export function DataTable<T extends Record<string, any>>({
                     {columns.map((column, colIndex) => (
                       <td key={colIndex} className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm text-card-foreground">
                         <div className="truncate max-w-[150px] sm:max-w-none">
-                          {typeof column.accessor === 'function'
-                            ? column.accessor(row)
-                            : row[column.accessor]}
+                          {renderCellValue(column, row)}
                         </div>
                       </td>
                     ))}

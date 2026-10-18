@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { ActionMenuEllipsis } from '../components/ui/action-menu-trigger';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { DataTable } from '../components/DataTable';
 import { PageSkeleton } from '../components/PageLoader';
 import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { staffRequestsAPI } from '../lib/api-client';
-import { CheckCircle, XCircle, AlertCircle, Loader2, Eye, MoreVertical } from 'lucide-react';
+import { CheckCircle, XCircle, AlertCircle, Loader2, Eye } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../components/ui/dropdown-menu';
 
 type Status = 'pending' | 'approved' | 'rejected';
@@ -101,19 +102,11 @@ export default function StaffRequestsAdminPage() {
         return (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                onClick={(e) => e.stopPropagation()}
-                className="p-2 hover:bg-accent rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={isProcessing}
-                aria-label={`Open actions for request ${row.id}`}
-              >
-                {isProcessing ? (
-                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                ) : (
-                  <MoreVertical className="w-4 h-4 text-muted-foreground" />
-                )}
-              </button>
+              <ActionMenuEllipsis
+                label={`Open actions for request ${row.id}`}
+                loading={isProcessing}
+                onClick={(event) => event.stopPropagation()}
+              />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => setSelected(row)}>

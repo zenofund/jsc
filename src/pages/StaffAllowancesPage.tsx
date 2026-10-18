@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { ActionMenuEllipsis } from '../components/ui/action-menu-trigger';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { staffAPI, staffAllowanceAPI, staffDeductionAPI, allowanceAPI, deductionAPI } from '../lib/api-client';
 import { Staff, StaffAllowance, StaffDeduction, Allowance, Deduction } from '../types/entities';
-import { Plus, Edit, Trash2, DollarSign, User, Calendar, X, Loader2, MoreVertical } from 'lucide-react';
+import { Plus, Edit, Trash2, DollarSign, User, Calendar, X, Loader2 } from 'lucide-react';
 import { StatusBadge } from '../components/StatusBadge';
 import { Modal } from '../components/Modal';
 import { Breadcrumb } from '../components/Breadcrumb';
@@ -1106,18 +1107,10 @@ export function StaffAllowancesPage() {
                         </div>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <button
-                              type="button"
-                              className="p-2 hover:bg-accent rounded"
-                              disabled={deletingId === allowance.id}
-                              aria-label={`Open actions for ${allowance.allowance_name}`}
-                            >
-                              {deletingId === allowance.id ? (
-                                <Loader2 className="size-4 animate-spin" />
-                              ) : (
-                                <MoreVertical className="size-4" />
-                              )}
-                            </button>
+                            <ActionMenuEllipsis
+                              label={`Open actions for ${allowance.allowance_name}`}
+                              loading={deletingId === allowance.id}
+                            />
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem onClick={() => handleEditAllowance(allowance)}>
@@ -1211,18 +1204,10 @@ export function StaffAllowancesPage() {
                         </div>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <button
-                              type="button"
-                              className="p-2 hover:bg-accent rounded"
-                              disabled={deletingId === deduction.id}
-                              aria-label={`Open actions for ${deduction.deduction_name}`}
-                            >
-                              {deletingId === deduction.id ? (
-                                <Loader2 className="size-4 animate-spin" />
-                              ) : (
-                                <MoreVertical className="size-4" />
-                              )}
-                            </button>
+                            <ActionMenuEllipsis
+                              label={`Open actions for ${deduction.deduction_name}`}
+                              loading={deletingId === deduction.id}
+                            />
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem onClick={() => handleEditDeduction(deduction)}>

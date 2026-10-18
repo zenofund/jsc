@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { ActionMenuEllipsis } from '../components/ui/action-menu-trigger';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { DataTable } from '../components/DataTable';
 import { StatusBadge } from '../components/StatusBadge';
@@ -7,7 +8,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../components/Toast';
 import { payslipAPI, payrollAPI, settingsAPI } from '../lib/api-client';
 import { PageSkeleton } from '../components/PageLoader';
-import { FileText, Download, Eye, MoreVertical } from 'lucide-react';
+import { FileText, Download, Eye } from 'lucide-react';
 import { PayslipTemplate } from '../components/PayslipTemplate';
 import { formatCurrency } from '../utils/format';
 import { generatePayslipPDF } from '../utils/payslipGenerator';
@@ -165,14 +166,7 @@ export function PayslipsPage() {
         <div onClick={(event) => event.stopPropagation()}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                className="h-9 w-9 p-0"
-                aria-label={`Open payslip actions for ${row?.line?.staff_name || 'staff member'}, ${row.batch?.month || row.batch?.payroll_month || 'pay period'}`}
-              >
-                <MoreVertical className="h-4 w-4" />
-              </Button>
+              <ActionMenuEllipsis label={`Open payslip actions for ${row?.line?.staff_name || 'staff member'}, ${row.batch?.month || row.batch?.payroll_month || 'pay period'}`} />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => handleViewPayslip(row)}>

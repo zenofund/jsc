@@ -47,13 +47,15 @@ export const formatCompactCurrency = (amount: number | string | undefined | null
   const full = formatCurrency(val);
 
   if (absVal >= 1_000_000_000) {
+    const compactValue = (val / 1_000_000_000).toFixed(2).replace(/\.?0+$/, '');
     return {
-      short: `₦${(val / 1_000_000_000).toFixed(2)}B`,
+      short: `₦${compactValue}B`,
       full: full
     };
   } else if (absVal >= 1_000_000) {
+    const compactValue = (val / 1_000_000).toFixed(2).replace(/\.?0+$/, '');
     return {
-      short: `₦${(val / 1_000_000).toFixed(2)}M`,
+      short: `₦${compactValue}M`,
       full: full
     };
   }

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { ActionMenuEllipsis } from '../components/ui/action-menu-trigger';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
@@ -20,6 +21,7 @@ import {
 import { NotificationIntegration } from '../lib/notification-integration';
 import { loanApplicationAPI as loanAPI, loanTypeAPI, disbursementAPI, guarantorAPI, cooperativeAPI } from '../lib/loanAPI';
 import { CooperativeMembershipCard } from '../components/CooperativeMembershipCard';
+import { CompactAmount } from '../components/CompactAmount';
 import { PageSkeleton } from '../components/PageLoader';
 import type { CooperativeMember, Cooperative, CooperativeContribution } from '../types/entities';
 import { 
@@ -27,7 +29,6 @@ import {
   Edit, Download, Send, CheckCircle, XCircle, Clock, 
   Phone, Mail, MapPin, Building, Briefcase, DollarSign,
   TrendingUp, Users, Eye, EyeOff, Plus, X, Check, LayoutDashboard, Wallet, Building2, Loader2,
-  MoreVertical,
 } from 'lucide-react';
 
 type TabType = 'dashboard' | 'profile' | 'payslips' | 'promotions' | 'leave' | 'requests' | 'documents' | 'loans' | 'cooperatives' | 'settings';
@@ -1099,13 +1100,7 @@ export function StaffPortalPage() {
                     <p className="text-lg font-bold text-card-foreground">{formatCurrency(payslip.line?.net_pay)}</p>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <button
-                          type="button"
-                          className="h-10 w-10 flex items-center justify-center rounded-md text-muted-foreground hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          aria-label={`Open actions for payslip ${payslip.batch?.month || payslip.line?.payroll_month || ''}`}
-                        >
-                          <MoreVertical className="h-4 w-4" />
-                        </button>
+                        <ActionMenuEllipsis label={`Open actions for payslip ${payslip.batch?.month || payslip.line?.payroll_month || ''}`} />
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={() => {
@@ -1630,7 +1625,7 @@ export function StaffPortalPage() {
                                 </span>
                               </td>
                               <td className="px-6 py-4 text-right text-sm text-card-foreground">
-                                {formatCurrency(contribution.amount)}
+                                <CompactAmount amount={contribution.amount} />
                               </td>
                               <td className="px-6 py-4 text-sm text-muted-foreground">
                                 {contribution.payment_method.replace('_', ' ')}
@@ -1673,13 +1668,13 @@ export function StaffPortalPage() {
                                 {new Date(loan.disbursement_date).toLocaleDateString()}
                               </td>
                               <td className="px-6 py-4 text-right text-sm text-card-foreground">
-                                {formatCurrency(loan.amount_disbursed)}
+                                <CompactAmount amount={loan.amount_disbursed} />
                               </td>
                               <td className="px-6 py-4 text-right text-sm text-card-foreground">
-                                {formatCurrency(loan.total_repaid)}
+                                <CompactAmount amount={loan.total_repaid} />
                               </td>
                               <td className="px-6 py-4 text-right text-sm text-card-foreground">
-                                {formatCurrency(loan.outstanding_balance)}
+                                <CompactAmount amount={loan.outstanding_balance} />
                               </td>
                               <td className="px-6 py-4">
                                 <span className={`px-2 py-1 rounded text-xs ${

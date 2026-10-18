@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { ActionMenuEllipsis } from '../components/ui/action-menu-trigger';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -33,7 +34,6 @@ import {
   Star,
   Clock,
   Download,
-  MoreVertical,
   FileText,
   Loader2,
   TrendingUp,
@@ -47,6 +47,7 @@ import {
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { PageSkeleton } from '../components/PageLoader';
+import { CompactAmount } from '../components/CompactAmount';
 
 const REPORT_BUILDER_EDIT_KEY = 'jsc_report_builder_template_id';
 const REPORTS_LIST_FOCUS_TEMPLATE_KEY = 'jsc_reports_list_focus_template_id';
@@ -96,6 +97,16 @@ const ReportsListPage: React.FC = () => {
     }
 
     return String(value);
+  };
+
+  const formatReportCell = (field: string, value: any) => {
+    if (!/amount|salary|pay|gross|net|deduction|balance|contribution|capital|disbursed|repaid|outstanding|remittance|variance|arrears|principal|interest/i.test(field)) {
+      return formatCellValue(value);
+    }
+    const amount = typeof value === 'number' ? value : Number(String(value ?? '').replace(/[^\d.-]/g, ''));
+    return Number.isFinite(amount) && Math.abs(amount) >= 1_000_000
+      ? <CompactAmount amount={amount} />
+      : formatCellValue(value);
   };
 
   // State
@@ -954,12 +965,12 @@ const ReportsListPage: React.FC = () => {
                 <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
                   {resultsDialog.result.data.map((row, idx) => (
                     <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-800">
-                      {Object.values(row).map((value: any, cellIdx) => (
+                      {Object.entries(row).map(([field, value]: [string, any], cellIdx) => (
                         <td
                           key={cellIdx}
                           className="px-4 py-3 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100"
                         >
-                          {formatCellValue(value)}
+                          {formatReportCell(field, value)}
                         </td>
                       ))}
                     </tr>
@@ -1047,9 +1058,7 @@ const ReportGrid: React.FC<ReportGridProps> = ({
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm">
-                    <MoreVertical className="h-4 w-4" />
-                  </Button>
+                  <ActionMenuEllipsis label={`Open actions for ${template.name}`} />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem onClick={() => onExecute(template)}>

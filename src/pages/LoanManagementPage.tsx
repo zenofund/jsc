@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
+import { ActionMenuEllipsis } from '../components/ui/action-menu-trigger';
 import { 
   DollarSign, TrendingUp, Users, Clock, CheckCircle, XCircle, FileText,
   Plus, Edit2, Trash2, Download, Search, Building2,
-  Wallet, RefreshCw, CreditCard, X, Loader2, MoreVertical
+  Wallet, RefreshCw, CreditCard, X, Loader2
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useConfirm } from '../contexts/ConfirmContext';
@@ -14,6 +15,7 @@ import type { LoanType, LoanApplication, LoanDisbursement, Cooperative, Staff } 
 import { PageSkeleton } from '../components/PageLoader';
 import { showToast } from '../utils/toast';
 import { formatCompactCurrency, formatCurrency } from '../utils/format';
+import { CompactAmount } from '../components/CompactAmount';
 import { exportSpreadsheet } from '../utils/exportSpreadsheet';
 import { Modal } from '../components/Modal';
 import { NumberInput } from '../components/NumberInput';
@@ -725,9 +727,9 @@ function ApplicationsTab({
                     </td>
                     <td className="px-6 py-4 text-sm text-card-foreground">{app.loan_type_name}</td>
                     <td className="px-6 py-4 text-right">
-                      <div className="text-sm text-card-foreground">{formatCurrency(app.amount_requested)}</div>
+                      <div className="text-sm text-card-foreground"><CompactAmount amount={app.amount_requested} /></div>
                       <div className="text-xs text-muted-foreground">
-                        +{formatCurrency(app.interest_amount)} interest
+                        +<CompactAmount amount={app.interest_amount} /> interest
                       </div>
                     </td>
                     <td className="px-6 py-4 text-center text-sm text-card-foreground">{app.tenure_months} months</td>
@@ -735,18 +737,7 @@ function ApplicationsTab({
                     <td className="px-6 py-4 text-center">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <button
-                            type="button"
-                            disabled={processingId === app.id}
-                            className="inline-flex items-center justify-center rounded p-2 hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            title="Actions"
-                          >
-                            {processingId === app.id ? (
-                              <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                            ) : (
-                              <MoreVertical className="w-4 h-4 text-muted-foreground" />
-                            )}
-                          </button>
+                          <ActionMenuEllipsis label={`Open actions for application ${app.id}`} loading={processingId === app.id} />
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           {['draft', 'pending', 'guarantor_pending'].includes(app.status) && (
@@ -1953,14 +1944,14 @@ function DisbursementsTab({
                     <td className="px-6 py-4 text-sm text-card-foreground">{disb.loan_type_name}</td>
                     <td className="px-6 py-4 text-right">
                       <div className="text-sm text-card-foreground">
-                        {formatCurrency(disb.total_amount ?? disb.amount_disbursed ?? disb.principal_amount ?? 0)}
+                        <CompactAmount amount={disb.total_amount ?? disb.amount_disbursed ?? disb.principal_amount ?? 0} />
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        {formatCurrency(disb.monthly_deduction ?? 0)}/mo
+                        <CompactAmount amount={disb.monthly_deduction ?? 0} />/mo
                       </div>
                     </td>
                     <td className="px-6 py-4 text-right text-sm text-card-foreground">
-                      {formatCurrency(disb.balance_outstanding ?? 0)}
+                      <CompactAmount amount={disb.balance_outstanding ?? 0} />
                     </td>
                     <td className="px-6 py-4 text-center">
                       <span
@@ -1974,13 +1965,7 @@ function DisbursementsTab({
                     <td className="px-6 py-4 text-center">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <button
-                            type="button"
-                            className="inline-flex items-center justify-center rounded p-2 hover:bg-accent transition-colors"
-                            title="Actions"
-                          >
-                            <MoreVertical className="w-4 h-4 text-muted-foreground" />
-                          </button>
+                          <ActionMenuEllipsis label={`Open actions for disbursement ${disb.id}`} />
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           {canEditDisbursements && (
@@ -3004,7 +2989,9 @@ function ReportsTab({ cooperativeManagementEnabled }: { cooperativeManagementEna
                                 column.align === 'right' ? 'text-right' : 'text-left'
                               }`}
                             >
-                              {row[column.key]}
+                              {/amount|salary|pay|gross|net|deduction|balance|contribution|capital|disbursed|repaid|outstanding|remittance|variance|arrears|principal|interest/i.test(`${column.key} ${column.label}`) && Math.abs(Number(String(row[column.key] ?? '').replace(/[^\d.-]/g, ''))) >= 1_000_000
+                                ? <CompactAmount amount={Number(String(row[column.key]).replace(/[^\d.-]/g, ''))} />
+                                : row[column.key]}
                             </td>
                           ))}
                         </tr>

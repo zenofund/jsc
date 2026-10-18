@@ -16,6 +16,7 @@ import {
   Search
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { CompactAmount } from '../components/CompactAmount';
 import { formatCompactCurrency, formatCurrency } from '../utils/format';
 import { PageSkeleton } from '../components/PageLoader';
 import { useSystemSettings } from '../contexts/SystemSettingsContext';
@@ -860,7 +861,7 @@ function ContributionsReport({
                     </span>
                   </td>
                   <td className="px-6 py-4 text-right text-sm text-card-foreground">
-                    {formatCurrency(contribution.amount)}
+                    <CompactAmount amount={contribution.amount} />
                   </td>
                   <td className="px-6 py-4 text-sm text-card-foreground">
                     {contribution.payment_method.replace('_', ' ')}
@@ -1091,13 +1092,13 @@ function LoansReport({
                   </td>
                   <td className="px-6 py-4 text-sm text-card-foreground">{loan.cooperative_name || 'N/A'}</td>
                   <td className="px-6 py-4 text-right text-sm text-card-foreground">
-                    ₦{Number(loan.amount_disbursed ?? loan.principal_amount ?? loan.total_amount ?? 0).toLocaleString()}
+                    <CompactAmount amount={Number(loan.amount_disbursed ?? loan.principal_amount ?? loan.total_amount ?? 0)} />
                   </td>
                   <td className="px-6 py-4 text-right text-sm text-card-foreground">
-                    ₦{loan.total_repaid.toLocaleString()}
+                    <CompactAmount amount={loan.total_repaid} />
                   </td>
                   <td className="px-6 py-4 text-right text-sm text-card-foreground">
-                    ₦{loan.balance_outstanding.toLocaleString()}
+                    <CompactAmount amount={loan.balance_outstanding} />
                   </td>
                   <td className="px-6 py-4">
                     <span className={`px-2 py-1 rounded text-xs ${
@@ -1253,10 +1254,10 @@ function MembersReport({ cooperatives, selectedCooperativeId }: { cooperatives: 
                   </td>
                   <td className="px-6 py-4 text-sm text-card-foreground">{member.cooperative_name}</td>
                   <td className="px-6 py-4 text-right text-sm text-card-foreground">
-                    ₦{member.monthly_contribution.toLocaleString()}
+                    <CompactAmount amount={member.monthly_contribution} />
                   </td>
                   <td className="px-6 py-4 text-right text-sm text-card-foreground">
-                    ₦{member.total_contributions.toLocaleString()}
+                    <CompactAmount amount={member.total_contributions} />
                   </td>
                   <td className="px-6 py-4 text-center text-sm text-card-foreground">{member.shares_owned}</td>
                   <td className="px-6 py-4 text-center">
@@ -1444,13 +1445,13 @@ function CrossCooperativeReport({ cooperatives }: { cooperatives: Cooperative[] 
                       <div className="space-y-1">
                         {memberships.map(m => (
                           <div key={m.id} className="text-xs text-muted-foreground">
-                            • {m.cooperative_name} (₦{m.monthly_contribution.toLocaleString()}/month)
+                            • {m.cooperative_name} (<CompactAmount amount={m.monthly_contribution} />/month)
                           </div>
                         ))}
                       </div>
                     </td>
                     <td className="px-6 py-4 text-right text-sm text-card-foreground">
-                      {formatCurrency(totalMonthly)}
+                      <CompactAmount amount={totalMonthly} />
                     </td>
                   </tr>
                 );

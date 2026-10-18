@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
+import { ActionMenuEllipsis } from '../components/ui/action-menu-trigger';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { DataTable } from '../components/DataTable';
 import { StatusBadge } from '../components/StatusBadge';
 import { Modal } from '../components/Modal';
 import { ViewPayrollLinesModal } from '../components/ViewPayrollLinesModal';
+import { CompactAmount } from '../components/CompactAmount';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { useAuth } from '../contexts/AuthContext';
 import { payrollAPI, settingsAPI } from '../lib/api-client';
 import { PayrollBatch, PayrollLine } from '../types/entities';
-import { Plus, Eye, Lock, Loader2, RefreshCw, CreditCard, AlertCircle, CheckCircle, MoreVertical } from 'lucide-react';
+import { Plus, Eye, Lock, Loader2, RefreshCw, CreditCard, AlertCircle, CheckCircle } from 'lucide-react';
 import { PageSkeleton } from '../components/PageLoader';
 import { Button } from '../components/ui/button';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '../components/ui/dropdown-menu';
@@ -403,9 +405,7 @@ export function PayrollPage() {
         <div onClick={(e) => e.stopPropagation()}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="h-8 w-8 p-0">
-                <MoreVertical className="h-4 w-4" />
-              </Button>
+              <ActionMenuEllipsis label={`Open payroll actions for ${row.batch_number}`} />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem
@@ -835,7 +835,7 @@ export function PayrollPage() {
                             <div className="text-sm text-card-foreground">{item.staff_name}</div>
                             <div className="text-xs text-muted-foreground">{item.staff_number}</div>
                           </td>
-                          <td className="px-4 py-3 text-sm text-card-foreground">{formatCurrency(item.net_pay)}</td>
+                          <td className="px-4 py-3 text-sm text-card-foreground"><CompactAmount amount={item.net_pay} /></td>
                           <td className="px-4 py-3 text-sm text-card-foreground">{item.transaction_status || 'none'}</td>
                           <td className="px-4 py-3 text-sm text-muted-foreground">{item.reason}</td>
                         </tr>

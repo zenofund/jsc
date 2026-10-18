@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { ActionMenuEllipsis } from '../components/ui/action-menu-trigger';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { DataTable } from '../components/DataTable';
 import { StatusBadge } from '../components/StatusBadge';
@@ -41,7 +42,6 @@ import {
   AlertTriangle,
   FileText,
   Users,
-  MoreVertical,
 } from 'lucide-react';
 import { formatCurrency } from '../utils/format';
 import { exportSpreadsheet } from '../utils/exportSpreadsheet';
@@ -779,14 +779,7 @@ export function BankPaymentsPage() {
             }}
           >
             <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                className="h-8 w-8 p-0"
-                aria-label={`Actions for payment batch ${row.batch_number}`}
-              >
-                <MoreVertical className="h-4 w-4" />
-              </Button>
+              <ActionMenuEllipsis label={`Actions for payment batch ${row.batch_number}`} />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem
@@ -886,14 +879,15 @@ export function BankPaymentsPage() {
       ? [{
           header: 'Actions',
           accessor: (row: BankAccount) => (
-            <div className="flex items-center gap-2">
-              <Button variant="outline" onClick={() => openEditBankAccount(row)}>
-                Edit
-              </Button>
-              <Button variant="destructive" onClick={() => handleDeleteBankAccount(row)}>
-                Delete
-              </Button>
-            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <ActionMenuEllipsis label={`Open actions for ${row.account_name}`} />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => openEditBankAccount(row)}>Edit</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleDeleteBankAccount(row)} className="text-destructive focus:text-destructive">Delete</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           ),
         }]
       : []),
@@ -916,14 +910,15 @@ export function BankPaymentsPage() {
       ? [{
           header: 'Actions',
           accessor: (row: BankGroup) => (
-            <div className="flex items-center gap-2">
-              <Button variant="outline" onClick={() => openEditBankGroup(row)}>
-                Edit
-              </Button>
-              <Button variant="destructive" onClick={() => handleDeleteBankGroup(row)}>
-                Delete
-              </Button>
-            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <ActionMenuEllipsis label={`Open actions for ${row.group_name}`} />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => openEditBankGroup(row)}>Edit</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleDeleteBankGroup(row)} className="text-destructive focus:text-destructive">Delete</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           ),
         }]
       : []),
