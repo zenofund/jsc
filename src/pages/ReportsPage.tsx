@@ -303,6 +303,8 @@ export function ReportsPage() {
             staff_number: line.staff_number,
             staff_name: line.staff_name,
             account_number: String(line.account_number ?? '').trim(),
+            gross_pay: formatAmount(line.gross_pay || 0),
+            total_deductions: formatAmount(line.total_deductions || 0),
             net_pay: formatAmount(line.net_pay || 0),
           })),
         );
@@ -317,7 +319,9 @@ export function ReportsPage() {
             { label: 'Batch Status', value: String(reportData.batch?.status || 'Not available').replace(/_/g, ' ') },
             { label: `Total ${scheduleCollectionLabel}`, value: String(totals.total_groups || 0) },
             { label: 'Total Staff', value: String(totals.total_staff || 0) },
-            { label: 'Total Amount', value: formatAmount(totals.total_amount || 0) },
+            { label: 'Total Gross Pay', value: formatAmount(totals.total_gross || 0) },
+            { label: 'Total Deductions', value: formatAmount(totals.total_deductions || 0) },
+            { label: 'Total Net Pay', value: formatAmount(totals.total_net || 0) },
             { label: bankScheduleGrouping === 'bank_group' ? 'Missing Group Assignments' : 'Missing Bank Details', value: String(bankScheduleGrouping === 'bank_group' ? (totals.missing_group_assignments || 0) : (totals.missing_bank_details || 0)) },
             { label: 'Generated At', value: new Date().toLocaleString() },
           ],
@@ -327,6 +331,8 @@ export function ReportsPage() {
             { key: 'staff_number', label: 'Staff Number' },
             { key: 'staff_name', label: 'Staff Name' },
             { key: 'account_number', label: 'Account Number' },
+            { key: 'gross_pay', label: 'Gross Pay' },
+            { key: 'total_deductions', label: 'Deductions' },
             { key: 'net_pay', label: 'Net Pay' },
           ],
           rows,
@@ -456,6 +462,8 @@ export function ReportsPage() {
         staff_number: line.staff_number,
         staff_name: line.staff_name,
         account_number: String(line.account_number ?? '').trim(),
+        gross_pay: formatAmount(line.gross_pay || 0),
+        total_deductions: formatAmount(line.total_deductions || 0),
         net_pay: formatAmount(line.net_pay || 0),
       }));
 
@@ -467,7 +475,9 @@ export function ReportsPage() {
           { label: scheduleGroupLabel, value: String(selectedScheduleLabel || '') },
           ...(bankScheduleGrouping === 'bank_group' ? [{ label: 'Bank', value: String(selectedBank.bank_name || '') }] : []),
           { label: 'Total Staff', value: String(selectedBank.total_staff || 0) },
-          { label: 'Total Amount', value: formatAmount(selectedBank.total_amount || 0) },
+          { label: 'Total Gross Pay', value: formatAmount(selectedBank.total_gross || 0) },
+          { label: 'Total Deductions', value: formatAmount(selectedBank.total_deductions || 0) },
+          { label: 'Total Net Pay', value: formatAmount(selectedBank.total_net || 0) },
           { label: 'Generated At', value: new Date().toLocaleString() },
         ],
         columns: [
@@ -475,6 +485,8 @@ export function ReportsPage() {
           { key: 'staff_number', label: 'Staff Number' },
           { key: 'staff_name', label: 'Staff Name' },
           { key: 'account_number', label: 'Account Number' },
+          { key: 'gross_pay', label: 'Gross Pay' },
+          { key: 'total_deductions', label: 'Deductions' },
           { key: 'net_pay', label: 'Net Pay' },
         ],
         rows,
@@ -669,7 +681,9 @@ export function ReportsPage() {
             columns: [
               { text: `Total ${scheduleCollectionLabel}: ${totals.total_groups || 0}`, width: '*' },
               { text: `Total Staff: ${totals.total_staff || 0}`, width: '*' },
-              { text: `Total Amount: ${formatPDFCurrency(totals.total_amount || 0)}`, width: '*' },
+              { text: `Gross Pay: ${formatPDFCurrency(totals.total_gross || 0)}`, width: '*' },
+              { text: `Deductions: ${formatPDFCurrency(totals.total_deductions || 0)}`, width: '*' },
+              { text: `Net Pay: ${formatPDFCurrency(totals.total_net || 0)}`, width: '*' },
               { text: bankScheduleGrouping === 'bank_group' ? `Missing Assignments: ${totals.missing_group_assignments || 0}` : `Missing Details: ${totals.missing_bank_details || 0}`, width: '*' },
             ],
             margin: [0, 0, 0, 10],
@@ -679,7 +693,7 @@ export function ReportsPage() {
         (reportData?.groups || []).forEach((group: any, idx: number) => {
           docDefinition.content.push(
             {
-              text: `${scheduleGroupLabel}: ${group.group_label}  |  Staff: ${group.total_staff || 0}  |  Total: ${formatPDFCurrency(group.total_amount || 0)}${bankScheduleGrouping === 'bank_group' ? `  |  Bank: ${group.bank_name || 'Unknown Bank'}` : ''}`,
+              text: `${scheduleGroupLabel}: ${group.group_label}  |  Staff: ${group.total_staff || 0}  |  Gross: ${formatPDFCurrency(group.total_gross || 0)}  |  Deductions: ${formatPDFCurrency(group.total_deductions || 0)}  |  Net: ${formatPDFCurrency(group.total_net || 0)}${bankScheduleGrouping === 'bank_group' ? `  |  Bank: ${group.bank_name || 'Unknown Bank'}` : ''}`,
               style: 'subheader',
               alignment: 'left',
               margin: [0, idx === 0 ? 5 : 12, 0, 5],
@@ -692,6 +706,8 @@ export function ReportsPage() {
               { text: 'Staff #', style: 'tableHeader' },
               { text: 'Name', style: 'tableHeader' },
               { text: 'Account Number', style: 'tableHeader' },
+              { text: 'Gross Pay', style: 'tableHeader', alignment: 'right' },
+              { text: 'Deductions', style: 'tableHeader', alignment: 'right' },
               { text: 'Net Pay', style: 'tableHeader', alignment: 'right' },
             ],
           ];
@@ -702,6 +718,8 @@ export function ReportsPage() {
               { text: line.staff_number || 'N/A', style: 'tableCell' },
               { text: line.staff_name || 'N/A', style: 'tableCell' },
               { text: line.account_number || 'N/A', style: 'tableCell' },
+              { text: formatPDFCurrency(line.gross_pay || 0), style: 'tableCell', alignment: 'right' },
+              { text: formatPDFCurrency(line.total_deductions || 0), style: 'tableCell', alignment: 'right' },
               { text: formatPDFCurrency(line.net_pay || 0), style: 'tableCell', alignment: 'right' },
             ]);
           });
@@ -709,7 +727,7 @@ export function ReportsPage() {
           docDefinition.content.push({
             table: {
               headerRows: 1,
-              widths: bankScheduleGrouping === 'bank_group' ? ['auto', 'auto', '*', 'auto', 'auto'] : ['auto', '*', 'auto', 'auto'],
+              widths: bankScheduleGrouping === 'bank_group' ? ['auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto'] : ['auto', '*', 'auto', 'auto', 'auto', 'auto'],
               body: tableBody,
             },
             layout: tableLayout,
@@ -922,7 +940,9 @@ export function ReportsPage() {
         {
           columns: [
             { text: `Staff: ${selectedBank.total_staff || 0}`, width: '*' },
-            { text: `Total: ${formatPDFCurrency(selectedBank.total_amount || 0)}`, width: '*' },
+            { text: `Gross Pay: ${formatPDFCurrency(selectedBank.total_gross || 0)}`, width: '*' },
+            { text: `Deductions: ${formatPDFCurrency(selectedBank.total_deductions || 0)}`, width: '*' },
+            { text: `Net Pay: ${formatPDFCurrency(selectedBank.total_net || 0)}`, width: '*' },
           ],
           margin: [0, 0, 0, 10],
         }
@@ -934,6 +954,8 @@ export function ReportsPage() {
           { text: 'Staff #', style: 'tableHeader' },
           { text: 'Name', style: 'tableHeader' },
           { text: 'Account Number', style: 'tableHeader' },
+          { text: 'Gross Pay', style: 'tableHeader', alignment: 'right' },
+          { text: 'Deductions', style: 'tableHeader', alignment: 'right' },
           { text: 'Net Pay', style: 'tableHeader', alignment: 'right' },
         ],
       ];
@@ -944,6 +966,8 @@ export function ReportsPage() {
           { text: line.staff_number || 'N/A', style: 'tableCell' },
           { text: line.staff_name || 'N/A', style: 'tableCell' },
           { text: line.account_number || 'N/A', style: 'tableCell' },
+          { text: formatPDFCurrency(line.gross_pay || 0), style: 'tableCell', alignment: 'right' },
+          { text: formatPDFCurrency(line.total_deductions || 0), style: 'tableCell', alignment: 'right' },
           { text: formatPDFCurrency(line.net_pay || 0), style: 'tableCell', alignment: 'right' },
         ]);
       });
@@ -951,7 +975,7 @@ export function ReportsPage() {
       docDefinition.content.push({
         table: {
           headerRows: 1,
-          widths: bankScheduleGrouping === 'bank_group' ? ['auto', 'auto', '*', 'auto', 'auto'] : ['auto', '*', 'auto', 'auto'],
+          widths: bankScheduleGrouping === 'bank_group' ? ['auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto'] : ['auto', '*', 'auto', 'auto', 'auto', 'auto'],
           body: tableBody,
         },
         layout: tableLayout,
@@ -1286,7 +1310,7 @@ export function ReportsPage() {
                 </dl>
               </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6">
                 <div className="bg-card rounded-lg border border-border p-6">
                   <div className="text-sm text-muted-foreground mb-1">Total {scheduleCollectionLabel}</div>
                   <div className="text-2xl font-semibold text-foreground">{reportData.totals?.total_groups || 0}</div>
@@ -1296,10 +1320,24 @@ export function ReportsPage() {
                   <div className="text-2xl font-semibold text-foreground">{reportData.totals?.total_staff || 0}</div>
                 </div>
                 <div className="bg-card rounded-lg border border-border p-6">
-                  <div className="text-sm text-muted-foreground mb-1">Total Amount</div>
+                  <div className="text-sm text-muted-foreground mb-1">Total Gross Pay</div>
                   <div className="flex flex-col">
-                    <span className="text-2xl font-bold text-green-700 dark:text-green-500">{formatCompactCurrency(reportData.totals?.total_amount).short}</span>
-                    <span className="text-xs text-green-600/70 dark:text-green-400/70 font-mono">{formatCompactCurrency(reportData.totals?.total_amount).full}</span>
+                    <span className="text-2xl font-bold text-foreground">{formatCompactCurrency(reportData.totals?.total_gross).short}</span>
+                    <span className="text-xs text-muted-foreground font-mono">{formatCompactCurrency(reportData.totals?.total_gross).full}</span>
+                  </div>
+                </div>
+                <div className="bg-card rounded-lg border border-border p-6">
+                  <div className="text-sm text-muted-foreground mb-1">Total Deductions</div>
+                  <div className="flex flex-col">
+                    <span className="text-2xl font-bold text-foreground">{formatCompactCurrency(reportData.totals?.total_deductions).short}</span>
+                    <span className="text-xs text-muted-foreground font-mono">{formatCompactCurrency(reportData.totals?.total_deductions).full}</span>
+                  </div>
+                </div>
+                <div className="bg-card rounded-lg border border-border p-6">
+                  <div className="text-sm text-muted-foreground mb-1">Total Net Pay</div>
+                  <div className="flex flex-col">
+                    <span className="text-2xl font-bold text-green-700 dark:text-green-500">{formatCompactCurrency(reportData.totals?.total_net).short}</span>
+                    <span className="text-xs text-green-600/70 dark:text-green-400/70 font-mono">{formatCompactCurrency(reportData.totals?.total_net).full}</span>
                   </div>
                 </div>
                 <div className="bg-card rounded-lg border border-border p-6">
@@ -1316,7 +1354,9 @@ export function ReportsPage() {
                     { header: scheduleGroupLabel, accessor: (row: any) => row.group_label || 'Unknown', sortable: true },
                     ...(bankScheduleGrouping === 'bank_group' ? [{ header: 'Bank', accessor: (row: any) => row.bank_name || 'Unknown', sortable: true }] : []),
                     { header: 'Staff Count', accessor: (row: any) => row.total_staff || 0, sortable: true },
-                    { header: 'Total Amount', accessor: (row: any) => formatCurrency(row.total_amount || 0), sortable: true },
+                    { header: 'Gross Pay', accessor: (row: any) => formatCurrency(row.total_gross || 0), sortable: true },
+                    { header: 'Deductions', accessor: (row: any) => formatCurrency(row.total_deductions || 0), sortable: true },
+                    { header: 'Net Pay', accessor: (row: any) => formatCurrency(row.total_net || 0), sortable: true },
                   ]}
                   onRowClick={(row: any) => {
                     setSelectedBank(row);
@@ -1558,8 +1598,16 @@ export function ReportsPage() {
               <div className="text-lg font-semibold text-foreground">{selectedBank?.total_staff || 0}</div>
             </div>
             <div className="bg-muted/30 border border-border rounded-lg p-4">
-              <div className="text-xs text-muted-foreground mb-1">Total Amount</div>
-              <div className="text-lg font-semibold text-foreground">{formatCurrency(selectedBank?.total_amount || 0)}</div>
+              <div className="text-xs text-muted-foreground mb-1">Gross Pay</div>
+              <div className="text-lg font-semibold text-foreground">{formatCurrency(selectedBank?.total_gross || 0)}</div>
+            </div>
+            <div className="bg-muted/30 border border-border rounded-lg p-4">
+              <div className="text-xs text-muted-foreground mb-1">Deductions</div>
+              <div className="text-lg font-semibold text-foreground">{formatCurrency(selectedBank?.total_deductions || 0)}</div>
+            </div>
+            <div className="bg-muted/30 border border-border rounded-lg p-4">
+              <div className="text-xs text-muted-foreground mb-1">Net Pay</div>
+              <div className="text-lg font-semibold text-foreground">{formatCurrency(selectedBank?.total_net || 0)}</div>
             </div>
             <div className="bg-muted/30 border border-border rounded-lg p-4">
               <div className="text-xs text-muted-foreground mb-1">{scheduleGroupLabel}</div>
@@ -1574,6 +1622,8 @@ export function ReportsPage() {
               { header: 'Staff Number', accessor: 'staff_number' as keyof any, sortable: true },
               { header: 'Staff Name', accessor: 'staff_name' as keyof any, sortable: true },
               { header: 'Account Number', accessor: 'account_number' as keyof any, sortable: true },
+              { header: 'Gross Pay', accessor: (row: any) => formatCurrency(row.gross_pay || 0), sortable: true },
+              { header: 'Deductions', accessor: (row: any) => formatCurrency(row.total_deductions || 0), sortable: true },
               { header: 'Net Pay', accessor: (row: any) => formatCurrency(row.net_pay || 0), sortable: true },
             ]}
             searchable

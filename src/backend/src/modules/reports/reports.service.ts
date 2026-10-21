@@ -290,6 +290,8 @@ export class ReportsService {
         pl.bank_group_id,
         pl.bank_group_name,
         pl.account_number,
+        pl.gross_pay,
+        pl.total_deductions,
         pl.net_pay,
         pl.staff_number,
         pl.staff_name
@@ -303,7 +305,10 @@ export class ReportsService {
       const bankName = String(l.bank_name || '').trim() || 'Unknown Bank';
       const bankGroupName = String(l.bank_group_name || '').trim() || 'Unassigned Bank Group';
       const accountNumber = String(l.account_number || '').trim() || '';
-      const amount = typeof l.net_pay === 'number' ? l.net_pay : parseFloat(l.net_pay || '0');
+      const toAmount = (value: any) => {
+        const amount = typeof value === 'number' ? value : parseFloat(value || '0');
+        return Number.isFinite(amount) ? amount : 0;
+      };
       return {
         bank_name: bankName,
         bank_group_id: l.bank_group_id || null,
@@ -311,7 +316,9 @@ export class ReportsService {
         staff_number: l.staff_number,
         staff_name: l.staff_name,
         account_number: accountNumber,
-        net_pay: Number.isFinite(amount) ? amount : 0,
+        gross_pay: toAmount(l.gross_pay),
+        total_deductions: toAmount(l.total_deductions),
+        net_pay: toAmount(l.net_pay),
         has_bank_details: Boolean(bankName && accountNumber),
       };
     });
@@ -331,13 +338,17 @@ export class ReportsService {
           bank_group_id: line.bank_group_id,
           bank_group_name: line.bank_group_name,
           total_staff: 0,
-          total_amount: 0,
+          total_gross: 0,
+          total_deductions: 0,
+          total_net: 0,
           lines: [],
         });
       }
       const entry = groupMap.get(key);
       entry.total_staff += 1;
-      entry.total_amount += line.net_pay;
+      entry.total_gross += line.gross_pay;
+      entry.total_deductions += line.total_deductions;
+      entry.total_net += line.net_pay;
       entry.lines.push(line);
     }
 
@@ -350,7 +361,10 @@ export class ReportsService {
       total_groups: groups.length,
       total_banks: uniqueBankCount,
       total_staff: lines.length,
-      total_amount: groups.reduce((sum, group) => sum + (group.total_amount || 0), 0),
+      total_gross: groups.reduce((sum, group) => sum + (group.total_gross || 0), 0),
+      total_deductions: groups.reduce((sum, group) => sum + (group.total_deductions || 0), 0),
+      total_net: groups.reduce((sum, group) => sum + (group.total_net || 0), 0),
+      total_amount: groups.reduce((sum, group) => sum + (group.total_net || 0), 0),
       missing_bank_details: lines.filter((l) => !l.account_number || l.bank_name === 'Unknown Bank').length,
       missing_group_assignments: lines.filter((l) => !l.bank_group_id).length,
     };
