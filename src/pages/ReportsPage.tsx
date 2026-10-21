@@ -342,7 +342,7 @@ export function ReportsPage() {
           { key: 'variation_details', label: 'Variation Details' },
         ];
         financialFields.forEach(([key, label]) => {
-          columns.push({ key: `${key}_variance`, label: `${label} Variance` });
+          columns.push({ key: `${key}_variance`, label: `${label} Difference (${month2} - ${month1})` });
         });
         const componentColumns = [
           ...allowanceColumns.map((item: any) => ({ ...item, kind: 'allowance' })),
@@ -350,7 +350,7 @@ export function ReportsPage() {
         ];
         componentColumns.forEach((item: any) => {
           const prefix = item.kind === 'allowance' ? 'allowance_values' : 'deduction_values';
-          columns.push({ key: `${prefix}_variance_${item.key}`, label: `${item.label} Variance` });
+          columns.push({ key: `${prefix}_variance_${item.key}`, label: `${item.label} Difference (${month2} - ${month1})` });
         });
         const rows = (reportData.rows || []).map((row: any) => {
           const exportRow: any = { ...row };
@@ -713,26 +713,18 @@ export function ReportsPage() {
         const tableBody = [
           [
             { text: 'Metric', style: 'tableHeader' },
-            { text: month1, style: 'tableHeader', alignment: 'right' },
-            { text: month2, style: 'tableHeader', alignment: 'right' },
-            { text: 'Variance', style: 'tableHeader', alignment: 'right' }
+            { text: `Difference (${month2} - ${month1})`, style: 'tableHeader', alignment: 'right' }
           ],
           [
             { text: 'Total Staff', style: 'tableCell' },
-            { text: (reportData.month1?.total_staff || 0).toString(), style: 'tableCell', alignment: 'right' },
-            { text: (reportData.month2?.total_staff || 0).toString(), style: 'tableCell', alignment: 'right' },
             { text: (reportData.variance?.staff_change || 0).toString(), style: 'tableCell', alignment: 'right' }
           ],
           [
             { text: 'Total Net Pay', style: 'tableCell' },
-            { text: formatPDFCurrency(reportData.month1?.total_net || 0), style: 'tableCell', alignment: 'right' },
-            { text: formatPDFCurrency(reportData.month2?.total_net || 0), style: 'tableCell', alignment: 'right' },
             { text: formatPDFCurrency(reportData.variance?.amount_change || 0), style: 'tableCell', alignment: 'right' }
           ],
           [
             { text: 'Percentage Change', style: 'tableCell' },
-            { text: '', style: 'tableCell' },
-            { text: '', style: 'tableCell' },
             { text: `${(reportData.variance?.percentage_change || 0).toFixed(2)}%`, style: 'tableCell', alignment: 'right' }
           ]
         ];
@@ -740,7 +732,7 @@ export function ReportsPage() {
         docDefinition.content.push({
           table: {
             headerRows: 1,
-            widths: ['*', 'auto', 'auto', 'auto'],
+            widths: ['*', 'auto'],
             body: tableBody
           },
           layout: tableLayout
@@ -1366,39 +1358,21 @@ export function ReportsPage() {
 
           {reportData && (
             <>
-              {/* Comparison Summary */}
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
-                <div className="bg-card rounded-lg border border-border p-6">
-                  <div className="text-sm text-muted-foreground mb-2">{reportData.month1?.month || 'Month 1'}</div>
-                  <div className="flex flex-col">
-                    <span className="text-xl font-bold text-foreground">{formatCompactCurrency(reportData.month1?.total_net).short}</span>
-                    <span className="text-xs text-muted-foreground font-mono">{formatCompactCurrency(reportData.month1?.total_net).full}</span>
-                  </div>
-                  <div className="text-sm text-muted-foreground mt-1">{reportData.month1?.total_staff || 0} staff</div>
+              {/* Difference summary */}
+              <div className="bg-card rounded-lg border border-border p-6">
+                <div className="text-sm text-muted-foreground mb-2">
+                  Net Pay Difference ({reportData.month2?.month || month2} - {reportData.month1?.month || month1})
                 </div>
-
-                <div className="bg-card rounded-lg border border-border p-6">
-                  <div className="text-sm text-muted-foreground mb-2">{reportData.month2?.month || 'Month 2'}</div>
-                  <div className="flex flex-col">
-                    <span className="text-xl font-bold text-foreground">{formatCompactCurrency(reportData.month2?.total_net).short}</span>
-                    <span className="text-xs text-muted-foreground font-mono">{formatCompactCurrency(reportData.month2?.total_net).full}</span>
-                  </div>
-                  <div className="text-sm text-muted-foreground mt-1">{reportData.month2?.total_staff || 0} staff</div>
+                <div className="flex flex-col">
+                  <span className={`text-xl font-bold ${(reportData.variance?.amount_change || 0) >= 0 ? 'text-green-700 dark:text-green-500' : 'text-red-700 dark:text-red-500'}`}>
+                    {(reportData.variance?.amount_change || 0) >= 0 ? '+' : ''}{formatCompactCurrency(reportData.variance?.amount_change).short}
+                  </span>
+                  <span className={`text-xs font-mono ${(reportData.variance?.amount_change || 0) >= 0 ? 'text-green-600/70' : 'text-red-600/70'}`}>
+                    {formatCompactCurrency(reportData.variance?.amount_change).full}
+                  </span>
                 </div>
-
-                <div className="bg-card rounded-lg border border-border p-6">
-                  <div className="text-sm text-muted-foreground mb-2">Variance</div>
-                  <div className="flex flex-col">
-                    <span className={`text-xl font-bold ${(reportData.variance?.amount_change || 0) >= 0 ? 'text-green-700 dark:text-green-500' : 'text-red-700 dark:text-red-500'}`}>
-                      {(reportData.variance?.amount_change || 0) >= 0 ? '+' : ''}{formatCompactCurrency(reportData.variance?.amount_change).short}
-                    </span>
-                    <span className={`text-xs font-mono ${(reportData.variance?.amount_change || 0) >= 0 ? 'text-green-600/70' : 'text-red-600/70'}`}>
-                       {formatCompactCurrency(reportData.variance?.amount_change).full}
-                    </span>
-                  </div>
-                  <div className="text-sm text-muted-foreground mt-1">
-                    {(reportData.variance?.percentage_change || 0) >= 0 ? '+' : ''}{(reportData.variance?.percentage_change || 0).toFixed(2)}%
-                  </div>
+                <div className="text-sm text-muted-foreground mt-1">
+                  {(reportData.variance?.percentage_change || 0) >= 0 ? '+' : ''}{(reportData.variance?.percentage_change || 0).toFixed(2)}%
                 </div>
               </div>
 
@@ -1487,10 +1461,10 @@ export function ReportsPage() {
                     { header: 'Ref. No', accessor: 'staff_number', sortable: true },
                     { header: 'Bank Group', accessor: 'bank_group', sortable: true },
                     { header: 'Variation Details', accessor: 'variation_details', sortable: true },
-                    { header: 'Gross Variance', accessor: 'gross_variance', sortable: true },
-                    { header: 'Tax Variance', accessor: 'paye_variance', sortable: true },
-                    { header: 'Deduction Variance', accessor: 'deductions_variance', sortable: true },
-                    { header: 'Net Variance', accessor: 'net_variance', sortable: true },
+                    { header: `Gross Difference (${month2} - ${month1})`, accessor: 'gross_variance', sortable: true },
+                    { header: `Tax Difference (${month2} - ${month1})`, accessor: 'paye_variance', sortable: true },
+                    { header: `Deduction Difference (${month2} - ${month1})`, accessor: 'deductions_variance', sortable: true },
+                    { header: `Net Difference (${month2} - ${month1})`, accessor: 'net_variance', sortable: true },
                   ]}
                 />
               </div>
@@ -1501,7 +1475,7 @@ export function ReportsPage() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-border text-left text-muted-foreground">
-                        <th className="p-2">Component</th><th className="p-2">Type</th><th className="p-2 text-right">Difference</th>
+                        <th className="p-2">Component</th><th className="p-2">Type</th><th className="p-2 text-right">Difference ({month2} - {month1})</th>
                       </tr>
                     </thead>
                     <tbody>

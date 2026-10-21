@@ -524,9 +524,9 @@ export class ReportsService {
       const deductionVariance = componentDelta(a, b, 'deductionsByCode');
       const details: string[] = [];
       if (!a) {
-        details.push(`New staff in ${month2}`);
+        details.push(`Newly included in ${month2} payroll`);
       } else if (!b) {
-        details.push(`Exited after ${month1}`);
+        details.push(`Not included in ${month2} payroll`);
       } else {
         const staffPromotions = promotionsByStaff.get(String(source.staff_id || '').trim()) || [];
         const gradeChanged = String(a.grade_level ?? '') !== String(b.grade_level ?? '') || String(a.step ?? '') !== String(b.step ?? '');
