@@ -312,6 +312,9 @@ export function ReportsPage() {
           fileName: `payroll_e_mandate_schedule_${bankScheduleGrouping}_${selectedMonth}_${new Date().toISOString().split('T')[0]}.xls`,
           meta: [
             { label: 'Organization', value: organizationName },
+            { label: 'Payroll Batch Number', value: reportData.batch?.batch_number || 'Not available' },
+            { label: 'Payroll Month', value: reportData.batch?.payroll_month || selectedMonth },
+            { label: 'Batch Status', value: String(reportData.batch?.status || 'Not available').replace(/_/g, ' ') },
             { label: `Total ${scheduleCollectionLabel}`, value: String(totals.total_groups || 0) },
             { label: 'Total Staff', value: String(totals.total_staff || 0) },
             { label: 'Total Amount', value: formatAmount(totals.total_amount || 0) },
@@ -645,6 +648,18 @@ export function ReportsPage() {
         docDefinition.content.push(
           { text: `Payroll E-Mandate Schedule (${scheduleGroupLabel}) - ${selectedMonth}`, style: 'subheader' },
           { text: `Generated: ${new Date().toLocaleDateString()}`, style: 'generated' }
+        );
+
+        docDefinition.content.push(
+          { text: 'Payroll Batch Traceability', style: 'subheader', alignment: 'left', margin: [0, 10, 0, 5] },
+          {
+            ul: [
+              `Batch Number: ${reportData.batch?.batch_number || 'Not available'}`,
+              `Payroll Month: ${reportData.batch?.payroll_month || selectedMonth}`,
+              `Batch Status: ${String(reportData.batch?.status || 'Not available').replace(/_/g, ' ')}`,
+            ],
+            margin: [0, 0, 0, 10],
+          },
         );
 
         const totals = reportData?.totals || {};
@@ -1262,6 +1277,15 @@ export function ReportsPage() {
 
           {reportData && reportData.groups ? (
             <>
+              <div className="bg-card rounded-lg border border-border p-6">
+                <h3 className="font-semibold text-card-foreground mb-3">Payroll Batch Traceability</h3>
+                <dl className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                  <div><dt className="inline text-muted-foreground">Batch Number: </dt><dd className="inline text-foreground">{reportData.batch?.batch_number || 'Not available'}</dd></div>
+                  <div><dt className="inline text-muted-foreground">Payroll Month: </dt><dd className="inline text-foreground">{reportData.batch?.payroll_month || selectedMonth}</dd></div>
+                  <div><dt className="inline text-muted-foreground">Batch Status: </dt><dd className="inline text-foreground capitalize">{String(reportData.batch?.status || 'Not available').replace(/_/g, ' ')}</dd></div>
+                </dl>
+              </div>
+
               <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                 <div className="bg-card rounded-lg border border-border p-6">
                   <div className="text-sm text-muted-foreground mb-1">Total {scheduleCollectionLabel}</div>
