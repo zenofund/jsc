@@ -103,10 +103,15 @@ async function main() {
     await ensureMigrationTable(client);
     await bootstrapAndBaseline(client, migrations);
 
-    const appliedResult = await client.query('SELECT id, checksum FROM schema_migrations');
+    const appliedResult = await client.query('SELECT id, checksum, is_baseline FROM schema_migrations');
     const applied = new Map(appliedResult.rows.map((row) => [row.id, row.checksum]));
+    const baseline = new Set(appliedResult.rows.filter((row) => row.is_baseline).map((row) => row.id));
     const pending = migrations.filter((migration) => !applied.has(migration.id));
-    const drift = migrations.filter((migration) => applied.get(migration.id) && applied.get(migration.id) !== checksum(migration.sql));
+    const drift = migrations.filter((migration) =>
+      !baseline.has(migration.id) &&
+      applied.get(migration.id) &&
+      applied.get(migration.id) !== checksum(migration.sql),
+    );
     if (drift.length) throw new Error(`Migration checksum drift detected: ${drift.map((item) => item.id).join(', ')}`);
 
     console.log(`Migration status: ${applied.size} applied, ${pending.length} pending.`);

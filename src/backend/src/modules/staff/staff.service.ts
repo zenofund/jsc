@@ -13,6 +13,7 @@ import { NotificationsService } from '@modules/notifications/notifications.servi
 import { NotificationType, NotificationCategory, NotificationPriority } from '@modules/notifications/dto/notification.dto';
 import { DepartmentsService } from '@modules/departments/departments.service';
 import { SettingsService } from '@modules/settings/settings.service';
+import { bankNameMatchesCode, getCanonicalBankName } from '@modules/bank/bank-catalog';
 
 @Injectable()
 export class StaffService implements OnModuleInit {
@@ -116,7 +117,12 @@ export class StaffService implements OnModuleInit {
     if (normalizedBankCode && !bankCodesMatch) {
       throw new BadRequestException('Selected bank group does not belong to the chosen bank code');
     }
-    if (normalizedBankName && !normalizedBankCode && normalizedBankName !== String(bankGroup.bank_name || '').trim().toLowerCase()) {
+    if (
+      normalizedBankName &&
+      !normalizedBankCode &&
+      normalizedBankName !== String(bankGroup.bank_name || '').trim().toLowerCase() &&
+      !bankNameMatchesCode(normalizedBankName, bankGroupCode)
+    ) {
       throw new BadRequestException('Selected bank group does not belong to the chosen bank');
     }
 
@@ -236,8 +242,16 @@ export class StaffService implements OnModuleInit {
       createStaffDto.bankName,
       createStaffDto.bankCode,
     );
-    const resolvedBankName = createStaffDto.bankName || selectedBankGroup?.bank_name || null;
     const resolvedBankCode = createStaffDto.bankCode || selectedBankGroup?.bank_code || null;
+    const resolvedBankName = resolvedBankCode
+      ? getCanonicalBankName(resolvedBankCode)
+      : null;
+    if (resolvedBankCode && !resolvedBankName) {
+      throw new BadRequestException(`Unrecognized or ambiguous bank code: ${resolvedBankCode}`);
+    }
+    if (createStaffDto.bankName && !bankNameMatchesCode(createStaffDto.bankName, resolvedBankCode)) {
+      throw new BadRequestException('Bank name does not match the selected bank code');
+    }
 
     const staff = await this.databaseService.queryOne(
       `INSERT INTO staff (
@@ -550,15 +564,31 @@ export class StaffService implements OnModuleInit {
       throw new BadRequestException('Email is required');
     }
 
-    const requestedBankGroupId = Object.prototype.hasOwnProperty.call(updateStaffDto, 'bankGroupId')
+    const bankGroupWasProvided = Object.prototype.hasOwnProperty.call(updateStaffDto, 'bankGroupId');
+    const requestedBankGroupId = bankGroupWasProvided
       ? (updateStaffDto.bankGroupId ?? null)
       : existing.bank_group_id;
-    const requestedBankName = updateStaffDto.bankName !== undefined ? updateStaffDto.bankName : existing.bank_name;
-    const requestedBankCode = updateStaffDto.bankCode !== undefined ? updateStaffDto.bankCode : existing.bank_code;
+    const changingToAnotherBankGroup =
+      bankGroupWasProvided &&
+      requestedBankGroupId !== existing.bank_group_id &&
+      requestedBankGroupId !== null;
+    const requestedBankCode =
+      updateStaffDto.bankCode !== undefined
+        ? updateStaffDto.bankCode
+        : changingToAnotherBankGroup
+          ? null
+          : existing.bank_code;
+    const requestedBankName =
+      updateStaffDto.bankName !== undefined
+        ? updateStaffDto.bankName
+        : updateStaffDto.bankCode !== undefined || changingToAnotherBankGroup
+          ? null
+          : existing.bank_name;
 
     // Build dynamic update query
     Object.entries(updateStaffDto).forEach(([key, value]) => {
       if (value !== undefined) {
+        if (key === 'bankName' || key === 'bankCode') return;
         // Convert camelCase to snake_case
         const snakeKey = key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
         updates.push(`${snakeKey} = $${paramIndex}`);
@@ -573,7 +603,9 @@ export class StaffService implements OnModuleInit {
       paramIndex++;
     }
 
-    if (updates.length === 0) {
+    const hasBankUpdate =
+      updateStaffDto.bankName !== undefined || updateStaffDto.bankCode !== undefined;
+    if (updates.length === 0 && !hasBankUpdate) {
       throw new BadRequestException('No fields to update');
     }
 
@@ -593,14 +625,27 @@ export class StaffService implements OnModuleInit {
         client,
       );
 
-      if (updateStaffDto.bankName === undefined && resolvedBankGroup?.bank_name && requestedBankGroupId) {
-        updates.push(`bank_name = $${paramIndex}`);
-        params.push(resolvedBankGroup.bank_name);
-        paramIndex++;
+      const resolvedBankCode = requestedBankCode || resolvedBankGroup?.bank_code || null;
+      const canonicalBankName = resolvedBankCode
+        ? getCanonicalBankName(resolvedBankCode)
+        : null;
+      if (resolvedBankCode && !canonicalBankName) {
+        throw new BadRequestException(`Unrecognized or ambiguous bank code: ${resolvedBankCode}`);
       }
-      if (updateStaffDto.bankCode === undefined && resolvedBankGroup?.bank_code && requestedBankGroupId) {
+      if (requestedBankName && !bankNameMatchesCode(requestedBankName, resolvedBankCode)) {
+        throw new BadRequestException('Bank name does not match the selected bank code');
+      }
+
+      if (
+        updateStaffDto.bankName !== undefined ||
+        updateStaffDto.bankCode !== undefined ||
+        (Object.prototype.hasOwnProperty.call(updateStaffDto, 'bankGroupId') && requestedBankGroupId)
+      ) {
+        updates.push(`bank_name = $${paramIndex}`);
+        params.push(canonicalBankName);
+        paramIndex++;
         updates.push(`bank_code = $${paramIndex}`);
-        params.push(resolvedBankGroup.bank_code);
+        params.push(resolvedBankCode);
         paramIndex++;
       }
 
@@ -1191,7 +1236,7 @@ export class StaffService implements OnModuleInit {
       }
 
       // 1. Pre-fetch all necessary reference data in parallel
-      const [departments, existingStaff, existingUsers] = await Promise.all([
+      const [departments, existingStaff, existingUsers, bankGroups] = await Promise.all([
         this.departmentsService.findAll(),
         this.databaseService.query<{ staff_number: string }>(
           'SELECT staff_number FROM staff'
@@ -1199,6 +1244,12 @@ export class StaffService implements OnModuleInit {
         this.databaseService.query<{ email: string }>(
           'SELECT email FROM users'
         ),
+        this.databaseService.query<{
+          id: string;
+          bank_name: string;
+          bank_code: string;
+          is_active: boolean;
+        }>('SELECT id, bank_name, bank_code, is_active FROM bank_groups'),
       ]);
 
       // Create lookup maps
@@ -1210,6 +1261,7 @@ export class StaffService implements OnModuleInit {
 
       const existingEmails = new Set(existingUsers.map(u => u.email?.toLowerCase()).filter(Boolean));
       const existingStaffNumbers = new Set(existingStaff.map(s => s.staff_number).filter(Boolean));
+      const bankGroupById = new Map(bankGroups.map((group) => [group.id, group]));
       
       // Salary lookup map from active structure
       const salaryMap = new Map<string, number>();
@@ -1335,6 +1387,29 @@ export class StaffService implements OnModuleInit {
             existingEmails.add(emailLower); // Add to set to prevent duplicates within same upload
           }
 
+          const selectedBankGroup = record.bankGroupId
+            ? bankGroupById.get(record.bankGroupId)
+            : null;
+          if (record.bankGroupId && !selectedBankGroup) {
+            throw new Error('Selected bank group was not found');
+          }
+          if (selectedBankGroup?.is_active === false) {
+            throw new Error('Selected bank group is inactive');
+          }
+          const groupBankCode = String(selectedBankGroup?.bank_code || '').trim();
+          const requestedBankCode = String(record.bankCode || '').trim();
+          if (requestedBankCode && groupBankCode && requestedBankCode !== groupBankCode) {
+            throw new Error('Selected bank group does not belong to the chosen bank code');
+          }
+          const bankCode = requestedBankCode || groupBankCode || null;
+          const bankName = bankCode ? getCanonicalBankName(bankCode) : null;
+          if (bankCode && !bankName) {
+            throw new Error(`Unrecognized or ambiguous bank code: ${bankCode}`);
+          }
+          if (record.bankName && !bankNameMatchesCode(record.bankName, bankCode)) {
+            throw new Error('Bank name does not match the selected bank code');
+          }
+
           let basicSalary: number | null = null;
           if (record.gradeLevel !== undefined && record.gradeLevel !== null && String(record.gradeLevel).trim() !== '' && record.step !== undefined && record.step !== null && !Number.isNaN(Number(record.step))) {
             const salaryKey = `${normalizeGradeLevel(record.gradeLevel)}-${Number(record.step)}`;
@@ -1378,9 +1453,9 @@ export class StaffService implements OnModuleInit {
             grade_level: record.gradeLevel,
             step: record.step,
             current_basic_salary: basicSalary,
-            bank_name: record.bankName,
-            bank_code: record.bankCode,
-            bank_group_id: record.bankGroupId || null,
+            bank_name: bankName,
+            bank_code: bankCode,
+            bank_group_id: selectedBankGroup?.id || null,
             account_number: record.accountNumber,
             account_name: record.accountName,
             bvn: record.bvn || null,

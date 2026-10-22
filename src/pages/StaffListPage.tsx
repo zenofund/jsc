@@ -20,6 +20,7 @@ import { Button } from '../components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../components/ui/dropdown-menu';
 import { formatStaffName, formatStaffFirstLastName } from '../lib/name-utils';
 import Papa from 'papaparse';
+import { NIGERIAN_BANKS } from '../constants/banks';
 
 export const normalizeGrade = (value: any) => String(value || '').trim().toUpperCase().replace(/[\s-]+/g, '');
 
@@ -83,11 +84,8 @@ export function StaffListPage() {
     const normalizedCode = String(bankCode || '').trim();
     if (!normalizedCode) return fallback;
 
-    const groupBank = bankGroups.find(
-      (group) => group.is_active && String(group.bank_code || '').trim() === normalizedCode,
-    )?.bank_name;
-    if (groupBank) return groupBank;
-
+    const catalogBank = NIGERIAN_BANKS.find((bank) => bank.code === normalizedCode);
+    if (catalogBank) return catalogBank.name;
     return supportedBanks.find((bank) => String(bank.code) === normalizedCode)?.name || fallback;
   };
   const [allowedGrades, setAllowedGrades] = useState<string[]>(['3','4','5','6','7','8','9','10','12','13','14','15','16','17']);

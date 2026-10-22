@@ -14,6 +14,7 @@ import { CreatePayrollBatchDto } from './dto/create-payroll-batch.dto';
 import { ApprovePayrollDto } from './dto/approve-payroll.dto';
 import { v4 as uuidv4 } from 'uuid';
 import { PayeCalculatorService } from '@common/tax/paye-calculator.service';
+import { getCanonicalBankName } from '../bank/bank-catalog';
 
 @Injectable()
 export class PayrollService {
@@ -666,7 +667,8 @@ export class PayrollService {
 
     // Get all payroll-eligible staff with department info
     const staff = await this.databaseService.query<any>(
-      `SELECT s.*, d.name as department_name, bg.group_name as bank_group_name
+      `SELECT s.*, d.name as department_name, bg.group_name as bank_group_name,
+              COALESCE(NULLIF(s.bank_code, ''), bg.bank_code) AS bank_code_for_payroll
        FROM staff s
        LEFT JOIN departments d ON s.department_id = d.id
        LEFT JOIN bank_groups bg ON s.bank_group_id = bg.id
@@ -676,6 +678,20 @@ export class PayrollService {
 
     if (staff.length === 0) {
       throw new BadRequestException('No payroll-eligible staff found');
+    }
+    for (const staffMember of staff) {
+       const bankCode = String(staffMember.bank_code_for_payroll || '').trim();
+       if (bankCode && !getCanonicalBankName(bankCode)) {
+         throw new BadRequestException(
+           `Cannot generate payroll: ${staffMember.staff_number} has an unrecognized or ambiguous bank code (${bankCode})`,
+         );
+       }
+       if (!bankCode && staffMember.bank_name) {
+         throw new BadRequestException(
+           `Cannot generate payroll: ${staffMember.staff_number} has a bank name but no bank code`,
+         );
+       }
+       staffMember.payroll_bank_name = bankCode ? getCanonicalBankName(bankCode) : null;
     }
 
     const moduleAvailability = await this.getModuleAvailability();
@@ -1381,7 +1397,7 @@ export class PayrollService {
         total_deductions: totalDeductionsAmount,
         net_pay: netPay,
         tax_details: JSON.stringify(taxDetails),
-        bank_name: staffMember.bank_name,
+        bank_name: staffMember.payroll_bank_name,
         bank_group_id: staffMember.bank_group_id,
         bank_group_name: staffMember.bank_group_name,
         account_number: staffMember.account_number,

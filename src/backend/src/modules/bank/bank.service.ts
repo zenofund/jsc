@@ -1,6 +1,12 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { DatabaseService } from '../../common/database/database.service';
 import {
+  BANK_SORT_CODES,
+  bankNameMatchesCode,
+  getCanonicalBankName,
+  getSupportedBanksByCode,
+} from './bank-catalog';
+import {
   CreateBankGroupDto,
   UpdateBankGroupDto,
   BulkAssignBankGroupDto,
@@ -23,70 +29,11 @@ import {
 export class BankService {
   private readonly logger = new Logger(BankService.name);
 
-  // Nigerian Bank Sort Codes (CBN Codes)
-  private readonly BANK_SORT_CODES: Record<string, string> = {
-    'access bank': '044',
-    'access bank (diamond)': '063',
-    'alby': '000', // MFB placeholder
-    'alat by wema': '035',
-    'aso savings and loans': '401',
-    'bowen microfinance bank': '50931',
-    'cemcs microfinance bank': '50823',
-    'citibank nigeria': '023',
-    'coronation merchant bank': '559',
-    'ecobank nigeria': '050',
-    'ekondo microfinance bank': '562',
-    'fbnquest merchant bank': '562',
-    'fidelity bank': '070',
-    'first bank of nigeria': '011',
-    'first city monument bank': '214',
-    'fcmb': '214',
-    'globus bank': '00103',
-    'guaranty trust bank': '058',
-    'gtbank': '058',
-    'hackman microfinance bank': '51251',
-    'hasal microfinance bank': '50383',
-    'heritage bank': '030',
-    'jaiz bank': '301',
-    'keystone bank': '082',
-    'kuda bank': '50211',
-    'links microfinance bank': '50549',
-    'lotus bank': '303',
-    'mayfair microfinance bank': '50563',
-    'mint finex mfb': '50304',
-    'moniepoint microfinance bank': '50515',
-    'opay': '100004',
-    'palmpay': '100033',
-    'parallex bank': '526',
-    'polaris bank': '076',
-    'providus bank': '101',
-    'rubies mfb': '125',
-    'sparkle microfinance bank': '51310',
-    'stanbic ibtc bank': '221',
-    'standard chartered bank': '068',
-    'sterling bank': '232',
-    'suntrust bank': '100',
-    'taj bank': '302',
-    'tangerine money': '51269',
-    'titan trust bank': '102',
-    'union bank of nigeria': '032',
-    'united bank for africa': '033',
-    'uba': '033',
-    'unity bank': '215',
-    'vfd microfinance bank': '566',
-    'wema bank': '035',
-    'zenith bank': '057',
-  };
-
   constructor(private databaseService: DatabaseService) {}
 
   private normalizeOptionalText(value: unknown): string | null {
     const text = String(value ?? '').trim();
     return text || null;
-  }
-
-  private normalizeBankName(value: unknown): string {
-    return String(value ?? '').trim().toLowerCase();
   }
 
   private normalizeBankCode(value: unknown): string {
@@ -99,13 +46,7 @@ export class BankService {
   ): boolean {
     const groupCode = this.normalizeBankCode(bankGroup.bank_code);
     const staffCode = this.normalizeBankCode(staffMember.bank_code);
-    const groupName = this.normalizeBankName(bankGroup.bank_name);
-    const staffName = this.normalizeBankName(staffMember.bank_name);
-
-    return Boolean(
-      (groupCode && staffCode && groupCode === staffCode) ||
-      (groupName && staffName && groupName === staffName),
-    );
+    return Boolean(groupCode && staffCode && groupCode === staffCode);
   }
 
   private formatExportText(value: unknown): string {
@@ -181,6 +122,13 @@ export class BankService {
     if (!groupName || !bankName) {
       throw new BadRequestException('Bank name and group name are required');
     }
+    const canonicalBankName = getCanonicalBankName(bankCode);
+    if (!canonicalBankName) {
+      throw new BadRequestException('A recognized bank code is required');
+    }
+    if (!bankNameMatchesCode(bankName, bankCode)) {
+      throw new BadRequestException('Bank name does not match the selected bank code');
+    }
 
     const existing = await this.databaseService.queryOne(
       `SELECT id
@@ -188,7 +136,7 @@ export class BankService {
        WHERE LOWER(bank_name) = LOWER($1)
          AND LOWER(group_name) = LOWER($2)
        LIMIT 1`,
-      [bankName, groupName],
+      [canonicalBankName, groupName],
     );
 
     if (existing) {
@@ -200,7 +148,7 @@ export class BankService {
         group_name, bank_name, bank_code, description, is_active, created_by
       ) VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING *`,
-      [groupName, bankName, bankCode, description, isActive, userId],
+      [groupName, canonicalBankName, bankCode, description, isActive, userId],
     );
 
     this.logger.log(`Bank group ${groupName} created for ${bankName}`);
@@ -389,14 +337,22 @@ export class BankService {
     if (dto.bankName !== undefined && !bankName) {
       throw new BadRequestException('Bank name is required');
     }
+    const effectiveBankCode = bankCode ?? this.normalizeOptionalText(existing.bank_code);
+    const canonicalBankName = getCanonicalBankName(effectiveBankCode);
+    if (!canonicalBankName) {
+      throw new BadRequestException('A recognized bank code is required');
+    }
+    if (bankName !== undefined && !bankNameMatchesCode(bankName, effectiveBankCode)) {
+      throw new BadRequestException('Bank name does not match the selected bank code');
+    }
 
     if (groupName !== undefined) {
       updates.push(`group_name = $${paramIndex++}`);
       values.push(groupName);
     }
-    if (bankName !== undefined) {
+    if (bankName !== undefined || bankCode !== undefined) {
       updates.push(`bank_name = $${paramIndex++}`);
-      values.push(bankName);
+      values.push(canonicalBankName);
     }
     if (bankCode !== undefined) {
       updates.push(`bank_code = $${paramIndex++}`);
@@ -475,13 +431,20 @@ export class BankService {
     const accountNumber = dto.accountNumber || dto.account_number;
     const bankName = dto.bankName || dto.bank_name;
     const accountName = dto.accountName || dto.account_name;
-    const bankCode = dto.bankCode || dto.bank_code;
+    const bankCode = this.normalizeOptionalText(dto.bankCode || dto.bank_code);
     const accountType = dto.accountType || dto.account_type;
     const isActive = dto.isActive !== undefined ? dto.isActive : (dto.is_active !== undefined ? dto.is_active : true);
+    const canonicalBankName = getCanonicalBankName(bankCode);
+    if (!canonicalBankName) {
+      throw new BadRequestException('A recognized bank code is required');
+    }
+    if (!bankNameMatchesCode(bankName, bankCode)) {
+      throw new BadRequestException('Bank name does not match the selected bank code');
+    }
 
     const existing = await this.databaseService.queryOne(
       'SELECT id FROM bank_accounts WHERE account_number = $1 AND bank_name = $2',
-      [accountNumber, bankName],
+      [accountNumber, canonicalBankName],
     );
 
     if (existing) {
@@ -497,8 +460,8 @@ export class BankService {
       [
         accountNumber,
         accountName,
-        bankName,
-        bankCode || null,
+        canonicalBankName,
+        bankCode,
         dto.branchName || null,
         accountType || 'salary_disbursement',
         isActive,
@@ -774,10 +737,7 @@ export class BankService {
   }
 
   async getSupportedBanks() {
-    return Object.entries(this.BANK_SORT_CODES).map(([name, code]) => ({
-      name: name.replace(/\b\w/g, l => l.toUpperCase()), // Title Case
-      code
-    })).sort((a, b) => a.name.localeCompare(b.name));
+    return getSupportedBanksByCode();
   }
 
   private getPaymentDate(batch: any) {
@@ -817,7 +777,7 @@ export class BankService {
         payment_date: paymentDate,
         beneficiary_code: String(txn.staff_number || ''),
         beneficiary_account_number: String(txn.account_number || ''),
-        bank_sort_code: bankName.includes('zenith') ? '' : String(this.BANK_SORT_CODES[bankName] || ''),
+        bank_sort_code: bankName.includes('zenith') ? '' : String(BANK_SORT_CODES[bankName] || ''),
         account_number_to_debit: debitAccountNumber,
       };
     });
@@ -867,7 +827,7 @@ export class BankService {
       content = 'SerialNumber,AccountNumber,BankCode,Amount,BeneficiaryName,Narration\n';
       let serial = 1;
       for (const txn of transactions) {
-        const bankCode = this.BANK_SORT_CODES[txn.bank_name?.toLowerCase()] || '';
+        const bankCode = BANK_SORT_CODES[txn.bank_name?.toLowerCase()] || '';
         content += `${serial++},${this.formatExportText(txn.account_number)},${this.formatExportText(bankCode)},${txn.amount},"${txn.staff_name}","Salary Payment ${batch.batch_number}"\n`;
       }
       filename = `NIBSS_${batch.batch_number.replace(/\//g, '-')}.csv`;
@@ -875,7 +835,7 @@ export class BankService {
       // Remita Format: BeneficiaryName,BeneficiaryAccount,BankCode,BeneficiaryAmount,Narration
       content = 'BeneficiaryName,BeneficiaryAccount,BankCode,BeneficiaryAmount,Narration\n';
       for (const txn of transactions) {
-        const bankCode = this.BANK_SORT_CODES[txn.bank_name?.toLowerCase()] || '';
+        const bankCode = BANK_SORT_CODES[txn.bank_name?.toLowerCase()] || '';
         content += `"${txn.staff_name}",${this.formatExportText(txn.account_number)},${this.formatExportText(bankCode)},${txn.amount},"Salary Payment ${batch.batch_number}"\n`;
       }
       filename = `REMITA_${batch.batch_number.replace(/\//g, '-')}.csv`;
@@ -883,7 +843,7 @@ export class BankService {
       content = 'Transaction Reference Number,Beneficiary Name,Payment Amount,Payment Date,Beneficiary Code,Beneficiary Account Number,Bank Sort Code,Account Number to Debit\n';
       for (const txn of transactions) {
         const bankName = String(txn.bank_name || '').toLowerCase();
-        const bankCode = bankName.includes('zenith') ? '' : (this.BANK_SORT_CODES[bankName] || '');
+        const bankCode = bankName.includes('zenith') ? '' : (BANK_SORT_CODES[bankName] || '');
         content += `"${batch.batch_number}","${txn.staff_name}",${txn.amount},${paymentDate},${txn.staff_number || ''},${this.formatExportText(txn.account_number)},${this.formatExportText(bankCode)},${this.formatExportText(debitAccountNumber)}\n`;
       }
       filename = `${batch.file_format === 'e_mandate' ? 'E_MANDATE' : 'CUSTOM'}_${batch.batch_number.replace(/\//g, '-')}.csv`;
