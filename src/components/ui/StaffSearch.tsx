@@ -1,25 +1,40 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { ReactNode, useState, useEffect, useRef } from 'react';
 import { Search, Loader2, User } from 'lucide-react';
 import { staffAPI } from '../../lib/api-client';
 import { formatStaffName } from '../../lib/name-utils';
 import { Staff } from '../../types/entities';
 
-const STAFF_SEARCH_RESULT_LIMIT = 10;
+const STAFF_SEARCH_RESULT_LIMIT = 20;
 const STAFF_SEARCH_DEBOUNCE_MS = 300;
 
 interface StaffSearchProps {
   onSelect: (staff: Staff | null) => void;
   selectedStaff?: Staff | null;
-  status?: string;
+  status?: string | string[];
+  label?: string;
+  placeholder?: string;
+  disabled?: boolean;
+  formatSelectedStaff?: (staff: Staff) => string;
+  renderStaffDetails?: (staff: Staff) => ReactNode;
 }
 
-export function StaffSearch({ onSelect, selectedStaff, status }: StaffSearchProps) {
+export function StaffSearch({
+  onSelect,
+  selectedStaff,
+  status,
+  label = 'Select Staff Member',
+  placeholder = 'Search by Name, Staff Number, or Department...',
+  disabled = false,
+  formatSelectedStaff,
+  renderStaffDetails,
+}: StaffSearchProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Staff[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const statusFilter = Array.isArray(status) ? status.join(',') : status;
 
   const normalizeStaff = (item: any): Staff => {
     if (item?.bio_data && item?.appointment && item?.salary_info) {
@@ -91,7 +106,7 @@ export function StaffSearch({ onSelect, selectedStaff, status }: StaffSearchProp
           page: 1,
           limit: STAFF_SEARCH_RESULT_LIMIT,
           search: searchTerm,
-          status,
+          status: statusFilter,
         });
         const data = Array.isArray(response) ? response : (response.data || []);
         if (!cancelled) {
@@ -116,22 +131,25 @@ export function StaffSearch({ onSelect, selectedStaff, status }: StaffSearchProp
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [query]);
+  }, [query, statusFilter]);
 
   return (
     <div className="relative" ref={wrapperRef}>
       <div className="flex items-center gap-3 mb-2">
         <User className="size-5 text-primary" />
-        <label className="font-medium text-foreground">Select Staff Member</label>
+        <label className="font-medium text-foreground">{label}</label>
       </div>
       
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
         <input
           type="text"
-          placeholder="Search by Name, Staff Number, or Department..."
+          placeholder={placeholder}
+          disabled={disabled}
           className="w-full pl-9 pr-4 py-2 border border-border rounded-md bg-background text-foreground focus:ring-2 focus:ring-primary/50 outline-none"
-          value={selectedStaff && !isOpen ? `${selectedStaff.staff_number} - ${formatStaffName(selectedStaff)}` : query}
+          value={selectedStaff && !isOpen
+            ? formatSelectedStaff?.(selectedStaff) ?? `${selectedStaff.staff_number} - ${formatStaffName(selectedStaff)}`
+            : query}
           onChange={(e) => {
             if (selectedStaff) {
               onSelect(null);
@@ -156,6 +174,7 @@ export function StaffSearch({ onSelect, selectedStaff, status }: StaffSearchProp
           {results.map((staff) => (
             <button
               key={staff.id}
+              type="button"
               className="w-full text-left px-4 py-2 hover:bg-accent/50 focus:bg-accent/50 outline-none transition-colors border-b border-border last:border-0"
               onClick={() => {
                 onSelect(staff);
@@ -168,7 +187,7 @@ export function StaffSearch({ onSelect, selectedStaff, status }: StaffSearchProp
               </div>
               <div className="text-xs text-muted-foreground flex justify-between">
                 <span>{staff.staff_number}</span>
-                <span>{staff.appointment?.department || ''}</span>
+                <span>{renderStaffDetails?.(staff) ?? staff.appointment?.department ?? ''}</span>
               </div>
             </button>
           ))}

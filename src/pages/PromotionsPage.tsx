@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { ActionMenuEllipsis } from '../components/ui/action-menu-trigger';
+import { StaffSearch } from '../components/ui/StaffSearch';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { DataTable } from '../components/DataTable';
 import { StatusBadge } from '../components/StatusBadge';
 import { Modal } from '../components/Modal';
-import { Portal } from '../components/Portal';
 import { useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
 import { useConfirm } from '../contexts/ConfirmContext';
@@ -106,10 +106,6 @@ export function PromotionsPage() {
   const [approvalComment, setApprovalComment] = useState('');
   const [selectedPromotionIds, setSelectedPromotionIds] = useState<string[]>([]);
   const [allowedGrades, setAllowedGrades] = useState<number[]>([3,4,5,6,7,8,9,10,12,13,14,15,16,17]);
-  const [staffSearch, setStaffSearch] = useState('');
-  const [showStaffDropdown, setShowStaffDropdown] = useState(false);
-  const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number; width: number } | null>(null);
-  const staffSelectRef = useRef<HTMLDivElement>(null);
   const arrearsPreviewRequestRef = useRef(0);
   const promotionCreateIdempotencyRef = useRef<{ key: string; payload: string } | null>(null);
 
@@ -228,26 +224,6 @@ export function PromotionsPage() {
     })();
   }, []);
 
-  useEffect(() => {
-    const updatePosition = () => {
-      if (showStaffDropdown && !formData.staff_id && staffSelectRef.current) {
-        const rect = staffSelectRef.current.getBoundingClientRect();
-        setDropdownPosition({
-          top: rect.bottom + window.scrollY + 4,
-          left: rect.left + window.scrollX,
-          width: rect.width,
-        });
-      }
-    };
-
-    window.addEventListener('scroll', updatePosition, true);
-    window.addEventListener('resize', updatePosition);
-    return () => {
-      window.removeEventListener('scroll', updatePosition, true);
-      window.removeEventListener('resize', updatePosition);
-    };
-  }, [showStaffDropdown, formData.staff_id]);
-
   const loadData = async () => {
     try {
       const [promotionsData, staffResponse] = await Promise.all([
@@ -296,17 +272,13 @@ export function PromotionsPage() {
     return [...data].sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   };
 
-  const handleStaffSelect = (staffId: string) => {
-    const staffKey = String(staffId);
-    const selectedStaff = staff.find((s) => String(s.id) === staffKey);
-    if (selectedStaff) {
-      setFormData((prev) => ({
-        ...prev,
-        staff_id: staffKey,
-        old_grade_level: Number(selectedStaff.salary_info.grade_level) || 0,
-        old_step: selectedStaff.salary_info.step,
-      }));
-    }
+  const handleStaffSelect = (selectedStaff: Staff | null) => {
+    setFormData((prev) => ({
+      ...prev,
+      staff_id: selectedStaff?.id || '',
+      old_grade_level: Number(selectedStaff?.salary_info?.grade_level) || 0,
+      old_step: Number(selectedStaff?.salary_info?.step) || 0,
+    }));
   };
 
   const handleEffectiveDateChange = (effectiveDate: string) => {
@@ -658,57 +630,6 @@ export function PromotionsPage() {
     const staffMember = staff.find((s) => String(s.id) === String(staffId));
     return staffMember?.staff_number || 'N/A';
   };
-
-  const getSelectedStaffLabel = (staffId: string): string => {
-    const staffMember = staff.find((s) => String(s.id) === String(staffId));
-    if (!staffMember) return '';
-    return `${formatStaffLabelWithId(staffMember)} - GL ${staffMember.salary_info.grade_level}/Step ${staffMember.salary_info.step}`;
-  };
-
-  const getStaffSearchScore = (staffMember: Staff, searchValue: string): number => {
-    const query = searchValue.trim().toLowerCase();
-    if (!query) return 0;
-
-    const staffNumber = (staffMember.staff_number || '').toLowerCase();
-    const fullName = formatStaffName(staffMember).toLowerCase();
-    const searchableLabel = formatStaffLabelWithId(staffMember).toLowerCase();
-    const nameParts = [
-      staffMember.bio_data?.first_name,
-      staffMember.bio_data?.middle_name,
-      staffMember.bio_data?.last_name,
-    ]
-      .map((part) => String(part || '').trim().toLowerCase())
-      .filter(Boolean);
-
-    if (staffNumber === query) return 1000;
-    if (fullName === query) return 950;
-    if (nameParts.some((part) => part === query)) return 900;
-    if (staffNumber.startsWith(query)) return 850;
-    if (fullName.startsWith(query)) return 800;
-    if (nameParts.some((part) => part.startsWith(query))) return 750;
-    if (searchableLabel.includes(query)) return 500;
-
-    return 0;
-  };
-
-  const filteredStaff = useMemo(() => {
-    const query = staffSearch.trim();
-    const eligibleStatuses = new Set(['active', 'secondment', 'suspended']);
-
-    return staff
-      .filter((s) => eligibleStatuses.has(String(s.status || '').toLowerCase()))
-      .map((s, index) => ({
-        staffMember: s,
-        index,
-        score: getStaffSearchScore(s, query),
-      }))
-      .filter(({ score }) => !query || score > 0)
-      .sort((a, b) => {
-        if (b.score !== a.score) return b.score - a.score;
-        return a.index - b.index;
-      })
-      .map(({ staffMember }) => staffMember);
-  }, [staff, staffSearch]);
 
   const filteredPromotions = promotions.filter(p => 
     filter === 'all' ? true : p.status === filter
@@ -1159,83 +1080,19 @@ export function PromotionsPage() {
       >
         <div className="space-y-4">
           {/* Staff Selection */}
-          <div ref={staffSelectRef} className="relative">
-            <label className="block text-sm font-medium text-foreground mb-1">
-              Select Staff Member *
-            </label>
-            <input
-              type="text"
-              value={formData.staff_id ? getSelectedStaffLabel(formData.staff_id) : staffSearch}
-              onChange={(e) => {
-                if (!formData.staff_id) {
-                  setStaffSearch(e.target.value);
-                  setShowStaffDropdown(true);
-                }
-              }}
-              onFocus={() => {
-                if (!formData.staff_id) {
-                  setShowStaffDropdown(true);
-                  if (staffSelectRef.current) {
-                    const rect = staffSelectRef.current.getBoundingClientRect();
-                    setDropdownPosition({
-                      top: rect.bottom + window.scrollY + 4,
-                      left: rect.left + window.scrollX,
-                      width: rect.width,
-                    });
-                  }
-                }
-              }}
-              onBlur={() => setTimeout(() => setShowStaffDropdown(false), 200)}
-              placeholder="Search staff by name or staff number..."
-              className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-              required
-            />
-            {formData.staff_id && (
-              <button
-                type="button"
-                onClick={() => {
-                  setFormData((prev) => ({ ...prev, staff_id: '', old_grade_level: 0, old_step: 0 }));
-                  setStaffSearch('');
-                }}
-                className="absolute right-2 top-9 text-muted-foreground hover:text-foreground"
-              >
-                ✕
-              </button>
-            )}
-          </div>
-          {showStaffDropdown && !formData.staff_id && dropdownPosition && (
-            <Portal>
-              <div
-                style={{
-                  position: 'absolute',
-                  top: dropdownPosition.top,
-                  left: dropdownPosition.left,
-                  width: dropdownPosition.width,
-                  zIndex: 9999,
-                }}
-                className="max-h-60 overflow-auto bg-card border border-border rounded-lg shadow-xl"
-              >
-                {filteredStaff.length === 0 ? (
-                  <div className="px-4 py-3 text-sm text-muted-foreground">No staff found</div>
-                ) : (
-                  filteredStaff.map((s) => (
-                    <div
-                      key={s.id}
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        handleStaffSelect(String(s.id));
-                        setStaffSearch('');
-                        setShowStaffDropdown(false);
-                      }}
-                      className="px-4 py-2 cursor-pointer hover:bg-accent text-sm"
-                    >
-                      {formatStaffLabelWithId(s)} - GL {s.salary_info.grade_level}/Step {s.salary_info.step}
-                    </div>
-                  ))
-                )}
-              </div>
-            </Portal>
-          )}
+          <StaffSearch
+            label="Select Staff Member *"
+            placeholder="Search staff by name or staff number..."
+            status={['active', 'secondment', 'suspended']}
+            selectedStaff={staff.find((member) => String(member.id) === String(formData.staff_id)) || null}
+            onSelect={handleStaffSelect}
+            formatSelectedStaff={(member) =>
+              `${formatStaffLabelWithId(member)} - GL ${member.salary_info?.grade_level ?? 'N/A'}/Step ${member.salary_info?.step ?? 'N/A'}`
+            }
+            renderStaffDetails={(member) =>
+              `GL ${member.salary_info?.grade_level ?? 'N/A'} / Step ${member.salary_info?.step ?? 'N/A'}`
+            }
+          />
 
           {formData.staff_id && (
             <>

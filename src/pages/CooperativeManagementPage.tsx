@@ -13,6 +13,7 @@ import { PageSkeleton } from '../components/PageLoader';
 import { Modal } from '../components/Modal';
 import { NumberInput } from '../components/NumberInput';
 import { StatusBadge } from '../components/StatusBadge';
+import { StaffSearch } from '../components/ui/StaffSearch';
 import { CompactAmount } from '../components/CompactAmount';
 import {
   DropdownMenu,
@@ -1832,8 +1833,6 @@ function MemberFormModal({
     registration_fee_amount: Number((member as any)?.registration_fee_amount ?? 0),
     annual_subscription_amount: Number((member as any)?.annual_subscription_amount ?? 0),
   }));
-  const [staffSearchTerm, setStaffSearchTerm] = useState('');
-
   useEffect(() => {
     if (member) {
       setFormData({
@@ -1859,21 +1858,6 @@ function MemberFormModal({
   const hasShareCapitalValue = shareCapitalValue > 0;
   const shareCount = Number(formData.shares_owned || 0);
   const shareCapitalTotal = hasShareCapitalValue ? shareCount * shareCapitalValue : 0;
-  const getStaffDisplayLabel = (staff: Staff) => {
-    return formatStaffLabelWithId(staff);
-  };
-
-  const filteredStaffList = useMemo(() => {
-    const q = staffSearchTerm.trim().toLowerCase();
-    if (!q) return staff;
-
-    return staff.filter((s) => {
-      const staffNo = (s.staff_number || '').toLowerCase();
-      const label = getStaffDisplayLabel(s).toLowerCase();
-      return staffNo.includes(q) || label.includes(q);
-    });
-  }, [staff, staffSearchTerm]);
-
   useEffect(() => {
     if (selectedCooperative && (!isEditing || isTransfer)) {
       setFormData(prev => ({
@@ -1897,10 +1881,7 @@ function MemberFormModal({
   return (
     <Modal
       isOpen={true}
-      onClose={() => {
-        setStaffSearchTerm('');
-        onClose();
-      }}
+      onClose={onClose}
       title={modalTitle}
       size="lg"
     >
@@ -1936,40 +1917,17 @@ function MemberFormModal({
           </div>
         )}
 
-        <div>
-          <label className="block text-sm mb-2">Staff Member *</label>
-          <div className="relative mb-2">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <input
-              type="text"
-              value={staffSearchTerm}
-              onChange={(e) => setStaffSearchTerm(e.target.value)}
-              placeholder="Search by name or staff ID..."
-              className="w-full pl-9 pr-3 py-2 rounded-lg border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-              disabled={isEditing}
-            />
-          </div>
-          <select
-            value={formData.staff_id}
-            onChange={(e) => setFormData({ ...formData, staff_id: e.target.value })}
-            className="w-full px-3 py-2 rounded-lg border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-            required
-            disabled={isEditing}
-          >
-            <option value="">Select Staff</option>
-            {filteredStaffList.length === 0 ? (
-              <option value="" disabled>
-                No staff match "{staffSearchTerm.trim()}"
-              </option>
-            ) : (
-              filteredStaffList.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {getStaffDisplayLabel(s)}
-                </option>
-              ))
-            )}
-          </select>
-        </div>
+        <StaffSearch
+          label="Staff Member *"
+          placeholder="Search by name or staff ID..."
+          status="active"
+          disabled={isEditing}
+          selectedStaff={staff.find((staffMember) => String(staffMember.id) === String(formData.staff_id)) || null}
+          onSelect={(selectedStaff) =>
+            setFormData((previous) => ({ ...previous, staff_id: selectedStaff?.id || '' }))
+          }
+          formatSelectedStaff={formatStaffLabelWithId}
+        />
 
         <div>
           <label className="block text-sm mb-2">Monthly Contribution (₦) *</label>

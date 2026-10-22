@@ -422,27 +422,33 @@ export class StaffService implements OnModuleInit {
     const whereConditions = [];
     const params = [];
     let paramIndex = 1;
+    let exactSearchParamIndex: number | null = null;
 
     if (search) {
-      whereConditions.push(
-        `(s.first_name ILIKE $${paramIndex}
-          OR s.last_name ILIKE $${paramIndex}
-          OR s.staff_number ILIKE $${paramIndex}
-          OR s.email ILIKE $${paramIndex}
-          OR EXISTS (
-            SELECT 1
-            FROM departments search_department
-            WHERE search_department.id = s.department_id
-              AND search_department.name ILIKE $${paramIndex}
-          ))`,
-      );
-      params.push(`%${search}%`);
-      paramIndex++;
+      const searchTokens = search.trim().split(/\s+/).filter(Boolean);
+      for (const token of searchTokens) {
+        whereConditions.push(
+          `(s.first_name ILIKE $${paramIndex}
+            OR s.middle_name ILIKE $${paramIndex}
+            OR s.last_name ILIKE $${paramIndex}
+            OR s.staff_number ILIKE $${paramIndex}
+            OR s.email ILIKE $${paramIndex}
+            OR EXISTS (
+              SELECT 1
+              FROM departments search_department
+              WHERE search_department.id = s.department_id
+                AND search_department.name ILIKE $${paramIndex}
+            ))`,
+        );
+        params.push(`%${token}%`);
+        paramIndex++;
+      }
     }
 
     if (status) {
-      whereConditions.push(`s.status = $${paramIndex}`);
-      params.push(status);
+      const statuses = String(status).split(',').map((value) => value.trim()).filter(Boolean);
+      whereConditions.push(`s.status = ANY($${paramIndex}::text[])`);
+      params.push(statuses);
       paramIndex++;
     }
 
@@ -459,6 +465,12 @@ export class StaffService implements OnModuleInit {
     }
 
     const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+    const dataParams = [...params];
+    if (search) {
+      exactSearchParamIndex = paramIndex;
+      dataParams.push(search.trim());
+      paramIndex++;
+    }
 
     // Get total count
     const countQuery = `
@@ -477,10 +489,18 @@ export class StaffService implements OnModuleInit {
       LEFT JOIN departments d ON s.department_id = d.id
       LEFT JOIN bank_groups bg ON s.bank_group_id = bg.id
       ${whereClause}
-      ORDER BY s.created_at DESC
+      ORDER BY
+        ${exactSearchParamIndex
+          ? `CASE
+               WHEN LOWER(s.staff_number) = LOWER($${exactSearchParamIndex}) THEN 0
+               WHEN s.staff_number ILIKE $${exactSearchParamIndex} || '%' THEN 1
+               ELSE 2
+             END,`
+          : ''}
+        s.created_at DESC
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
     `;
-    const data = await this.databaseService.query(dataQuery, [...params, limit, offset]);
+    const data = await this.databaseService.query(dataQuery, [...dataParams, limit, offset]);
 
     return {
       data,

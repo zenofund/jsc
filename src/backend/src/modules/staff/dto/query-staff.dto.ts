@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsNumber, IsEnum, IsUUID, Min } from 'class-validator';
+import { IsOptional, IsString, IsNumber, IsEnum, IsUUID, Min, Matches } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -22,8 +22,11 @@ export class QueryStaffDto {
   @IsOptional()
   search?: string;
 
-  @ApiPropertyOptional({ enum: ['active', 'on_leave', 'suspended', 'retired', 'terminated', 'resigned', 'secondment', 'interdiction'] })
-  @IsEnum(['active', 'on_leave', 'suspended', 'retired', 'terminated', 'resigned', 'secondment', 'interdiction'])
+  @ApiPropertyOptional({
+    description: 'Filter by one or more comma-separated staff statuses',
+    example: 'active,secondment',
+  })
+  @Matches(/^(active|on_leave|suspended|retired|terminated|resigned|secondment|interdiction)(,(active|on_leave|suspended|retired|terminated|resigned|secondment|interdiction))*$/)
   @IsOptional()
   status?: string;
 

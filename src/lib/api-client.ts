@@ -354,7 +354,7 @@ export const staffAPI = {
     limit?: number;
     fetchAll?: boolean;
     search?: string;
-    status?: string;
+    status?: string | string[];
   }) {
     const page = options?.page ?? 1;
     const limit = options?.limit ?? 100;
@@ -365,7 +365,9 @@ export const staffAPI = {
         limit: String(limit),
       });
       if (options?.search) params.set('search', options.search);
-      if (options?.status) params.set('status', options.status);
+      if (options?.status) {
+        params.set('status', Array.isArray(options.status) ? options.status.join(',') : options.status);
+      }
       return `/staff?${params.toString()}`;
     };
 

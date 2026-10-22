@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ActionMenuEllipsis } from '../components/ui/action-menu-trigger';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../components/Toast';
@@ -23,6 +23,8 @@ import Papa from 'papaparse';
 import { NIGERIAN_BANKS } from '../constants/banks';
 
 export const normalizeGrade = (value: any) => String(value || '').trim().toUpperCase().replace(/[\s-]+/g, '');
+const normalizeStaffStatus = (value: unknown) =>
+  String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
 
 export const sortStaffByHierarchy = (rows: Staff[]) => {
   const categoryPriority = (grade: string) => {
@@ -270,9 +272,12 @@ export function StaffListPage() {
 
   const isDateField = (name: string) => dateFields.includes(name);
 
-  const filteredStaff = statusFilter === 'all'
-    ? staff
-    : staff.filter((staffMember) => String(staffMember.status || '').toLowerCase() === statusFilter);
+  const filteredStaff = useMemo(
+    () => statusFilter === 'all'
+      ? staff
+      : staff.filter((staffMember) => normalizeStaffStatus(staffMember.status) === statusFilter),
+    [staff, statusFilter],
+  );
 
   const validateField = (name: string, value: any) => {
     let error = '';
@@ -1300,6 +1305,7 @@ export function StaffListPage() {
           data={filteredStaff}
           columns={columns}
           itemsPerPage={100}
+          paginationResetKey={statusFilter}
           searchable
           searchPlaceholder="Search by name, staff number, or department..."
           searchControls={

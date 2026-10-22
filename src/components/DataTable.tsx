@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { CompactAmount } from './CompactAmount';
 
@@ -17,6 +17,7 @@ interface DataTableProps<T> {
   onEdit?: (row: T) => void;
   searchControls?: React.ReactNode;
   itemsPerPage?: number;
+  paginationResetKey?: string | number;
   serverSidePagination?: {
     currentPage: number;
     totalPages: number;
@@ -52,6 +53,7 @@ export function DataTable<T extends Record<string, any>>({
   onEdit,
   searchControls,
   itemsPerPage = 100,
+  paginationResetKey,
   serverSidePagination,
 }: DataTableProps<T>) {
   const [internalCurrentPage, setInternalCurrentPage] = useState(1);
@@ -60,6 +62,12 @@ export function DataTable<T extends Record<string, any>>({
 
   const currentPage = serverSidePagination ? serverSidePagination.currentPage : internalCurrentPage;
   const setCurrentPage = serverSidePagination ? serverSidePagination.onPageChange : setInternalCurrentPage;
+
+  useEffect(() => {
+    if (!serverSidePagination) {
+      setInternalCurrentPage(1);
+    }
+  }, [paginationResetKey, serverSidePagination]);
 
   const getSearchScore = (obj: any, query: string): number => {
   if (obj === null || obj === undefined) return 0;

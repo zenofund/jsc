@@ -18,6 +18,7 @@ import { formatCompactCurrency, formatCurrency } from '../utils/format';
 import { CompactAmount } from '../components/CompactAmount';
 import { exportSpreadsheet } from '../utils/exportSpreadsheet';
 import { Modal } from '../components/Modal';
+import { StaffSearch } from '../components/ui/StaffSearch';
 import { NumberInput } from '../components/NumberInput';
 import { formatStaffName } from '../lib/name-utils';
 import { clearRequestIdempotencyKey, getRequestIdempotencyKey } from '../lib/request-idempotency';
@@ -319,7 +320,6 @@ function ApplicationsTab({
   const [assignLoanData, setAssignLoanData] = useState<AssignLoanForm>(createEmptyAssignLoanData);
   const [assigningLoan, setAssigningLoan] = useState(false);
   const [loanTypesList, setLoanTypesList] = useState<LoanType[]>([]);
-  const [staffSearchTerm, setStaffSearchTerm] = useState('');
 
   useEffect(() => {
     if (selectedApp) {
@@ -352,22 +352,6 @@ function ApplicationsTab({
     );
     return staffMember ? formatStaffName(staffMember) : fallbackName;
   };
-
-  const getStaffDisplayLabel = (staff: Staff) => {
-    return `${formatStaffName(staff)} (${staff.staff_number || 'N/A'})`;
-  };
-
-  const filteredStaffList = useMemo(() => {
-    const q = staffSearchTerm.trim().toLowerCase();
-    if (!q) return staffDirectory;
-
-    return staffDirectory.filter((staff) => {
-      const staffNo = (staff.staff_number || '').toLowerCase();
-      const fullName = formatStaffName(staff).toLowerCase();
-      const label = getStaffDisplayLabel(staff).toLowerCase();
-      return staffNo.includes(q) || fullName.includes(q) || label.includes(q);
-    });
-  }, [staffDirectory, staffSearchTerm]);
 
   const canEditDisbursedApplications = user?.role === 'coop_manager';
   const getApplicationLoanType = (application: LoanApplication) =>
@@ -520,7 +504,6 @@ function ApplicationsTab({
         clearRequestIdempotencyKey(createRequestKey.storageKey, createRequestKey.key);
         
         setShowAssignModal(false);
-        setStaffSearchTerm('');
         setAssignLoanData(createEmptyAssignLoanData());
         onRefresh();
         
@@ -1056,45 +1039,19 @@ function ApplicationsTab({
           isOpen={showAssignModal}
           onClose={() => {
             setShowAssignModal(false);
-            setStaffSearchTerm('');
             setAssignLoanData(createEmptyAssignLoanData());
           }}
           title="Assign Loan to Staff"
           size="md"
         >
           <form onSubmit={handleAssignLoan} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1">Select Staff *</label>
-              <div className="relative mb-2">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <input
-                  type="text"
-                  value={staffSearchTerm}
-                  onChange={(e) => setStaffSearchTerm(e.target.value)}
-                  placeholder="Search by name or staff ID..."
-                  className="w-full pl-9 pr-3 py-2 rounded-lg border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                />
-              </div>
-              <select
-                value={assignLoanData.staffId}
-                onChange={(e) => setAssignLoanData({ ...assignLoanData, staffId: e.target.value })}
-                className="w-full px-3 py-2 rounded-lg border border-border bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                required
-              >
-                <option value="">-- Select Staff --</option>
-                {filteredStaffList.length === 0 ? (
-                  <option value="" disabled>
-                    No staff match "{staffSearchTerm.trim()}"
-                  </option>
-                ) : (
-                  filteredStaffList.map((staff) => (
-                    <option key={staff.id} value={staff.id}>
-                      {getStaffDisplayLabel(staff)}
-                    </option>
-                  ))
-                )}
-              </select>
-            </div>
+            <StaffSearch
+              label="Select Staff *"
+              placeholder="Search by name or staff ID..."
+              selectedStaff={staffDirectory.find((staff) => String(staff.id) === String(assignLoanData.staffId)) || null}
+              onSelect={(staff) => setAssignLoanData((previous) => ({ ...previous, staffId: staff?.id || '' }))}
+              formatSelectedStaff={(staff) => `${formatStaffName(staff)} (${staff.staff_number || 'N/A'})`}
+            />
 
           <div>
             <label className="block text-sm font-medium text-foreground mb-1">Loan Type *</label>
@@ -1218,7 +1175,7 @@ function ApplicationsTab({
               type="button"
                 onClick={() => {
                   setShowAssignModal(false);
-                  setStaffSearchTerm('');
+                  setAssignLoanData(createEmptyAssignLoanData());
                 }}
               className="px-4 py-2 rounded-lg text-foreground hover:bg-accent transition-colors"
               disabled={assigningLoan}
