@@ -41,6 +41,8 @@ export function ReportsPage() {
   const scheduleGroupLabel = bankScheduleGrouping === 'bank_group' ? 'Bank Group' : 'Bank';
   const scheduleCollectionLabel = bankScheduleGrouping === 'bank_group' ? 'Groups' : 'Banks';
   const selectedScheduleLabel = selectedBank?.group_label || selectedBank?.bank_name || scheduleGroupLabel;
+  const scheduleComponentColumns: Array<{ key: string; label: string }> =
+    reportData?.component_columns || [];
 
   const isCashier = user?.role === 'cashier';
 
@@ -320,6 +322,10 @@ export function ReportsPage() {
             staff_name: line.staff_name,
             grade_level: formatScheduleGradeAndStep(line.grade_level, line.step),
             account_number: String(line.account_number ?? '').trim(),
+            ...Object.fromEntries(scheduleComponentColumns.map(({ key }) => [
+              key,
+              formatAmount(line[key] || 0),
+            ])),
             gross_pay: formatAmount(line.gross_pay || 0),
             total_deductions: formatAmount(line.total_deductions || 0),
             net_pay: formatAmount(line.net_pay || 0),
@@ -349,6 +355,7 @@ export function ReportsPage() {
             { key: 'staff_name', label: 'Staff Name' },
             { key: 'grade_level', label: 'Grade Level' },
             { key: 'account_number', label: 'Account Number' },
+            ...scheduleComponentColumns.map(({ key, label }) => ({ key, label })),
             { key: 'gross_pay', label: 'Gross Pay' },
             { key: 'total_deductions', label: 'Deductions' },
             { key: 'net_pay', label: 'Net Pay' },
@@ -481,6 +488,10 @@ export function ReportsPage() {
         staff_name: line.staff_name,
         grade_level: formatScheduleGradeAndStep(line.grade_level, line.step),
         account_number: String(line.account_number ?? '').trim(),
+        ...Object.fromEntries(scheduleComponentColumns.map(({ key }) => [
+          key,
+          formatAmount(line[key] || 0),
+        ])),
         gross_pay: formatAmount(line.gross_pay || 0),
         total_deductions: formatAmount(line.total_deductions || 0),
         net_pay: formatAmount(line.net_pay || 0),
@@ -505,6 +516,7 @@ export function ReportsPage() {
           { key: 'staff_name', label: 'Staff Name' },
           { key: 'grade_level', label: 'Grade Level' },
           { key: 'account_number', label: 'Account Number' },
+          ...scheduleComponentColumns.map(({ key, label }) => ({ key, label })),
           { key: 'gross_pay', label: 'Gross Pay' },
           { key: 'total_deductions', label: 'Deductions' },
           { key: 'net_pay', label: 'Net Pay' },
@@ -727,6 +739,11 @@ export function ReportsPage() {
               { text: 'Name', style: 'tableHeader' },
               { text: 'Grade Level', style: 'tableHeader' },
               { text: 'Account Number', style: 'tableHeader' },
+              ...scheduleComponentColumns.map(({ label }) => ({
+                text: label,
+                style: 'tableHeader',
+                alignment: 'right',
+              })),
               { text: 'Gross Pay', style: 'tableHeader', alignment: 'right' },
               { text: 'Deductions', style: 'tableHeader', alignment: 'right' },
               { text: 'Net Pay', style: 'tableHeader', alignment: 'right' },
@@ -740,6 +757,11 @@ export function ReportsPage() {
               { text: line.staff_name || 'N/A', style: 'tableCell' },
               { text: formatScheduleGradeAndStep(line.grade_level, line.step), style: 'tableCell' },
               { text: line.account_number || 'N/A', style: 'tableCell' },
+              ...scheduleComponentColumns.map(({ key }) => ({
+                text: formatPDFCurrency(line[key] || 0),
+                style: 'tableCell',
+                alignment: 'right',
+              })),
               { text: formatPDFCurrency(line.gross_pay || 0), style: 'tableCell', alignment: 'right' },
               { text: formatPDFCurrency(line.total_deductions || 0), style: 'tableCell', alignment: 'right' },
               { text: formatPDFCurrency(line.net_pay || 0), style: 'tableCell', alignment: 'right' },
@@ -749,7 +771,12 @@ export function ReportsPage() {
           docDefinition.content.push({
             table: {
               headerRows: 1,
-              widths: bankScheduleGrouping === 'bank_group' ? ['auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto'] : ['auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto'],
+              widths: [
+                ...(bankScheduleGrouping === 'bank_group' ? ['auto'] : []),
+                'auto', '*', 'auto', 'auto',
+                ...scheduleComponentColumns.map(() => 'auto'),
+                'auto', 'auto', 'auto',
+              ],
               body: tableBody,
             },
             layout: tableLayout,
@@ -977,6 +1004,11 @@ export function ReportsPage() {
           { text: 'Name', style: 'tableHeader' },
           { text: 'Grade Level', style: 'tableHeader' },
           { text: 'Account Number', style: 'tableHeader' },
+          ...scheduleComponentColumns.map(({ label }) => ({
+            text: label,
+            style: 'tableHeader',
+            alignment: 'right',
+          })),
           { text: 'Gross Pay', style: 'tableHeader', alignment: 'right' },
           { text: 'Deductions', style: 'tableHeader', alignment: 'right' },
           { text: 'Net Pay', style: 'tableHeader', alignment: 'right' },
@@ -990,6 +1022,11 @@ export function ReportsPage() {
           { text: line.staff_name || 'N/A', style: 'tableCell' },
           { text: formatScheduleGradeAndStep(line.grade_level, line.step), style: 'tableCell' },
           { text: line.account_number || 'N/A', style: 'tableCell' },
+          ...scheduleComponentColumns.map(({ key }) => ({
+            text: formatPDFCurrency(line[key] || 0),
+            style: 'tableCell',
+            alignment: 'right',
+          })),
           { text: formatPDFCurrency(line.gross_pay || 0), style: 'tableCell', alignment: 'right' },
           { text: formatPDFCurrency(line.total_deductions || 0), style: 'tableCell', alignment: 'right' },
           { text: formatPDFCurrency(line.net_pay || 0), style: 'tableCell', alignment: 'right' },
@@ -999,7 +1036,12 @@ export function ReportsPage() {
       docDefinition.content.push({
         table: {
           headerRows: 1,
-          widths: bankScheduleGrouping === 'bank_group' ? ['auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto'] : ['auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto'],
+          widths: [
+            ...(bankScheduleGrouping === 'bank_group' ? ['auto'] : []),
+            'auto', '*', 'auto', 'auto',
+            ...scheduleComponentColumns.map(() => 'auto'),
+            'auto', 'auto', 'auto',
+          ],
           body: tableBody,
         },
         layout: tableLayout,
@@ -1647,6 +1689,11 @@ export function ReportsPage() {
               { header: 'Staff Name', accessor: 'staff_name' as keyof any, sortable: true },
               { header: 'Grade Level', accessor: (row: any) => formatScheduleGradeAndStep(row.grade_level, row.step), sortable: true },
               { header: 'Account Number', accessor: 'account_number' as keyof any, sortable: true },
+              ...scheduleComponentColumns.map(({ key, label }) => ({
+                header: label,
+                accessor: (row: any) => formatCurrency(row[key] || 0),
+                sortable: true,
+              })),
               { header: 'Gross Pay', accessor: (row: any) => formatCurrency(row.gross_pay || 0), sortable: true },
               { header: 'Deductions', accessor: (row: any) => formatCurrency(row.total_deductions || 0), sortable: true },
               { header: 'Net Pay', accessor: (row: any) => formatCurrency(row.net_pay || 0), sortable: true },

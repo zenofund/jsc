@@ -19,6 +19,10 @@ import {
 } from './dto/report.dto';
 import { REPORT_DATA_SOURCES } from './report-data-sources.config';
 import { comparePayrollGradeAndStep } from './payroll-grade-sort';
+import {
+  getActivePayrollBankScheduleComponentColumns,
+  getPayrollBankScheduleComponents,
+} from './payroll-bank-schedule-components';
 
 type RelationshipEdge = NonNullable<DataSource['relationshipGraph']>[number];
 type JoinPlanStep = {
@@ -293,6 +297,9 @@ export class ReportsService {
         pl.grade_level,
         pl.step,
         pl.account_number,
+        pl.basic_salary,
+        pl.allowances,
+        pl.deductions,
         pl.gross_pay,
         pl.total_deductions,
         pl.net_pay,
@@ -321,6 +328,7 @@ export class ReportsService {
         staff_number: l.staff_number,
         staff_name: l.staff_name,
         account_number: accountNumber,
+        ...getPayrollBankScheduleComponents(l),
         gross_pay: toAmount(l.gross_pay),
         total_deductions: toAmount(l.total_deductions),
         net_pay: toAmount(l.net_pay),
@@ -387,6 +395,7 @@ export class ReportsService {
         payroll_month: batch.payroll_month,
         status: batch.status,
       },
+      component_columns: getActivePayrollBankScheduleComponentColumns(rawLines),
       totals,
       groups,
     };
