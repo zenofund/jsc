@@ -18,6 +18,7 @@ import {
   ExportFormat,
 } from './dto/report.dto';
 import { REPORT_DATA_SOURCES } from './report-data-sources.config';
+import { comparePayrollGradeAndStep } from './payroll-grade-sort';
 
 type RelationshipEdge = NonNullable<DataSource['relationshipGraph']>[number];
 type JoinPlanStep = {
@@ -289,6 +290,8 @@ export class ReportsService {
         pl.bank_name,
         pl.bank_group_id,
         pl.bank_group_name,
+        pl.grade_level,
+        pl.step,
         pl.account_number,
         pl.gross_pay,
         pl.total_deductions,
@@ -313,6 +316,8 @@ export class ReportsService {
         bank_name: bankName,
         bank_group_id: l.bank_group_id || null,
         bank_group_name: bankGroupName,
+        grade_level: l.grade_level,
+        step: l.step,
         staff_number: l.staff_number,
         staff_name: l.staff_name,
         account_number: accountNumber,
@@ -351,6 +356,10 @@ export class ReportsService {
       entry.total_net += line.net_pay;
       entry.lines.push(line);
     }
+
+    groupMap.forEach((group) => {
+      group.lines.sort(comparePayrollGradeAndStep);
+    });
 
     const groups = Array.from(groupMap.values()).sort((a, b) =>
       String(a.group_label).localeCompare(String(b.group_label), undefined, { sensitivity: 'base' }),

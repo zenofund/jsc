@@ -4,6 +4,9 @@ import App from './App';
 import './styles/globals.css';
 import { AuthProvider } from './contexts/AuthContext';
 import { registerAppServiceWorker } from './lib/pwa-service-worker';
+import { initializePwaInstallManager } from './lib/pwa-install';
+
+initializePwaInstallManager();
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

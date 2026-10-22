@@ -15,6 +15,70 @@ export interface GetPwaInstallPromptStateInput {
   hasDeferredPrompt: boolean;
 }
 
+export type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
+};
+
+export interface PwaInstallManagerState {
+  deferredPrompt: BeforeInstallPromptEvent | null;
+  isInstalled: boolean;
+}
+
+let managerState: PwaInstallManagerState = {
+  deferredPrompt: null,
+  isInstalled: false,
+};
+let managerInitialized = false;
+const managerListeners = new Set<(state: PwaInstallManagerState) => void>();
+
+function notifyPwaInstallManager() {
+  managerListeners.forEach((listener) => listener(managerState));
+}
+
+export function initializePwaInstallManager() {
+  if (managerInitialized || typeof window === 'undefined') return;
+  managerInitialized = true;
+
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
+    (navigator as Navigator & { standalone?: boolean }).standalone === true;
+  managerState = {
+    deferredPrompt: null,
+    isInstalled: isStandalone,
+  };
+
+  window.addEventListener('beforeinstallprompt', (event: Event) => {
+    event.preventDefault();
+    managerState = { ...managerState, deferredPrompt: event as BeforeInstallPromptEvent };
+    notifyPwaInstallManager();
+  });
+
+  window.addEventListener('appinstalled', () => {
+    managerState = { deferredPrompt: null, isInstalled: true };
+    notifyPwaInstallManager();
+  });
+}
+
+export function getPwaInstallManagerState() {
+  return managerState;
+}
+
+export function subscribeToPwaInstallManager(listener: (state: PwaInstallManagerState) => void) {
+  managerListeners.add(listener);
+  return () => managerListeners.delete(listener);
+}
+
+export function clearPwaInstallPrompt() {
+  if (!managerState.deferredPrompt) return;
+  managerState = { ...managerState, deferredPrompt: null };
+  notifyPwaInstallManager();
+}
+
+export function markPwaInstalled() {
+  managerState = { deferredPrompt: null, isInstalled: true };
+  notifyPwaInstallManager();
+}
+
 export function getPwaInstallPromptState({
   userAgent,
   isStandalone,
@@ -25,7 +89,7 @@ export function getPwaInstallPromptState({
   const isMobile = /android|iphone|ipad|ipod|mobile/i.test(normalizedUserAgent);
   const isIOS = /iphone|ipad|ipod/i.test(normalizedUserAgent);
   const isAndroid = /android/i.test(normalizedUserAgent);
-  const shouldPrompt = !isInstalled && !isStandalone && (hasDeferredPrompt || isMobile);
+  const shouldPrompt = !isInstalled && !isStandalone && (hasDeferredPrompt || isIOS);
 
   if (!shouldPrompt) {
     return {
@@ -46,7 +110,9 @@ export function getPwaInstallPromptState({
       isIOS: true,
       isAndroid: false,
       title: 'Install JSC PMS on your iPhone',
-      message: 'Open the Share menu and choose Add to Home Screen to install this app on your home screen.',
+      message: hasDeferredPrompt
+        ? 'Tap Install to open your browser’s installation prompt.'
+        : 'To install, tap Share in Safari and choose Add to Home Screen.',
       actionLabel: hasDeferredPrompt ? 'Install' : 'Got it',
     };
   }
@@ -58,8 +124,8 @@ export function getPwaInstallPromptState({
       isIOS: false,
       isAndroid: true,
       title: 'Install JSC PMS on your phone',
-      message: 'Use the browser menu to install this app and keep quick access to payroll tools.',
-      actionLabel: hasDeferredPrompt ? 'Install' : 'Got it',
+      message: 'Tap Install to open your browser’s installation prompt.',
+      actionLabel: 'Install',
     };
   }
 

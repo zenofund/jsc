@@ -49,6 +49,17 @@ export function ReportsPage() {
     return Number.isFinite(num) ? num : 0;
   };
 
+  const formatScheduleGradeLevel = (value: unknown) => {
+    const grade = String(value ?? '').trim();
+    if (!grade) return '';
+
+    const category = grade.match(/^(?:GL\s*)?CAT\s*(\d+)$/i);
+    if (category) return `CAT${category[1]}`;
+
+    const numeric = grade.match(/^(?:GL\s*)?(\d+)$/i);
+    return numeric ? `GL ${numeric[1]}` : grade;
+  };
+
   const sortStaffByGradeDesc = (staffRows: any[]) => {
     return [...(staffRows || [])].sort((a: any, b: any) => {
       const glA = toNumber(a?.salary_info?.grade_level);
@@ -302,6 +313,8 @@ export function ReportsPage() {
             bank_name: group.bank_name,
             staff_number: line.staff_number,
             staff_name: line.staff_name,
+            grade_level: formatScheduleGradeLevel(line.grade_level),
+            step: line.step ?? '',
             account_number: String(line.account_number ?? '').trim(),
             gross_pay: formatAmount(line.gross_pay || 0),
             total_deductions: formatAmount(line.total_deductions || 0),
@@ -330,6 +343,8 @@ export function ReportsPage() {
             ...(bankScheduleGrouping === 'bank_group' ? [{ key: 'bank_name', label: 'Bank' }] : []),
             { key: 'staff_number', label: 'Staff Number' },
             { key: 'staff_name', label: 'Staff Name' },
+            { key: 'grade_level', label: 'Grade Level' },
+            { key: 'step', label: 'Step' },
             { key: 'account_number', label: 'Account Number' },
             { key: 'gross_pay', label: 'Gross Pay' },
             { key: 'total_deductions', label: 'Deductions' },
@@ -461,6 +476,8 @@ export function ReportsPage() {
         bank_name: line.bank_name,
         staff_number: line.staff_number,
         staff_name: line.staff_name,
+        grade_level: formatScheduleGradeLevel(line.grade_level),
+        step: line.step ?? '',
         account_number: String(line.account_number ?? '').trim(),
         gross_pay: formatAmount(line.gross_pay || 0),
         total_deductions: formatAmount(line.total_deductions || 0),
@@ -484,6 +501,8 @@ export function ReportsPage() {
           ...(bankScheduleGrouping === 'bank_group' ? [{ key: 'bank_name', label: 'Bank' }] : []),
           { key: 'staff_number', label: 'Staff Number' },
           { key: 'staff_name', label: 'Staff Name' },
+          { key: 'grade_level', label: 'Grade Level' },
+          { key: 'step', label: 'Step' },
           { key: 'account_number', label: 'Account Number' },
           { key: 'gross_pay', label: 'Gross Pay' },
           { key: 'total_deductions', label: 'Deductions' },
@@ -705,6 +724,8 @@ export function ReportsPage() {
               ...(bankScheduleGrouping === 'bank_group' ? [{ text: 'Bank', style: 'tableHeader' }] : []),
               { text: 'Staff #', style: 'tableHeader' },
               { text: 'Name', style: 'tableHeader' },
+              { text: 'Grade Level', style: 'tableHeader' },
+              { text: 'Step', style: 'tableHeader' },
               { text: 'Account Number', style: 'tableHeader' },
               { text: 'Gross Pay', style: 'tableHeader', alignment: 'right' },
               { text: 'Deductions', style: 'tableHeader', alignment: 'right' },
@@ -717,6 +738,8 @@ export function ReportsPage() {
               ...(bankScheduleGrouping === 'bank_group' ? [{ text: line.bank_name || group.bank_name || 'N/A', style: 'tableCell' }] : []),
               { text: line.staff_number || 'N/A', style: 'tableCell' },
               { text: line.staff_name || 'N/A', style: 'tableCell' },
+              { text: formatScheduleGradeLevel(line.grade_level) || 'N/A', style: 'tableCell' },
+              { text: line.step == null ? 'N/A' : String(line.step), style: 'tableCell' },
               { text: line.account_number || 'N/A', style: 'tableCell' },
               { text: formatPDFCurrency(line.gross_pay || 0), style: 'tableCell', alignment: 'right' },
               { text: formatPDFCurrency(line.total_deductions || 0), style: 'tableCell', alignment: 'right' },
@@ -727,7 +750,7 @@ export function ReportsPage() {
           docDefinition.content.push({
             table: {
               headerRows: 1,
-              widths: bankScheduleGrouping === 'bank_group' ? ['auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto'] : ['auto', '*', 'auto', 'auto', 'auto', 'auto'],
+              widths: bankScheduleGrouping === 'bank_group' ? ['auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'] : ['auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
               body: tableBody,
             },
             layout: tableLayout,
@@ -953,6 +976,8 @@ export function ReportsPage() {
           ...(bankScheduleGrouping === 'bank_group' ? [{ text: 'Bank', style: 'tableHeader' }] : []),
           { text: 'Staff #', style: 'tableHeader' },
           { text: 'Name', style: 'tableHeader' },
+          { text: 'Grade Level', style: 'tableHeader' },
+          { text: 'Step', style: 'tableHeader' },
           { text: 'Account Number', style: 'tableHeader' },
           { text: 'Gross Pay', style: 'tableHeader', alignment: 'right' },
           { text: 'Deductions', style: 'tableHeader', alignment: 'right' },
@@ -965,6 +990,8 @@ export function ReportsPage() {
           ...(bankScheduleGrouping === 'bank_group' ? [{ text: line.bank_name || selectedBank.bank_name || 'N/A', style: 'tableCell' }] : []),
           { text: line.staff_number || 'N/A', style: 'tableCell' },
           { text: line.staff_name || 'N/A', style: 'tableCell' },
+          { text: line.grade_level == null ? 'N/A' : `GL ${line.grade_level}`, style: 'tableCell' },
+          { text: line.step == null ? 'N/A' : String(line.step), style: 'tableCell' },
           { text: line.account_number || 'N/A', style: 'tableCell' },
           { text: formatPDFCurrency(line.gross_pay || 0), style: 'tableCell', alignment: 'right' },
           { text: formatPDFCurrency(line.total_deductions || 0), style: 'tableCell', alignment: 'right' },
@@ -975,7 +1002,7 @@ export function ReportsPage() {
       docDefinition.content.push({
         table: {
           headerRows: 1,
-          widths: bankScheduleGrouping === 'bank_group' ? ['auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto'] : ['auto', '*', 'auto', 'auto', 'auto', 'auto'],
+          widths: bankScheduleGrouping === 'bank_group' ? ['auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'] : ['auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
           body: tableBody,
         },
         layout: tableLayout,
@@ -1621,6 +1648,8 @@ export function ReportsPage() {
               ...(bankScheduleGrouping === 'bank_group' ? [{ header: 'Bank', accessor: 'bank_name' as keyof any, sortable: true }] : []),
               { header: 'Staff Number', accessor: 'staff_number' as keyof any, sortable: true },
               { header: 'Staff Name', accessor: 'staff_name' as keyof any, sortable: true },
+              { header: 'Grade Level', accessor: (row: any) => formatScheduleGradeLevel(row.grade_level) || 'N/A', sortable: true },
+              { header: 'Step', accessor: (row: any) => row.step ?? 'N/A', sortable: true },
               { header: 'Account Number', accessor: 'account_number' as keyof any, sortable: true },
               { header: 'Gross Pay', accessor: (row: any) => formatCurrency(row.gross_pay || 0), sortable: true },
               { header: 'Deductions', accessor: (row: any) => formatCurrency(row.total_deductions || 0), sortable: true },

@@ -3,7 +3,15 @@ import { useAuth } from '../contexts/AuthContext';
 import { useSystemSettings } from '../contexts/SystemSettingsContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
-import { getPwaInstallPromptState } from '../lib/pwa-install';
+import {
+  clearPwaInstallPrompt,
+  getPwaInstallManagerState,
+  getPwaInstallPromptState,
+  markPwaInstalled,
+  subscribeToPwaInstallManager,
+} from '../lib/pwa-install';
+import type { BeforeInstallPromptEvent } from '../lib/pwa-install';
+import { useToast } from './Toast';
 import { NotificationDropdown } from './NotificationDropdown';
 import { CUSTOM_REPORTS_ENABLED } from '../lib/feature-flags';
 import { 
@@ -47,21 +55,18 @@ function UniqueMenuIcon(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
-type BeforeInstallPromptEvent = Event & {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
-};
-
 export function Layout({ children }: LayoutProps) {
   const { user, logout } = useAuth();
   const { settings, loanManagementEnabled, cooperativeManagementEnabled } = useSystemSettings();
   const { theme, toggleTheme } = useTheme();
   const networkStatus = useNetworkStatus();
+  const { showToast } = useToast();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
-  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [pwaInstallState, setPwaInstallState] = useState(getPwaInstallManagerState);
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
-  const [isInstalled, setIsInstalled] = useState(false);
+  const isInstalled = pwaInstallState.isInstalled;
+  const deferredPrompt = pwaInstallState.deferredPrompt;
   const installReminderMs = 8 * 60 * 60 * 1000;
   const appVersion = settings?.app_version ? `JSCM v.${settings.app_version}` : 'JSCM v.1.0.1';
   const approvalRoles = React.useMemo(() => {
@@ -80,15 +85,6 @@ export function Layout({ children }: LayoutProps) {
   }, [settings?.approval_workflow]);
 
   const installPromptState = React.useMemo(() => {
-    if (typeof window === 'undefined') {
-      return getPwaInstallPromptState({
-        userAgent: '',
-        isStandalone: false,
-        isInstalled,
-        hasDeferredPrompt: Boolean(deferredPrompt),
-      });
-    }
-
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone === true;
 
     return getPwaInstallPromptState({
@@ -100,33 +96,13 @@ export function Layout({ children }: LayoutProps) {
   }, [deferredPrompt, isInstalled]);
 
   React.useEffect(() => {
-    const storedInstalled = localStorage.getItem('pwaInstalled') === 'true';
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone === true;
-    if (storedInstalled || isStandalone) {
-      setIsInstalled(true);
+    const unsubscribe = subscribeToPwaInstallManager(setPwaInstallState);
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
+      (navigator as Navigator & { standalone?: boolean }).standalone === true;
+    if (isStandalone) {
+      markPwaInstalled();
       setShowInstallPrompt(false);
-      return;
     }
-
-    const handleBeforeInstallPrompt = (event: Event) => {
-      event.preventDefault();
-      const promptEvent = event as BeforeInstallPromptEvent;
-      setDeferredPrompt(promptEvent);
-      const lastPrompt = Number(localStorage.getItem('pwaInstallPromptLastShown') || '0');
-      if (!isInstalled && Date.now() - lastPrompt >= installReminderMs) {
-        setShowInstallPrompt(true);
-      }
-    };
-
-    const handleAppInstalled = () => {
-      setIsInstalled(true);
-      setShowInstallPrompt(false);
-      setDeferredPrompt(null);
-      localStorage.setItem('pwaInstalled', 'true');
-    };
-
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    window.addEventListener('appinstalled', handleAppInstalled);
 
     const lastPrompt = Number(localStorage.getItem('pwaInstallPromptLastShown') || '0');
     const shouldAutoShowPrompt = installPromptState.shouldPrompt && Date.now() - lastPrompt >= installReminderMs;
@@ -143,28 +119,30 @@ export function Layout({ children }: LayoutProps) {
     }, 30 * 60 * 1000);
 
     return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-      window.removeEventListener('appinstalled', handleAppInstalled);
+      unsubscribe();
       window.clearInterval(intervalId);
     };
   }, [installPromptState.shouldPrompt, isInstalled, installReminderMs]);
 
   const handleInstallApp = async () => {
     if (!deferredPrompt) {
-      localStorage.setItem('pwaInstallPromptLastShown', Date.now().toString());
-      setShowInstallPrompt(false);
+      handleDismissInstall();
       return;
     }
 
-    await deferredPrompt.prompt();
-    const choice = await deferredPrompt.userChoice;
-    localStorage.setItem('pwaInstallPromptLastShown', Date.now().toString());
-    if (choice.outcome === 'accepted') {
-      setIsInstalled(true);
-      localStorage.setItem('pwaInstalled', 'true');
+    try {
+      await deferredPrompt.prompt();
+      const choice = await deferredPrompt.userChoice;
+      localStorage.setItem('pwaInstallPromptLastShown', Date.now().toString());
+      if (choice.outcome === 'accepted') {
+        markPwaInstalled();
+      }
+      clearPwaInstallPrompt();
+      setShowInstallPrompt(false);
+    } catch (error) {
+      console.error('Failed to launch the browser install prompt:', error);
+      showToast('error', 'Could not start installation. Please use your browser menu to install JSC PMS.');
     }
-    setShowInstallPrompt(false);
-    setDeferredPrompt(null);
   };
 
   const handleDismissInstall = () => {
@@ -508,6 +486,7 @@ export function Layout({ children }: LayoutProps) {
                 </button>
                 <button
                   onClick={handleInstallApp}
+                  disabled={installPromptState.actionLabel !== 'Install' && !installPromptState.isIOS}
                   className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
                 >
                   {installPromptState.actionLabel}
