@@ -39,6 +39,10 @@ function discoverMigrations() {
 }
 
 function checksum(sql) {
+  return crypto.createHash('sha256').update(sql.replace(/\r\n?/g, '\n')).digest('hex');
+}
+
+function rawChecksum(sql) {
   return crypto.createHash('sha256').update(sql).digest('hex');
 }
 
@@ -112,7 +116,29 @@ async function main() {
       applied.get(migration.id) &&
       applied.get(migration.id) !== checksum(migration.sql),
     );
-    if (drift.length) throw new Error(`Migration checksum drift detected: ${drift.map((item) => item.id).join(', ')}`);
+    if (drift.length) {
+      const contentDrift = drift.filter(
+        (migration) => applied.get(migration.id) !== rawChecksum(migration.sql),
+      );
+      if (contentDrift.length) {
+        throw new Error(`Migration checksum drift detected: ${contentDrift.map((item) => item.id).join(', ')}`);
+      }
+
+      if (args.has('--status')) {
+        console.warn(`Legacy line-ending-only checksums detected: ${drift.map((item) => item.id).join(', ')}`);
+      } else {
+        for (const migration of drift) {
+          console.warn(`Normalizing line-ending-only checksum for ${migration.id}.`);
+          await client.query(
+            `UPDATE schema_migrations
+             SET checksum = $1
+             WHERE id = $2`,
+            [checksum(migration.sql), migration.id],
+          );
+          applied.set(migration.id, checksum(migration.sql));
+        }
+      }
+    }
 
     console.log(`Migration status: ${applied.size} applied, ${pending.length} pending.`);
     if (args.has('--status')) {
