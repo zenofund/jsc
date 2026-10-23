@@ -383,6 +383,10 @@ export interface Promotion {
   approved_by?: string;
   approval_date?: string;
   arrears_calculated: boolean;
+  promotion_arrears_status?: 'pending' | 'approved' | 'rejected' | 'processed' | null;
+  promotion_arrears_payroll_batch_id?: string | null;
+  promotion_arrears_batch_status?: PayrollBatch['status'] | null;
+  promotion_arrears_batch_payment_status?: PayrollBatch['payment_status'] | null;
   created_at: string;
 }
 

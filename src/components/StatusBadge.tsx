@@ -5,6 +5,10 @@ type BadgeStatus =
   | 'in_review' 
   | 'pending_review'
   | 'pending_approval'
+  | 'awaiting_approval'
+  | 'due_for_payroll'
+  | 'in_payroll'
+  | 'arrears_not_generated'
   | 'approved' 
   | 'rejected' 
   | 'paid' 
@@ -38,6 +42,10 @@ export function StatusBadge({ status }: StatusBadgeProps) {
     pending_review: { label: 'Pending Review', className: 'bg-yellow-100 dark:bg-yellow-950/30 text-yellow-800 dark:text-yellow-400 border-yellow-200 dark:border-yellow-900' },
     in_review: { label: 'In Review', className: 'bg-blue-100 dark:bg-blue-950/30 text-blue-800 dark:text-blue-400 border-blue-200 dark:border-blue-900' },
     pending_approval: { label: 'Pending Approval', className: 'bg-orange-100 dark:bg-orange-950/30 text-orange-800 dark:text-orange-400 border-orange-200 dark:border-orange-900' },
+    awaiting_approval: { label: 'Awaiting Approval', className: 'bg-yellow-100 dark:bg-yellow-950/30 text-yellow-800 dark:text-yellow-400 border-yellow-200 dark:border-yellow-900' },
+    due_for_payroll: { label: 'Due for Payroll', className: 'bg-orange-100 dark:bg-orange-950/30 text-orange-800 dark:text-orange-400 border-orange-200 dark:border-orange-900' },
+    in_payroll: { label: 'In payroll', className: 'bg-blue-100 dark:bg-blue-950/30 text-blue-800 dark:text-blue-400 border-blue-200 dark:border-blue-900' },
+    arrears_not_generated: { label: 'Arrears Not Generated', className: 'bg-muted/50 text-muted-foreground border-border' },
     approved: { label: 'Approved', className: 'bg-green-100 dark:bg-green-950/30 text-green-800 dark:text-green-400 border-green-200 dark:border-green-900' },
     rejected: { label: 'Rejected', className: 'bg-red-100 dark:bg-red-950/30 text-red-800 dark:text-red-400 border-red-200 dark:border-red-900' },
     paid: { label: 'Paid', className: 'bg-green-100 dark:bg-green-950/30 text-green-800 dark:text-green-400 border-green-200 dark:border-green-900' },

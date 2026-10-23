@@ -1765,9 +1765,24 @@ export class PromotionsService {
               s.first_name,
               s.last_name,
               s.staff_number,
-              TRIM(CONCAT(COALESCE(s.first_name, ''), ' ', COALESCE(s.last_name, ''))) as staff_name
+              TRIM(CONCAT(COALESCE(s.first_name, ''), ' ', COALESCE(s.last_name, ''))) as staff_name,
+              promotion_arrears.status as promotion_arrears_status,
+              promotion_arrears.payroll_batch_id as promotion_arrears_payroll_batch_id,
+              promotion_arrears_batch.status as promotion_arrears_batch_status,
+              promotion_arrears_batch.payment_status as promotion_arrears_batch_payment_status
        FROM promotions p
        JOIN staff s ON p.staff_id = s.id
+       LEFT JOIN LATERAL (
+         SELECT a.status, a.payroll_batch_id
+         FROM arrears a
+         WHERE a.staff_id = p.staff_id
+           AND a.reason = 'promotion'
+           AND a.effective_date = COALESCE(p.promotion_date, p.effective_date)::date
+         ORDER BY a.created_at DESC
+         LIMIT 1
+       ) promotion_arrears ON TRUE
+       LEFT JOIN payroll_batches promotion_arrears_batch
+         ON promotion_arrears_batch.id = promotion_arrears.payroll_batch_id
        ${whereClause}
        ORDER BY p.created_at DESC
        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,

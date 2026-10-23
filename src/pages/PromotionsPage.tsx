@@ -631,6 +631,32 @@ export function PromotionsPage() {
     return staffMember?.staff_number || 'N/A';
   };
 
+  const getPromotionArrearsDisplayStatus = (promotion: Promotion) => {
+    if (promotion.status !== 'approved') return null;
+
+    const effectiveDate = toDateOnly(promotion.effective_date);
+    if (!effectiveDate) return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (effectiveDate >= today) return null;
+
+    const arrearsStatus = String(promotion.promotion_arrears_status || '').trim().toLowerCase();
+    if (!arrearsStatus) return 'arrears_not_generated' as const;
+    if (arrearsStatus === 'rejected') return 'rejected' as const;
+    if (arrearsStatus === 'pending') return 'awaiting_approval' as const;
+    if (arrearsStatus === 'approved' && !promotion.promotion_arrears_payroll_batch_id) {
+      return 'due_for_payroll' as const;
+    }
+    if (arrearsStatus === 'processed') {
+      const batchIsPaid =
+        promotion.promotion_arrears_batch_payment_status === 'completed' ||
+        promotion.promotion_arrears_batch_status === 'paid';
+      return batchIsPaid ? 'paid' as const : 'in_payroll' as const;
+    }
+
+    return null;
+  };
+
   const filteredPromotions = promotions.filter(p => 
     filter === 'all' ? true : p.status === filter
   );
@@ -737,16 +763,15 @@ export function PromotionsPage() {
     {
       header: 'Effective Date',
       accessor: (row: Promotion) => (
-        <div>
-          <div className="text-foreground">{new Date(row.effective_date).toLocaleDateString()}</div>
-          {new Date(row.effective_date) < new Date() && row.status === 'approved' && (
-            <div className="text-xs text-orange-600 dark:text-orange-400 flex items-center gap-1 mt-1">
-              <AlertCircle className="w-3 h-3" />
-              Arrears Due
-            </div>
-          )}
-        </div>
+        <span className="text-foreground">{new Date(row.effective_date).toLocaleDateString()}</span>
       ),
+    },
+    {
+      header: 'Arrears Status',
+      accessor: (row: Promotion) => {
+        const arrearsStatus = getPromotionArrearsDisplayStatus(row);
+        return arrearsStatus ? <StatusBadge status={arrearsStatus} /> : <span className="text-muted-foreground">—</span>;
+      },
     },
     {
       header: 'Status',

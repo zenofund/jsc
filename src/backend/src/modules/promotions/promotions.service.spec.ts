@@ -63,6 +63,34 @@ describe('PromotionsService', () => {
     });
   });
 
+  describe('getAll', () => {
+    it('includes the linked promotion arrears and payroll payment status', async () => {
+      (databaseService.queryOne as jest.Mock).mockResolvedValueOnce({ total: '1' });
+      (databaseService.query as jest.Mock).mockResolvedValueOnce([
+        {
+          id: 'promotion-1',
+          promotion_arrears_status: 'processed',
+          promotion_arrears_payroll_batch_id: 'payroll-batch-1',
+          promotion_arrears_batch_status: 'paid',
+          promotion_arrears_batch_payment_status: 'completed',
+        },
+      ]);
+
+      const result = await service.getAll();
+
+      expect(result.data[0]).toMatchObject({
+        promotion_arrears_status: 'processed',
+        promotion_arrears_payroll_batch_id: 'payroll-batch-1',
+        promotion_arrears_batch_status: 'paid',
+        promotion_arrears_batch_payment_status: 'completed',
+      });
+      const [query] = (databaseService.query as jest.Mock).mock.calls[0];
+      expect(query).toContain('LEFT JOIN LATERAL');
+      expect(query).toContain('LEFT JOIN payroll_batches promotion_arrears_batch');
+      expect(query).toContain("a.reason = 'promotion'");
+    });
+  });
+
   describe('createPromotion', () => {
     it('stores promotion_date/effective_date as YYYY-MM-DD', async () => {
       (databaseService.queryOne as jest.Mock)
