@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException, Logger } from '@nes
 import { DatabaseService } from '../../common/database/database.service';
 import { EmailService } from '../email/email.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { NotificationType, NotificationCategory, NotificationPriority } from '../notifications/dto/notification.dto';
 import { ExternalApiService } from '../external-api/external-api.service';
 import { SalaryLookupService } from '../salary-structures/salary-lookup.service';
@@ -24,6 +25,7 @@ export class PayrollService {
     private databaseService: DatabaseService,
     private emailService: EmailService,
     private notificationsService: NotificationsService,
+    private notificationsGateway: NotificationsGateway,
     private externalApiService: ExternalApiService,
     private salaryLookupService: SalaryLookupService,
     private auditService: AuditService,
@@ -1533,6 +1535,11 @@ export class PayrollService {
     this.logger.log(
       `Generated ${payrollLines.length} payroll lines in ${duration}ms for batch ${batchId}`,
     );
+    this.notificationsGateway.emitPayrollUpdated({
+      batchId,
+      payrollMonth: batch.payroll_month,
+      updatedAt: new Date().toISOString(),
+    });
 
     return {
       batch_id: batchId,

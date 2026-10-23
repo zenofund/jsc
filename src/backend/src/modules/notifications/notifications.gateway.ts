@@ -79,4 +79,11 @@ export class NotificationsGateway
       this.server.emit('notification', notification);
     }
   }
+
+  emitPayrollUpdated(payload: { batchId: string; payrollMonth: string; updatedAt: string }) {
+    const recipientRoles = ['admin', 'payroll_officer', 'payroll_loader', 'cashier', 'super_admin', 'payroll_manager'];
+    for (const role of recipientRoles) {
+      this.server.to(`role:${role}`).emit('payroll:updated', payload);
+    }
+  }
 }

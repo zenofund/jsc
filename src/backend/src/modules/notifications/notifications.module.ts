@@ -10,6 +10,6 @@ import { AuthModule } from '../auth/auth.module';
   imports: [DatabaseModule, ConfigModule, AuthModule],
   controllers: [NotificationsController],
   providers: [NotificationsService, NotificationsGateway],
-  exports: [NotificationsService],
+  exports: [NotificationsService, NotificationsGateway],
 })
 export class NotificationsModule {}

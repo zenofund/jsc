@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { io, Socket } from 'socket.io-client';
 import { ActionMenuEllipsis } from '../components/ui/action-menu-trigger';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { DataTable } from '../components/DataTable';
@@ -277,6 +278,36 @@ export function BankPaymentsPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!user) return;
+
+    const apiUrl = String(import.meta.env.VITE_API_URL || '').trim();
+    let socketBaseUrl = window.location.origin;
+    if (apiUrl) {
+      try {
+        socketBaseUrl = new URL(apiUrl).origin;
+      } catch {
+        socketBaseUrl = apiUrl.replace(/\/api\/v1\/?$/, '') || window.location.origin;
+      }
+    }
+
+    const socket: Socket = io(`${socketBaseUrl}/notifications`, {
+      auth: { token: localStorage.getItem('jsc_auth_token') || '' },
+      transports: ['websocket'],
+    });
+    socket.on('payroll:updated', (event: { batchId: string; payrollMonth: string; updatedAt: string }) => {
+      console.info(`Payroll ${event.payrollMonth} was updated; refreshing E-Mandate data.`);
+      void loadData();
+    });
+    socket.on('connect_error', (error) => {
+      console.error('Failed to connect to payroll update events:', error);
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [user, activeTab]);
 
   const handleCreatePayment = async () => {
     try {
