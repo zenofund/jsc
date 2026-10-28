@@ -144,6 +144,32 @@ export class ArrearsService {
     }
   }
 
+  private async findDuplicateArrearsForCreate(
+    staffId: string,
+    reason: string,
+    effectiveDate: string,
+    effectiveEndDate?: string,
+    excludeId?: string,
+  ) {
+    const normalizedReason = String(reason || 'other').trim() || 'other';
+    const effectiveDateOnly = String(effectiveDate || '').slice(0, 10);
+    const periodEndDate = effectiveEndDate ? String(effectiveEndDate).slice(0, 10) : effectiveDateOnly;
+
+    return this.databaseService.queryOne(
+      `SELECT id, staff_id, reason, effective_date, effective_end_date, status
+       FROM arrears
+       WHERE staff_id = $1
+         AND reason = $2
+         AND effective_date::date = $3::date
+         AND COALESCE(effective_end_date::date, effective_date::date) = $4::date
+         AND status IN ('pending', 'approved', 'processed', 'rejected')
+         AND ($5::uuid IS NULL OR id != $5)
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [staffId, normalizedReason, effectiveDateOnly, periodEndDate, excludeId || null],
+    );
+  }
+
   private canonicalizeGrade(value: any) {
     const stripped = String(value ?? '').replace(/[\s-]+/g, '').toUpperCase();
     const numericMatch = stripped.match(/^(?:GL)?0*(\d+)$/);
@@ -561,6 +587,11 @@ export class ArrearsService {
       throw new BadRequestException('Basic arrears cannot exceed gross arrears');
     }
 
+    const duplicate = await this.findDuplicateArrearsForCreate(staffId, reason, effectiveDate, effectiveDate);
+    if (duplicate) {
+      throw new BadRequestException('Duplicate arrears already exists for this staff and period. Review the existing entry before creating another one.');
+    }
+
     // Get staff details
     const staff = await this.databaseService.queryOne('SELECT * FROM staff WHERE id = $1', [staffId]);
     if (!staff) {
@@ -628,6 +659,17 @@ export class ArrearsService {
     if (data.reason === 'promotion') {
       throw new BadRequestException('Promotion arrears must use the promotion arrears workflow.');
     }
+
+    const duplicate = await this.findDuplicateArrearsForCreate(
+      data.staffId,
+      data.reason || 'salary_adjustment',
+      data.effectiveStartDate,
+      data.effectiveEndDate,
+    );
+    if (duplicate) {
+      throw new BadRequestException('Duplicate arrears already exists for this staff and period. Review the existing entry before creating another one.');
+    }
+
     const calculation = await this.calculateManualSalaryArrears(
       data.staffId,
       data.effectiveStartDate,
@@ -708,20 +750,55 @@ export class ArrearsService {
    * Delete arrears (only if pending)
    */
   async deleteArrears(id: string, userId: string) {
-    const arrears = await this.databaseService.queryOne('SELECT * FROM arrears WHERE id = $1', [id]);
-    
-    if (!arrears) {
-      throw new NotFoundException(`Arrears record with ID ${id} not found`);
-    }
+    return this.databaseService.transaction(async (client) => {
+      const arrearsResult = await client.query('SELECT * FROM arrears WHERE id = $1 FOR UPDATE', [id]);
+      const arrears = arrearsResult.rows[0];
 
-    if (arrears.status !== 'pending') {
-      throw new Error('Only pending arrears can be deleted');
-    }
+      if (!arrears) {
+        throw new NotFoundException(`Arrears record with ID ${id} not found`);
+      }
 
-    await this.databaseService.query('DELETE FROM arrears WHERE id = $1', [id]);
-    
-    this.logger.log(`Arrears ${id} deleted by user ${userId}`);
-    return { message: 'Arrears deleted successfully' };
+      const isManualArrears = String(arrears.reason || '').trim().toLowerCase() !== 'promotion';
+
+      if (arrears.status === 'pending') {
+        await client.query('DELETE FROM arrears WHERE id = $1 AND status = $2', [id, 'pending']);
+        this.logger.log(`${isManualArrears ? 'Manual ' : ''}arrears ${id} deleted by user ${userId}`);
+        return { message: `${isManualArrears ? 'Manual ' : ''}Arrears deleted successfully` };
+      }
+
+      if (arrears.status === 'processed') {
+        if (!arrears.payroll_batch_id) {
+          throw new BadRequestException('Processed arrears without a payroll batch cannot be deleted safely.');
+        }
+
+        const batchResult = await client.query(
+          'SELECT id, status FROM payroll_batches WHERE id = $1 FOR UPDATE',
+          [arrears.payroll_batch_id],
+        );
+        const payrollBatch = batchResult.rows[0];
+
+        if (!payrollBatch) {
+          throw new NotFoundException(`Payroll batch with ID ${arrears.payroll_batch_id} not found`);
+        }
+
+        if (payrollBatch.status !== 'draft') {
+          throw new BadRequestException('Only processed arrears attached to a draft payroll batch can be deleted.');
+        }
+
+        await client.query(
+          'DELETE FROM arrears WHERE id = $1 AND status = $2 AND payroll_batch_id = $3',
+          [id, 'processed', payrollBatch.id],
+        );
+        this.logger.log(`Processed ${isManualArrears ? 'manual ' : ''}arrears ${id} deleted from draft batch ${payrollBatch.id} by user ${userId}`);
+        return {
+          message: isManualArrears
+            ? 'Manual arrears deleted successfully. Regenerate payroll lines manually before submitting the draft batch.'
+            : 'Arrears deleted successfully. Regenerate payroll lines to reflect the removal.',
+        };
+      }
+
+      throw new BadRequestException('Only pending arrears or processed arrears attached to a draft payroll batch can be deleted.');
+    });
   }
 
   /**

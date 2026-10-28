@@ -5,7 +5,7 @@ import { useConfirm } from '../contexts/ConfirmContext';
 import { arrearsAPI, payrollAPI } from '../lib/api-client';
 import { Arrears, PayrollBatch } from '../types/entities';
 import { PageSkeleton } from '../components/PageLoader';
-import { AlertCircle, TrendingUp, DollarSign, RefreshCw, Trash2, Plus, Check, Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { AlertCircle, TrendingUp, DollarSign, RefreshCw, Trash2, Plus, Check, Loader2, CheckCircle, XCircle, Eye } from 'lucide-react';
 import { showToast } from '../utils/toast';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { DataTable } from '../components/DataTable';
@@ -130,7 +130,7 @@ export function ArrearsPage() {
     }
   };
 
-  const canReviewArrears = ['admin', 'payroll_officer'].includes(user?.role || '');
+  const canReviewArrears = ['admin', 'payroll_officer', 'payroll_manager'].includes(user?.role || '');
   const canMergeArrears = ['admin', 'payroll_officer', 'payroll_manager', 'hr_manager'].includes(user?.role || '');
   const canBulkSelectArrears = canReviewArrears || canMergeArrears;
 
@@ -278,10 +278,29 @@ export function ArrearsPage() {
   };
 
   const handleDeleteArrears = async (id: string) => {
-    if (!await confirm({ title: 'Delete Arrears?', message: 'This action cannot be undone. Only pending arrears can be deleted.' })) return;
+    const arrearsItem = arrears.find((item) => item.id === id);
+    const allowDelete = 
+      arrearsItem?.status === 'pending' ||
+      (arrearsItem?.status === 'processed' && Boolean(arrearsItem.payroll_batch_id));
+
+    if (!allowDelete) {
+      showToast.error('Delete is only allowed for pending arrears or processed arrears linked to a draft payroll batch.');
+      return;
+    }
+
+    const confirmed = await confirm({
+      title: 'Delete Arrears?',
+      message: arrearsItem?.status === 'processed'
+        ? arrearsItem.reason === 'promotion'
+          ? 'This processed arrears record will be removed from the draft batch. Regenerate payroll lines afterward.'
+          : 'This manual arrears record will be removed from the draft batch. Payroll lines will not regenerate automatically; regenerate them manually before submitting payroll.'
+        : 'This action cannot be undone. Continue?',
+    });
+    if (!confirmed) return;
+
     try {
-      await arrearsAPI.deleteArrears(id);
-      showToast.success('Arrears deleted successfully');
+      const response = await arrearsAPI.deleteArrears(id);
+      showToast.success(response?.message || 'Arrears deleted successfully');
       await loadData();
     } catch (error: any) {
       showToast.error('Failed to delete arrears', error.message || 'An error occurred');
@@ -479,6 +498,15 @@ export function ArrearsPage() {
               />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setSelectedArrears(row);
+                }}
+              >
+                <Eye className="w-4 h-4 mr-2 text-blue-600" />
+                View
+              </DropdownMenuItem>
               {row.status === 'pending' && (
                 <DropdownMenuItem
                   onClick={(event) => {
@@ -519,7 +547,7 @@ export function ArrearsPage() {
                   Recalculate
                 </DropdownMenuItem>
               )}
-              {row.status === 'pending' && (
+              {(row.status === 'pending' || (row.status === 'processed' && Boolean(row.payroll_batch_id))) && (
                 <DropdownMenuItem
                   onClick={() => handleDeleteArrears(row.id)}
                   className="text-destructive focus:text-destructive"

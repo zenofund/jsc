@@ -164,12 +164,12 @@ export function Layout({ children }: LayoutProps) {
     },
     {
       group: 'Payroll Operations',
-      roles: ['admin', 'payroll_officer', 'cpo', 'checking', 'auditor', 'payroll_loader'],
+      roles: ['admin', 'payroll_officer', 'payroll_manager', 'cpo', 'checking', 'auditor', 'payroll_loader'],
       items: [
         { name: 'Payroll Processing', icon: DollarSign, view: 'payroll', roles: ['admin', 'payroll_officer', 'cpo', 'checking', 'auditor', 'payroll_loader'] },
         { name: 'Staff Adjustments', icon: TrendingUp, view: 'staff-allowances', roles: ['admin', 'payroll_officer', 'payroll_loader'] },
         { name: 'Adjustment Approvals', icon: CheckSquare, view: 'staff-adjustment-approvals', roles: ['admin', 'payroll_officer'] },
-        { name: 'Arrears & Adjustments', icon: TrendingUp, view: 'arrears', roles: ['admin', 'payroll_officer', 'payroll_loader'] },
+        { name: 'Arrears & Adjustments', icon: TrendingUp, view: 'arrears', roles: ['admin', 'payroll_officer', 'payroll_manager', 'payroll_loader'] },
         { name: 'Payslips', icon: FileText, view: 'payslips', roles: ['*'] },
       ],
     },
