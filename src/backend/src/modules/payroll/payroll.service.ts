@@ -2294,7 +2294,9 @@ export class PayrollService {
     let paramIndex = 1;
 
     if (status) {
-      whereConditions.push(`status = $${paramIndex}`);
+      // payroll_batches is joined with users below and both tables have a
+      // "status" column, so the reference must be qualified to stay unambiguous.
+      whereConditions.push(`pb.status = $${paramIndex}`);
       params.push(status);
       paramIndex++;
     }
@@ -2316,7 +2318,7 @@ export class PayrollService {
 
     const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
 
-    const countQuery = `SELECT COUNT(*) as total FROM payroll_batches ${whereClause}`;
+    const countQuery = `SELECT COUNT(*) as total FROM payroll_batches pb ${whereClause}`;
     const countResult = await this.databaseService.queryOne<{ total: number }>(countQuery, params);
     const total = parseInt(countResult?.total?.toString() || '0');
 

@@ -62,6 +62,22 @@ function getPreviousMonthEndDate(): string {
   return `${previousMonthEnd.getFullYear()}-${String(previousMonthEnd.getMonth() + 1).padStart(2, '0')}-${String(previousMonthEnd.getDate()).padStart(2, '0')}`;
 }
 
+// Resolve the real arrears end date captured on an arrears record. Legacy
+// records have a NULL effective_end_date column, so fall back to the last
+// month range stored in the details snapshot.
+function resolveStoredArrearsEndDate(arrearsRecord: any): string {
+  const directEndDate = normalizePromotionDate(arrearsRecord?.effective_end_date);
+  if (directEndDate) return directEndDate;
+
+  const details = Array.isArray(arrearsRecord?.details) ? arrearsRecord.details : [];
+  for (let index = details.length - 1; index >= 0; index -= 1) {
+    const detailEndDate = normalizePromotionDate(details[index]?.effective_end_date);
+    if (detailEndDate) return detailEndDate;
+  }
+
+  return '';
+}
+
 function getPromotionEffectiveDateError(value: string): string | null {
   if (!value) return null;
   const normalized = normalizePromotionDate(value);
@@ -377,6 +393,7 @@ export function PromotionsPage() {
         setDetailsPreviewLoading(true);
         const normalizedEffectiveDate = normalizePromotionDate(selectedPromotion.effective_date);
         const effectiveDateKey = normalizedEffectiveDate || String(selectedPromotion.effective_date || '').slice(0, 10);
+        const promotionDateKey = normalizePromotionDate((selectedPromotion as any).promotion_date);
         let arrearsEndDate = normalizePromotionDate((selectedPromotion as any).arrears_end_date);
 
         if (selectedPromotion.status === 'approved') {
@@ -387,7 +404,7 @@ export function PromotionsPage() {
                 .filter((arrears: any) =>
                   arrears?.reason === 'promotion' &&
                   String(arrears?.staff_id || '') === String(selectedPromotion.staff_id) &&
-                  String(arrears?.effective_date || '').slice(0, 10) === effectiveDateKey
+                  [effectiveDateKey, promotionDateKey].includes(String(arrears?.effective_date || '').slice(0, 10))
                 )
                 .sort((a: any, b: any) => {
                   const statusRankDiff = getPromotionArrearsStatusRank(b?.status) - getPromotionArrearsStatusRank(a?.status);
@@ -396,7 +413,7 @@ export function PromotionsPage() {
                 })[0];
 
               if (matchedArrears && String(matchedArrears.status || '').trim().toLowerCase() !== 'rejected') {
-                arrearsEndDate = normalizePromotionDate(matchedArrears.effective_end_date) || arrearsEndDate;
+                arrearsEndDate = resolveStoredArrearsEndDate(matchedArrears) || arrearsEndDate;
                 setDetailsStoredArrearsTotal(null);
                 setDetailsStoredArrearsStatus(normalizeStoredArrearsStatus(matchedArrears.status));
                 setDetailsUsesStoredArrears(false);
@@ -421,6 +438,13 @@ export function PromotionsPage() {
         }
 
         setDetailsUsesStoredArrears(false);
+        // Never invent an end date from the current date: that would silently
+        // extend the period into every new payroll month (e.g. a September
+        // arrear showing "through 31/10" once October ends).
+        if (!arrearsEndDate) {
+          setDetailsArrearsPreview(null);
+          return;
+        }
         const result = await promotionAPI.previewArrears(
           selectedPromotion.staff_id,
           selectedPromotion.new_grade_level,
@@ -428,7 +452,7 @@ export function PromotionsPage() {
           normalizedEffectiveDate || String(selectedPromotion.effective_date || ''),
           selectedPromotion.old_grade_level,
           selectedPromotion.old_step,
-          arrearsEndDate || getPreviousMonthEndDate(),
+          arrearsEndDate,
         );
         setDetailsArrearsPreview({
         monthlyDifference: result.grossMonthlyDifference ?? result.monthlyDifference,

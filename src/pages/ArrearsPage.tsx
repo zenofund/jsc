@@ -120,11 +120,18 @@ export function ArrearsPage() {
     try {
       const pendingArrears = await arrearsAPI.getPendingArrears();
       setArrears(pendingArrears);
-      
+    } catch (error) {
+      console.error('Failed to load arrears data:', error);
+    }
+
+    // Loaded separately so a batch-list failure cannot silently blank the draft
+    // set (which would hide the Delete action for processed arrears).
+    try {
       const batches = await payrollAPI.getAllPayrollBatches({ status: 'draft' });
       setPayrollBatches(batches.filter((b: PayrollBatch) => b.status === 'draft'));
     } catch (error) {
-      console.error('Failed to load arrears data:', error);
+      console.error('Failed to load draft payroll batches:', error);
+      showToast.error('Failed to load draft payroll batches', 'Delete eligibility may be unavailable until this reloads.');
     } finally {
       setLoading(false);
     }
