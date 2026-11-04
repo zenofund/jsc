@@ -2,11 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { StatusBadge } from '../components/StatusBadge';
 import { Modal } from '../components/Modal';
+import { DashboardMetricCard } from '../components/DashboardMetricCard';
 import { useAuth } from '../contexts/AuthContext';
 import { dashboardAPI } from '../lib/api-client';
 import { 
   Users, DollarSign, AlertCircle, CheckCircle, 
-  TrendingUp, Calendar, FileText, Clock, Award, ChevronLeft, ChevronRight
+  TrendingUp, FileText, Clock, ChevronLeft, ChevronRight
 } from 'lucide-react';
 
 import { PageSkeleton } from '../components/PageLoader';
@@ -87,92 +88,90 @@ export function DashboardPage() {
       title: 'Active Staff',
       value: stats?.active_staff || 0,
       icon: Users,
-      color: 'blue',
-      subtitle: 'Currently active staff',
+      tone: 'blue',
+      description: 'Currently active staff',
     },
     {
       title: 'Pending Approvals',
       value: stats?.pending_approvals || 0,
       icon: Clock,
-      color: 'yellow',
-      subtitle: 'Awaiting review',
+      tone: 'yellow',
+      description: 'Awaiting review',
     },
     {
       title: 'Pending Arrears',
       value: stats?.pending_arrears || 0,
       icon: AlertCircle,
-      color: 'red',
-      subtitle: 'Requires attention',
+      tone: 'red',
+      description: 'Requires attention',
     },
     {
       title: 'Active Payroll',
       value: stats?.active_payroll_count || 0,
       icon: DollarSign,
-      color: 'green',
-      subtitle: 'In progress',
+      tone: 'green',
+      description: 'In progress',
     },
   ];
 
-  const colorClasses = {
-    blue: 'bg-blue-100 text-blue-600',
-    yellow: 'bg-yellow-100 text-yellow-600',
-    red: 'bg-red-100 text-red-600',
-    green: 'bg-green-100 text-green-600',
-  };
-
   return (
-    <div>
+    <div className="space-y-5 sm:space-y-7">
       <Breadcrumb items={[{ label: 'Dashboard' }]} />
       
-      <div className="mb-4 sm:mb-6">
-        <h1 className="text-foreground mb-1 sm:mb-2 text-base sm:text-lg font-semibold">Hello, {user?.full_name}!</h1>
-        <p className="text-muted-foreground text-xs sm:text-sm">Here is your Payroll Snapshot, today!</p>
-      </div>
+      <section className="relative isolate overflow-hidden rounded-2xl bg-gradient-to-br from-green-950 via-green-900 to-green-800 px-5 py-6 shadow-lg shadow-green-950/10 sm:px-8 sm:py-8">
+        <div aria-hidden="true" className="absolute -right-10 -top-20 h-64 w-64 rounded-full border border-white/10" />
+        <div aria-hidden="true" className="absolute -right-2 -top-12 h-48 w-48 rounded-full border border-white/10" />
+        <div className="relative flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-200">Payroll operations</p>
+            <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
+              Welcome back, {user?.full_name || 'there'}
+            </h1>
+            <p className="mt-2 max-w-xl text-sm text-green-50/80 sm:text-base">
+              Your workforce and payroll activity at a glance.
+            </p>
+          </div>
+          <div className="inline-flex w-fit items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-medium text-white shadow-sm backdrop-blur-sm">
+            <span className="h-2 w-2 rounded-full bg-amber-300" />
+            {new Date().toLocaleDateString('en-NG', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' })}
+          </div>
+        </div>
+        <div aria-hidden="true" className="absolute -bottom-16 right-24 h-36 w-36 rounded-full bg-amber-300/10 blur-2xl" />
+      </section>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 md:gap-6 mb-4 sm:mb-6">
-        {statCards.map((stat: any, index) => {
-          const Icon = stat.icon;
-          return (
-            <button 
-              key={index}
-              onClick={stat.onClick}
-              disabled={!stat.onClick}
-              className={`min-w-0 p-3 sm:p-6 rounded-lg border border-border bg-card transition-all w-full text-left ${
-                stat.onClick ? 'hover:shadow-md cursor-pointer' : ''
-              }`}
-            >
-              <div className="flex items-start justify-between mb-2 sm:mb-4">
-                <div className={`p-1.5 sm:p-3 rounded-lg ${colorClasses[stat.color as keyof typeof colorClasses]}`}>
-                  <Icon className="w-4 h-4 sm:w-6 sm:h-6" />
-                </div>
-              </div>
-              <div className="min-w-0">
-                <h3 className="min-w-0 text-[clamp(1rem,5.5vw,1.75rem)] sm:text-3xl leading-tight tracking-tight tabular-nums font-bold text-foreground">
-                  {typeof stat.value === 'number' && stat.value > 999999
-                    ? Intl.NumberFormat('en-NG', { notation: 'compact', maximumFractionDigits: 1 }).format(stat.value)
-                    : typeof stat.value === 'number' ? stat.value.toLocaleString() : stat.value}
-                </h3>
-                {typeof stat.value === 'number' && stat.value > 999999 && (
-                  <p className="text-[10px] sm:text-xs text-muted-foreground font-mono mt-1 break-all">{stat.value.toLocaleString()}</p>
-                )}
-                <p className="text-xs sm:text-sm font-medium text-muted-foreground mt-1 leading-tight">{stat.title}</p>
-                <p className="text-[11px] sm:text-sm text-muted-foreground mt-2 leading-snug line-clamp-2">{stat.subtitle}</p>
-              </div>
-            </button>
-          );
-        })}
-      </div>
+      <section aria-label="Payroll snapshot">
+        <div className="mb-3 flex items-end justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold text-foreground sm:text-lg">Payroll snapshot</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground sm:text-sm">Key figures that need your attention.</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+          {statCards.map((stat) => (
+            <DashboardMetricCard
+              key={stat.title}
+              title={stat.title}
+              value={stat.value}
+              description={stat.description}
+              icon={stat.icon}
+              tone={stat.tone as 'blue' | 'yellow' | 'red' | 'green'}
+            />
+          ))}
+        </div>
+      </section>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 sm:gap-6">
         {/* Quick Actions */}
-        <div className="bg-card border border-border rounded-lg p-4 sm:p-6">
-          <h3 className="font-semibold text-card-foreground mb-3 sm:mb-4 text-base sm:text-lg">Quick Actions</h3>
+        <div className="rounded-xl border border-border/70 bg-card p-4 shadow-sm sm:p-6">
+          <div className="mb-4">
+            <h3 className="text-base font-semibold text-card-foreground sm:text-lg">Quick actions</h3>
+            <p className="mt-1 text-sm text-muted-foreground">Common tasks for your role.</p>
+          </div>
           <div className="space-y-2 sm:space-y-3">
             {['admin', 'payroll_officer', 'cpo', 'checking', 'payroll_loader'].includes((String(user?.role || '').trim().toLowerCase() === 'reviewer' ? 'checking' : String(user?.role || '').trim().toLowerCase() === 'approver' ? 'cpo' : String(user?.role || '').trim().toLowerCase())) && (
               <button 
                 onClick={() => (window as any).navigateTo?.('payroll')}
-                className="w-full flex items-center gap-3 p-3 sm:p-4 bg-green-50 dark:bg-green-950/30 hover:bg-green-100 dark:hover:bg-green-950/50 active:bg-green-200 dark:active:bg-green-950/70 rounded-lg transition-colors">
+                className="w-full flex items-center gap-3 rounded-xl border border-green-200/70 bg-green-50 p-3 text-left transition-colors hover:bg-green-100 active:bg-green-200 dark:border-green-900/50 dark:bg-green-950/30 dark:hover:bg-green-950/50 dark:active:bg-green-950/70 sm:p-4">
                 <div className="w-9 h-9 sm:w-10 sm:h-10 bg-green-600 dark:bg-green-700 rounded-lg flex items-center justify-center flex-shrink-0">
                   <DollarSign className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
                 </div>
@@ -186,7 +185,7 @@ export function DashboardPage() {
             {['admin', 'payroll_officer'].includes(user?.role || '') && (
               <button 
                 onClick={() => (window as any).navigateTo?.('staff')}
-                className="w-full flex items-center gap-3 p-3 sm:p-4 bg-accent/50 hover:bg-accent active:bg-accent/80 rounded-lg transition-colors">
+                className="w-full flex items-center gap-3 rounded-xl border border-border/60 bg-muted/40 p-3 text-left transition-colors hover:bg-muted active:bg-muted/80 sm:p-4">
                 <div className="w-9 h-9 sm:w-10 sm:h-10 bg-accent rounded-lg flex items-center justify-center flex-shrink-0">
                   <Users className="w-4 h-4 sm:w-5 sm:h-5 text-accent-foreground" />
                 </div>
@@ -200,7 +199,7 @@ export function DashboardPage() {
             {['admin', 'payroll_officer', 'payroll_loader'].includes(user?.role || '') && (
               <button 
                 onClick={() => (window as any).navigateTo?.('arrears')}
-                className="w-full flex items-center gap-3 p-3 sm:p-4 bg-green-50/50 dark:bg-green-950/20 hover:bg-green-100/50 dark:hover:bg-green-950/40 active:bg-green-200/50 dark:active:bg-green-950/60 rounded-lg transition-colors">
+                className="w-full flex items-center gap-3 rounded-xl border border-green-200/50 bg-green-50/50 p-3 text-left transition-colors hover:bg-green-100/70 active:bg-green-200/70 dark:border-green-900/40 dark:bg-green-950/20 dark:hover:bg-green-950/40 dark:active:bg-green-950/60 sm:p-4">
                 <div className="w-9 h-9 sm:w-10 sm:h-10 bg-green-600 dark:bg-green-700 rounded-lg flex items-center justify-center flex-shrink-0">
                   <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
                 </div>
@@ -214,12 +213,22 @@ export function DashboardPage() {
         </div>
 
         {/* Recent Payroll Batches */}
-        <div className="bg-card border border-border rounded-lg p-4 sm:p-6">
-          <h3 className="font-semibold text-card-foreground mb-3 sm:mb-4 text-base sm:text-lg">Recent Payroll Batches</h3>
+        <div className="rounded-xl border border-border/70 bg-card p-4 shadow-sm sm:p-6">
+          <div className="mb-4 flex items-end justify-between gap-3">
+            <div>
+              <h3 className="text-base font-semibold text-card-foreground sm:text-lg">Recent payroll batches</h3>
+              <p className="mt-1 text-sm text-muted-foreground">Latest payroll activity and status.</p>
+            </div>
+            {stats?.recent_batches?.length > 0 && (
+              <span className="shrink-0 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                {stats.recent_batches.length} recent
+              </span>
+            )}
+          </div>
           <div className="space-y-2 sm:space-y-3">
             {stats?.recent_batches?.length > 0 ? (
               stats.recent_batches.map((batch: any) => (
-                <div key={batch.id} className="flex items-center justify-between p-3 sm:p-4 bg-muted/30 rounded-lg">
+                <div key={batch.id} className="flex items-center justify-between gap-3 rounded-xl border border-border/50 bg-muted/20 p-3 transition-colors hover:bg-muted/40 sm:p-4">
                   <div className="flex-1 min-w-0 mr-3">
                     <p className="font-medium text-foreground text-sm sm:text-base truncate">{batch.batch_number}</p>
                     <p className="text-xs sm:text-sm text-muted-foreground">{batch.month}</p>
@@ -243,9 +252,12 @@ export function DashboardPage() {
       </div>
 
       {/* Payroll Calendar */}
-      <div className="mt-4 sm:mt-6 bg-card border border-border rounded-lg p-4 sm:p-6">
+      <div className="rounded-xl border border-border/70 bg-card p-4 shadow-sm sm:p-6">
         <div className="flex items-center justify-between mb-3 sm:mb-4">
-          <h3 className="font-semibold text-card-foreground text-base sm:text-lg">Payroll Calendar</h3>
+          <div>
+            <h3 className="font-semibold text-card-foreground text-base sm:text-lg">Payroll calendar</h3>
+            <p className="mt-0.5 text-xs text-muted-foreground sm:text-sm">Key payroll milestones and activity.</p>
+          </div>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1))}
