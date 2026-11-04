@@ -5,7 +5,9 @@ type DashboardMetricCardProps = {
   value: number | string;
   description: string;
   icon: LucideIcon;
-  tone: 'blue' | 'yellow' | 'red' | 'green';
+  tone: 'blue' | 'yellow' | 'red' | 'green' | 'purple';
+  format?: (value: number) => string;
+  detail?: string;
 };
 
 const toneClasses = {
@@ -25,17 +27,22 @@ const toneClasses = {
     accent: 'bg-emerald-600',
     icon: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300',
   },
+  purple: {
+    accent: 'bg-violet-500',
+    icon: 'bg-violet-50 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300',
+  },
 } as const;
 
-function formatValue(value: number | string) {
+function formatMetric(value: number | string, formatter?: (value: number) => string) {
   if (typeof value !== 'number') return value;
+  if (formatter) return formatter(value);
   if (value > 999999) {
     return Intl.NumberFormat('en-NG', { notation: 'compact', maximumFractionDigits: 1 }).format(value);
   }
   return value.toLocaleString();
 }
 
-export function DashboardMetricCard({ title, value, description, icon: Icon, tone }: DashboardMetricCardProps) {
+export function DashboardMetricCard({ title, value, description, icon: Icon, tone, format, detail }: DashboardMetricCardProps) {
   const styles = toneClasses[tone];
 
   return (
@@ -48,10 +55,12 @@ export function DashboardMetricCard({ title, value, description, icon: Icon, ton
         </div>
       </div>
       <p className="text-[clamp(1.5rem,4vw,2rem)] font-bold leading-none tracking-tight tabular-nums text-foreground">
-        {formatValue(value)}
+        {formatMetric(value, format)}
       </p>
-      {typeof value === 'number' && value > 999999 && (
-        <p className="mt-1 break-all font-mono text-xs text-muted-foreground">{value.toLocaleString()}</p>
+      {(detail || (typeof value === 'number' && value > 999999)) && (
+        <p className="mt-1 break-all font-mono text-xs text-muted-foreground">
+          {detail || (typeof value === 'number' ? value.toLocaleString() : value)}
+        </p>
       )}
       <p className="mt-2 text-sm text-muted-foreground">{description}</p>
     </div>

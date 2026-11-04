@@ -1,19 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { Breadcrumb } from '../components/Breadcrumb';
-import { Modal } from '../components/Modal';
 import { StatusBadge } from '../components/StatusBadge';
+import { DashboardMetricCard } from '../components/DashboardMetricCard';
 import { useAuth } from '../contexts/AuthContext';
-import { dashboardAPI, staffAPI, staffPortalAPI, departmentAPI } from '../lib/api-client';
+import { staffAPI, staffPortalAPI, departmentAPI } from '../lib/api-client';
 import { PageSkeleton } from '../components/PageLoader';
 import { 
   Users, Calendar, Clock, CheckCircle, 
-  TrendingUp, Award, UserCheck, Briefcase,
-  FileText, AlertCircle, XCircle
+  UserCheck, Briefcase, FileText, AlertCircle
 } from 'lucide-react';
 
 export function HRDashboardPage() {
   const { user } = useAuth();
-  const [stats, setStats] = useState<any>(null);
   const [hrStats, setHrStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
@@ -23,10 +21,6 @@ export function HRDashboardPage() {
 
   const loadDashboardData = async () => {
     try {
-      // Get general dashboard stats
-      const generalStats = await dashboardAPI.getDashboardStats();
-      setStats(generalStats);
-
       // Get HR-specific stats
       const staffResponse = await staffAPI.getAllStaff();
       const rawStaffData = Array.isArray(staffResponse) ? staffResponse : (staffResponse.data || []);
@@ -119,178 +113,210 @@ export function HRDashboardPage() {
       title: 'Total Staff',
       value: hrStats?.totalStaff || 0,
       icon: Users,
-      color: 'blue',
-      subtitle: `${hrStats?.statusBreakdown.active || 0} active`,
-      trend: '+2.5% from last month',
+      tone: 'blue',
+      description: `${hrStats?.statusBreakdown.active || 0} currently active`,
     },
     {
       title: 'Pending Leave Requests',
       value: hrStats?.pendingLeaveCount || 0,
       icon: Clock,
-      color: 'yellow',
-      subtitle: 'Awaiting approval',
-      trend: 'Requires attention',
+      tone: 'yellow',
+      description: 'Awaiting review',
     },
     {
       title: 'Approved This Month',
       value: hrStats?.approvedLeaveThisMonth || 0,
       icon: CheckCircle,
-      color: 'green',
-      subtitle: 'Leave requests',
-      trend: 'Current month',
+      tone: 'green',
+      description: 'Leave requests this month',
     },
     {
       title: 'Departments',
       value: hrStats?.totalDepartments || 0,
       icon: Briefcase,
-      color: 'purple',
-      subtitle: 'Active departments',
-      trend: 'Organization structure',
+      tone: 'purple',
+      description: 'Organization structure',
     },
-  ];
-
-  const colorClasses = {
-    blue: 'bg-blue-100 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400',
-    yellow: 'bg-yellow-100 dark:bg-yellow-950/30 text-yellow-600 dark:text-yellow-400',
-    green: 'bg-green-100 dark:bg-green-950/30 text-green-600 dark:text-green-400',
-    purple: 'bg-purple-100 dark:bg-purple-950/30 text-purple-600 dark:text-purple-400',
-    red: 'bg-red-100 dark:bg-red-950/30 text-red-600 dark:text-red-400',
-  };
+  ] as const;
 
   return (
-    <div>
+    <div className="space-y-5 sm:space-y-7">
       <Breadcrumb items={[{ label: 'HR Dashboard' }]} />
       
-      <div className="mb-4 sm:mb-6">
-        <h1 className="text-foreground mb-1 sm:mb-2 text-base sm:text-lg font-semibold">Welcome back, {user?.full_name}</h1>
-        <p className="text-muted-foreground text-xs sm:text-sm">Here's your HR management overview for today.</p>
-      </div>
+      <section className="relative isolate overflow-hidden rounded-2xl bg-gradient-to-br from-green-950 via-green-900 to-green-800 px-5 py-6 shadow-lg shadow-green-950/10 sm:px-8 sm:py-8">
+        <div aria-hidden="true" className="absolute -right-10 -top-20 h-64 w-64 rounded-full border border-white/10" />
+        <div className="relative flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-200">People operations</p>
+            <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">Welcome back, {user?.full_name || 'there'}</h1>
+            <p className="mt-2 text-sm text-green-50/80 sm:text-base">Staff, leave, and department activity at a glance.</p>
+          </div>
+          <span className="inline-flex w-fit items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-medium text-white">
+            <Calendar className="h-4 w-4 text-emerald-200" />
+            {new Date().toLocaleDateString('en-NG', { month: 'long', year: 'numeric' })}
+          </span>
+        </div>
+      </section>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 md:gap-6 mb-4 sm:mb-6">
-        {statCards.map((stat, index) => {
-          const Icon = stat.icon;
-          return (
-            <div key={index} className="min-w-0 bg-card border border-border rounded-lg p-3 sm:p-6 hover:shadow-lg transition-shadow">
-              <div className="mb-2 sm:mb-4">
-                <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg ${colorClasses[stat.color as keyof typeof colorClasses]} flex items-center justify-center`}>
-                  <Icon className="w-4 h-4 sm:w-5 sm:h-5" />
-                </div>
-              </div>
-              <div className="min-w-0 text-[clamp(1rem,5.5vw,1.75rem)] sm:text-2xl leading-tight tracking-tight tabular-nums font-bold text-foreground">
-                {typeof stat.value === 'number' && stat.value > 999999
-                  ? Intl.NumberFormat('en-NG', { notation: 'compact', maximumFractionDigits: 1 }).format(stat.value)
-                  : typeof stat.value === 'number' ? stat.value.toLocaleString() : stat.value}
-              </div>
-              {typeof stat.value === 'number' && stat.value > 999999 && (
-                <div className="text-[10px] sm:text-xs text-muted-foreground font-mono mt-1 break-all">{stat.value.toLocaleString()}</div>
-              )}
-              <div className="text-xs sm:text-sm text-muted-foreground mt-1 leading-tight">{stat.title}</div>
-              <div className="text-[11px] sm:text-xs text-muted-foreground/80 mt-2 leading-snug line-clamp-2">{stat.subtitle}</div>
-              <div className="text-[11px] sm:text-xs text-primary mt-1 leading-snug line-clamp-2">{stat.trend}</div>
-            </div>
-          );
-        })}
-      </div>
+      {(hrStats?.pendingLeaveCount || 0) > 0 && (
+        <button
+          onClick={() => (window as any).navigateTo?.('leave-management')}
+          className="flex w-full items-center justify-between gap-4 rounded-xl border border-amber-300/70 bg-amber-50 px-4 py-3 text-left transition-colors hover:bg-amber-100 dark:border-amber-900/50 dark:bg-amber-950/30 dark:hover:bg-amber-950/50 sm:px-5"
+        >
+          <span className="flex min-w-0 items-center gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
+              <Clock className="h-5 w-5" />
+            </span>
+            <span className="min-w-0">
+              <span className="block font-semibold text-foreground">{hrStats.pendingLeaveCount} leave {hrStats.pendingLeaveCount === 1 ? 'request' : 'requests'} need review</span>
+              <span className="block text-sm text-muted-foreground">Open leave management to review pending requests.</span>
+            </span>
+          </span>
+          <span className="shrink-0 text-sm font-semibold text-amber-800 dark:text-amber-200">Review</span>
+        </button>
+      )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+      <section aria-label="HR snapshot">
+        <div className="mb-3">
+          <h2 className="text-base font-semibold text-foreground sm:text-lg">HR snapshot</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground sm:text-sm">Current workforce and leave figures.</p>
+        </div>
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+          {statCards.map((stat) => (
+            <DashboardMetricCard
+              key={stat.title}
+              title={stat.title}
+              value={stat.value}
+              description={stat.description}
+              icon={stat.icon}
+              tone={stat.tone}
+            />
+          ))}
+        </div>
+      </section>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 sm:gap-6">
         {/* Staff Status Breakdown */}
-        <div className="bg-card border border-border rounded-lg p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-foreground">Staff Status Overview</h2>
-            <UserCheck className="w-5 h-5 text-muted-foreground" />
+        <div className="rounded-xl border border-border/70 bg-card p-4 shadow-sm sm:p-6">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-foreground sm:text-lg">Staff status</h2>
+              <p className="mt-1 text-sm text-muted-foreground">Current workforce distribution.</p>
+            </div>
+            <UserCheck className="h-5 w-5 text-muted-foreground" />
           </div>
           <div className="space-y-3">
-            {Object.entries(hrStats?.statusBreakdown || {}).map(([status, count]) => (
-              <div key={status} className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <StatusBadge status={status as any} />
+            {Object.entries(hrStats?.statusBreakdown || {}).map(([status, count]) => {
+              const share = hrStats?.totalStaff ? ((count as number) / hrStats.totalStaff) * 100 : 0;
+              return (
+                <div key={status}>
+                  <div className="mb-1.5 flex items-center justify-between gap-3">
+                    <StatusBadge status={status as any} />
+                    <span className="text-sm font-semibold tabular-nums text-foreground">{count as number}</span>
+                  </div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                    <div className="h-full rounded-full bg-primary" style={{ width: `${share}%` }} />
+                  </div>
                 </div>
-                <span className="text-lg font-semibold text-foreground">{count as number}</span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
         {/* Department Breakdown */}
-        <div className="bg-card border border-border rounded-lg p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-foreground">Staff by Department</h2>
-            <Briefcase className="w-5 h-5 text-muted-foreground" />
+        <div className="rounded-xl border border-border/70 bg-card p-4 shadow-sm sm:p-6">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-foreground sm:text-lg">Staff by department</h2>
+              <p className="mt-1 text-sm text-muted-foreground">Largest teams by staff count.</p>
+            </div>
+            <Briefcase className="h-5 w-5 text-muted-foreground" />
           </div>
-          <div className="space-y-3">
-            {Object.entries(hrStats?.departmentBreakdown || {})
-              .sort(([, a], [, b]) => (b as number) - (a as number))
-              .slice(0, 5)
-              .map(([dept, count]) => (
-                <div key={dept} className="flex items-center justify-between">
-                  <span className="text-sm text-foreground">{dept}</span>
-                  <div className="flex items-center gap-2">
-                    <div className="w-24 bg-muted rounded-full h-2">
-                      <div
-                        className="bg-primary h-2 rounded-full"
-                        style={{
-                          width: `${((count as number) / hrStats.totalStaff) * 100}%`,
-                        }}
-                      />
+          {Object.entries(hrStats?.departmentBreakdown || {}).length > 0 ? (
+            <div className="space-y-4">
+              {Object.entries(hrStats?.departmentBreakdown || {})
+                .sort(([, a], [, b]) => (b as number) - (a as number))
+                .slice(0, 5)
+                .map(([dept, count]) => (
+                  <div key={dept}>
+                    <div className="mb-1.5 flex items-center justify-between gap-3">
+                      <span className="truncate text-sm text-foreground">{dept}</span>
+                      <span className="text-sm font-semibold tabular-nums text-foreground">{count as number}</span>
                     </div>
-                    <span className="text-sm font-semibold text-foreground w-8 text-right">{count as number}</span>
+                    <div className="h-2 overflow-hidden rounded-full bg-muted">
+                      <div className="h-full rounded-full bg-primary" style={{ width: `${hrStats?.totalStaff ? ((count as number) / hrStats.totalStaff) * 100 : 0}%` }} />
+                    </div>
                   </div>
-                </div>
-              ))}
-          </div>
+                ))}
+            </div>
+          ) : (
+            <p className="py-8 text-center text-sm text-muted-foreground">Department information is not available.</p>
+          )}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 sm:gap-6">
         {/* Leave Type Breakdown */}
-        <div className="bg-card border border-border rounded-lg p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-foreground">Leave Requests by Type</h2>
-            <Calendar className="w-5 h-5 text-muted-foreground" />
+        <div className="rounded-xl border border-border/70 bg-card p-4 shadow-sm sm:p-6">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-foreground sm:text-lg">Leave requests by type</h2>
+              <p className="mt-1 text-sm text-muted-foreground">Recorded leave across all statuses.</p>
+            </div>
+            <Calendar className="h-5 w-5 text-muted-foreground" />
           </div>
-          <div className="space-y-3">
-            {Object.entries(hrStats?.leaveTypeBreakdown || {})
-              .sort(([, a], [, b]) => (b as number) - (a as number))
-              .map(([type, count]) => (
-                <div key={type} className="flex items-center justify-between">
-                  <span className="text-sm text-foreground capitalize">{type.replace('_', ' ')}</span>
-                  <span className="text-lg font-semibold text-foreground">{count as number}</span>
-                </div>
-              ))}
-          </div>
+          {Object.entries(hrStats?.leaveTypeBreakdown || {}).length > 0 ? (
+            <div className="space-y-3">
+              {Object.entries(hrStats?.leaveTypeBreakdown || {})
+                .sort(([, a], [, b]) => (b as number) - (a as number))
+                .map(([type, count]) => (
+                  <div key={type} className="flex items-center justify-between gap-3 rounded-lg bg-muted/40 px-3 py-2.5">
+                    <span className="text-sm text-foreground capitalize">{type.replace('_', ' ')}</span>
+                    <span className="text-sm font-semibold tabular-nums text-foreground">{count as number}</span>
+                  </div>
+                ))}
+            </div>
+          ) : (
+            <p className="py-8 text-center text-sm text-muted-foreground">No leave requests have been recorded.</p>
+          )}
         </div>
 
         {/* Staff Currently on Leave */}
-        <div className="bg-card border border-border rounded-lg p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-foreground">Staff Currently on Leave</h2>
-            <AlertCircle className="w-5 h-5 text-yellow-600 dark:text-yellow-500" />
+        <div className="rounded-xl border border-border/70 bg-card p-4 shadow-sm sm:p-6">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-foreground sm:text-lg">Staff currently on leave</h2>
+              <p className="mt-1 text-sm text-muted-foreground">Team members marked as on leave.</p>
+            </div>
+            <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
           </div>
-          <div className="space-y-3">
-            {hrStats?.staffOnLeave && hrStats.staffOnLeave.length > 0 ? (
-              hrStats.staffOnLeave.slice(0, 5).map((staff: any) => (
-                <div key={staff.id} className="flex items-center justify-between p-2 hover:bg-muted rounded-lg transition-colors">
-                  <div>
-                    <p className="text-sm font-medium text-foreground">
+          {hrStats?.staffOnLeave && hrStats.staffOnLeave.length > 0 ? (
+            <div className="space-y-2">
+              {hrStats.staffOnLeave.slice(0, 5).map((staff: any) => (
+                <div key={staff.id} className="flex items-center justify-between gap-3 rounded-lg p-2 transition-colors hover:bg-muted/60">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-foreground">
                       {staff.bio_data.first_name} {staff.bio_data.last_name}
                     </p>
                     <p className="text-xs text-muted-foreground">{staff.staff_number}</p>
                   </div>
-                  <span className="text-xs text-muted-foreground">{staff.appointment.department}</span>
+                  <span className="shrink-0 text-right text-xs text-muted-foreground">{staff.appointment.department}</span>
                 </div>
-              ))
-            ) : (
-              <p className="text-sm text-muted-foreground text-center py-4">No staff currently on leave</p>
-            )}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <p className="py-8 text-center text-sm text-muted-foreground">No staff currently on leave.</p>
+          )}
         </div>
       </div>
 
       {/* Recent Leave Requests */}
-      <div className="bg-card border border-border rounded-lg p-6">
+      <div className="rounded-xl border border-border/70 bg-card p-4 shadow-sm sm:p-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-foreground">Recent Leave Requests</h2>
+          <div>
+            <h2 className="text-base font-semibold text-foreground sm:text-lg">Recent leave requests</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Latest staff leave activity.</p>
+          </div>
           <FileText className="w-5 h-5 text-muted-foreground" />
         </div>
         <div className="overflow-x-auto">
@@ -343,33 +369,36 @@ export function HRDashboardPage() {
       </div>
 
       {/* Quick Actions */}
-      <div className="mt-6 bg-accent/50 dark:bg-accent/20 border border-border rounded-lg p-6">
-        <h2 className="text-lg font-semibold text-foreground mb-4">Quick Actions</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="rounded-xl border border-border/70 bg-card p-4 shadow-sm sm:p-6">
+        <div className="mb-4">
+          <h2 className="text-base font-semibold text-foreground sm:text-lg">Quick actions</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Common staff and leave management tasks.</p>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <button 
             onClick={() => (window as any).navigateTo?.('staff')}
-            className="flex items-center gap-3 p-4 bg-card border border-border rounded-lg hover:bg-muted transition-colors"
+            className="flex min-h-12 items-center gap-3 rounded-xl border border-border/60 bg-muted/30 p-4 text-left transition-colors hover:bg-muted"
           >
             <Users className="w-5 h-5 text-primary" />
             <span className="text-sm font-medium text-foreground">View All Staff</span>
           </button>
           <button 
             onClick={() => (window as any).navigateTo?.('leave-management')}
-            className="flex items-center gap-3 p-4 bg-card border border-border rounded-lg hover:bg-muted transition-colors"
+            className="flex min-h-12 items-center gap-3 rounded-xl border border-border/60 bg-muted/30 p-4 text-left transition-colors hover:bg-muted"
           >
             <Calendar className="w-5 h-5 text-primary" />
             <span className="text-sm font-medium text-foreground">Manage Leave</span>
           </button>
           <button 
             onClick={() => (window as any).navigateTo?.('department-management')}
-            className="flex items-center gap-3 p-4 bg-card border border-border rounded-lg hover:bg-muted transition-colors"
+            className="flex min-h-12 items-center gap-3 rounded-xl border border-border/60 bg-muted/30 p-4 text-left transition-colors hover:bg-muted"
           >
             <Briefcase className="w-5 h-5 text-primary" />
             <span className="text-sm font-medium text-foreground">Departments</span>
           </button>
           <button 
             onClick={() => (window as any).navigateTo?.('reports')}
-            className="flex items-center gap-3 p-4 bg-card border border-border rounded-lg hover:bg-muted transition-colors"
+            className="flex min-h-12 items-center gap-3 rounded-xl border border-border/60 bg-muted/30 p-4 text-left transition-colors hover:bg-muted"
           >
             <FileText className="w-5 h-5 text-primary" />
             <span className="text-sm font-medium text-foreground">Generate Report</span>

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { PageSkeleton } from '../components/PageLoader';
 import { StatusBadge } from '../components/StatusBadge';
+import { DashboardMetricCard } from '../components/DashboardMetricCard';
 import { useAuth } from '../contexts/AuthContext';
 import { useSystemSettings } from '../contexts/SystemSettingsContext';
 import { cooperativeAPI, disbursementAPI } from '../lib/loanAPI';
@@ -118,60 +119,49 @@ export function CooperativeDashboardPage() {
   const statCards = [
     {
       title: 'Active Cooperatives',
-      value: stats.active_cooperatives || stats.total_cooperatives,
+      value: stats.active_cooperatives,
       icon: Building2,
-      color: 'blue',
-      subtitle: `${stats.total_cooperatives} total registered`,
+      tone: 'blue',
+      description: `${stats.total_cooperatives} total registered`,
     },
     {
       title: 'Active Members',
-      value: stats.active_members || stats.total_members,
+      value: stats.active_members,
       icon: Users,
-      color: 'green',
-      subtitle: `${stats.total_members} total memberships`,
+      tone: 'green',
+      description: `${stats.total_members} total memberships`,
     },
     {
       title: 'Savings Pool',
       value: stats.total_contributions,
       icon: DollarSign,
-      color: 'emerald',
-      subtitle: 'Total cooperative contributions',
+      tone: 'green',
+      description: 'Total cooperative contributions',
       isCurrency: true,
     },
     {
       title: 'Contribution Entries',
       value: stats.total_contribution_transactions,
       icon: TrendingUp,
-      color: 'yellow',
-      subtitle: 'Recorded contribution transactions',
+      tone: 'yellow',
+      description: 'Recorded contribution transactions',
     },
     {
       title: 'Active Loans',
       value: loanManagementEnabled ? loanMetrics.activeLoans : 0,
       icon: Wallet,
-      color: 'purple',
-      subtitle: loanManagementEnabled ? 'Currently active disbursements' : 'Loan module is currently off',
+      tone: 'purple',
+      description: loanManagementEnabled ? 'Currently active disbursements' : 'Loan module is currently off',
     },
     {
       title: 'Outstanding Balance',
       value: loanManagementEnabled ? loanMetrics.outstandingBalance : 0,
       icon: FileText,
-      color: 'rose',
-      subtitle: loanManagementEnabled ? 'Across all active and historical loans' : 'Activate loan module to track loans',
+      tone: 'red',
+      description: loanManagementEnabled ? 'Across all active and historical loans' : 'Activate loan module to track loans',
       isCurrency: true,
     },
-  ];
-
-  type StatCard = (typeof statCards)[number];
-
-  const colorClasses = {
-    blue: 'bg-blue-100 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400',
-    green: 'bg-green-100 dark:bg-green-950/30 text-green-600 dark:text-green-400',
-    emerald: 'bg-emerald-100 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400',
-    yellow: 'bg-yellow-100 dark:bg-yellow-950/30 text-yellow-600 dark:text-yellow-400',
-    purple: 'bg-purple-100 dark:bg-purple-950/30 text-purple-600 dark:text-purple-400',
-    rose: 'bg-rose-100 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400',
-  } as const;
+  ] as const;
 
   const quickActions = [
     {
@@ -204,62 +194,67 @@ export function CooperativeDashboardPage() {
     },
   ];
 
+  const maxCooperativeContributions = Math.max(
+    0,
+    ...topCooperatives.map((cooperative: any) => toNumber(cooperative?.total_contributions)),
+  );
+
   return (
-    <div>
+    <div className="space-y-5 sm:space-y-7">
       <Breadcrumb items={[{ label: 'Cooperative Dashboard' }]} />
 
-      <div className="mb-4 sm:mb-6">
-        <h1 className="text-foreground mb-1 sm:mb-2 text-base sm:text-lg font-semibold">
-          Welcome back, {user?.full_name}
-        </h1>
-        <p className="text-muted-foreground text-xs sm:text-sm">
-          Here is your cooperative portfolio snapshot, with savings, membership, and loan activity front and center.
-        </p>
-      </div>
+      <section className="relative isolate overflow-hidden rounded-2xl bg-gradient-to-br from-green-950 via-green-900 to-green-800 px-5 py-6 shadow-lg shadow-green-950/10 sm:px-8 sm:py-8">
+        <div aria-hidden="true" className="absolute -right-10 -top-20 h-64 w-64 rounded-full border border-white/10" />
+        <div className="relative flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-200">Cooperative portfolio</p>
+            <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">Welcome back, {user?.full_name || 'there'}</h1>
+            <p className="mt-2 max-w-2xl text-sm text-green-50/80 sm:text-base">
+              Savings, membership, and loan activity across your cooperative portfolio.
+            </p>
+          </div>
+          <span className="inline-flex w-fit items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-medium text-white">
+            <Building2 className="h-4 w-4 text-emerald-200" />
+            Portfolio overview
+          </span>
+        </div>
+      </section>
 
-      <div className="grid grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4 md:gap-6 mb-4 sm:mb-6">
-        {statCards.map((stat: StatCard) => {
-          const Icon = stat.icon;
-          return (
-            <div key={stat.title} className="min-w-0 bg-card border border-border rounded-lg p-3 sm:p-6">
-              <div className="mb-2 sm:mb-4">
-                <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg ${colorClasses[stat.color as keyof typeof colorClasses]} flex items-center justify-center`}>
-                  <Icon className="w-4 h-4 sm:w-5 sm:h-5" />
-                </div>
-              </div>
-              <div className="min-w-0 text-[clamp(0.875rem,5vw,1.5rem)] sm:text-2xl leading-tight tracking-tight tabular-nums font-bold text-foreground">
-                {stat.isCurrency
-                  ? formatCompactCurrency(stat.value).short
-                  : stat.value > 999999
-                    ? Intl.NumberFormat('en-NG', { notation: 'compact', maximumFractionDigits: 1 }).format(stat.value)
-                    : stat.value.toLocaleString()}
-              </div>
-              {!stat.isCurrency && stat.value > 999999 && (
-                <div className="text-[10px] sm:text-xs text-muted-foreground font-mono mt-1 break-all">{stat.value.toLocaleString()}</div>
-              )}
-              {stat.isCurrency && stat.value > 999999 && (
-                <div className="text-[10px] sm:text-xs text-muted-foreground font-mono mt-1 break-all">
-                  {formatCompactCurrency(stat.value).full}
-                </div>
-              )}
-              <div className="text-xs sm:text-sm text-muted-foreground mt-1 leading-tight">{stat.title}</div>
-              <div className="text-[11px] sm:text-xs text-muted-foreground/80 mt-2 leading-snug line-clamp-2">{stat.subtitle}</div>
-            </div>
-          );
-        })}
-      </div>
+      <section aria-label="Cooperative portfolio snapshot">
+        <div className="mb-3">
+          <h2 className="text-base font-semibold text-foreground sm:text-lg">Portfolio snapshot</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground sm:text-sm">Membership, savings, and lending at a glance.</p>
+        </div>
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-3">
+          {statCards.map((stat) => (
+            <DashboardMetricCard
+              key={stat.title}
+              title={stat.title}
+              value={stat.value}
+              description={stat.description}
+              icon={stat.icon}
+              tone={stat.tone}
+              format={'isCurrency' in stat && stat.isCurrency ? (value) => formatCompactCurrency(value).short : undefined}
+              detail={'isCurrency' in stat && stat.isCurrency && stat.value > 999999 ? formatCompactCurrency(stat.value).full : undefined}
+            />
+          ))}
+        </div>
+      </section>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-4 sm:mb-6">
-        <div className="bg-card border border-border rounded-lg p-4 sm:p-6">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 sm:gap-6">
+        <div className="rounded-xl border border-border/70 bg-card p-4 shadow-sm sm:p-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-foreground">Top Cooperatives</h2>
+            <div>
+              <h2 className="text-base font-semibold text-foreground sm:text-lg">Top cooperatives by savings</h2>
+              <p className="mt-1 text-sm text-muted-foreground">Contribution totals for active societies.</p>
+            </div>
             <Building2 className="w-5 h-5 text-muted-foreground" />
           </div>
           {cooperativeManagementEnabled ? (
             topCooperatives.length > 0 ? (
               <div className="space-y-3">
                 {topCooperatives.map((cooperative: any) => (
-                  <div key={cooperative.id} className="rounded-lg border border-border bg-muted/20 p-4">
+                  <div key={cooperative.id} className="rounded-xl border border-border/60 bg-muted/20 p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="font-medium text-foreground truncate">{cooperative.name}</p>
@@ -285,6 +280,26 @@ export function CooperativeDashboardPage() {
                         <p className="font-semibold text-foreground">{formatCurrency(toNumber(cooperative.total_loans_outstanding))}</p>
                       </div>
                     </div>
+                    <div className="mt-4">
+                      <div className="mb-1.5 flex items-center justify-between gap-3 text-xs">
+                        <span className="text-muted-foreground">Savings relative to top society</span>
+                        <span className="font-medium tabular-nums text-foreground">
+                          {maxCooperativeContributions > 0
+                            ? `${Math.round((toNumber(cooperative.total_contributions) / maxCooperativeContributions) * 100)}%`
+                            : '0%'}
+                        </span>
+                      </div>
+                      <div className="h-2 overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full bg-primary"
+                          style={{
+                            width: `${maxCooperativeContributions > 0
+                              ? (toNumber(cooperative.total_contributions) / maxCooperativeContributions) * 100
+                              : 0}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -304,16 +319,19 @@ export function CooperativeDashboardPage() {
           )}
         </div>
 
-        <div className="bg-card border border-border rounded-lg p-4 sm:p-6">
+        <div className="rounded-xl border border-border/70 bg-card p-4 shadow-sm sm:p-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-foreground">Recent Loan Activity</h2>
+            <div>
+              <h2 className="text-base font-semibold text-foreground sm:text-lg">Recent loan activity</h2>
+              <p className="mt-1 text-sm text-muted-foreground">Latest disbursements and outstanding balances.</p>
+            </div>
             <Wallet className="w-5 h-5 text-muted-foreground" />
           </div>
           {loanManagementEnabled ? (
             recentDisbursements.length > 0 ? (
               <div className="space-y-3">
                 {recentDisbursements.map((loan: any) => (
-                  <div key={loan.id} className="rounded-lg border border-border bg-muted/20 p-4">
+                  <div key={loan.id} className="rounded-xl border border-border/60 bg-muted/20 p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="font-medium text-foreground truncate">{loan.staff_name || 'Unknown staff'}</p>
@@ -355,10 +373,13 @@ export function CooperativeDashboardPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-        <div className="bg-card border border-border rounded-lg p-4 sm:p-6">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 sm:gap-6">
+        <div className="rounded-xl border border-border/70 bg-card p-4 shadow-sm sm:p-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-foreground">Module Status</h2>
+            <div>
+              <h2 className="text-base font-semibold text-foreground sm:text-lg">Module status</h2>
+              <p className="mt-1 text-sm text-muted-foreground">Features currently enabled for this portfolio.</p>
+            </div>
             <Settings className="w-5 h-5 text-muted-foreground" />
           </div>
           <div className="space-y-3">
@@ -385,9 +406,12 @@ export function CooperativeDashboardPage() {
           </div>
         </div>
 
-        <div className="bg-card border border-border rounded-lg p-4 sm:p-6">
+        <div className="rounded-xl border border-border/70 bg-card p-4 shadow-sm sm:p-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-foreground">Quick Actions</h2>
+            <div>
+              <h2 className="text-base font-semibold text-foreground sm:text-lg">Quick actions</h2>
+              <p className="mt-1 text-sm text-muted-foreground">Jump into cooperative and lending operations.</p>
+            </div>
             <TrendingUp className="w-5 h-5 text-muted-foreground" />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -398,7 +422,7 @@ export function CooperativeDashboardPage() {
                   key={action.label}
                   onClick={() => action.enabled && (window as any).navigateTo?.(action.view)}
                   disabled={!action.enabled}
-                  className={`flex items-center gap-3 rounded-lg border p-4 text-left transition-colors ${
+                  className={`flex min-h-16 items-center gap-3 rounded-xl border p-4 text-left transition-colors ${
                     action.enabled
                       ? 'border-border bg-background hover:bg-muted'
                       : 'border-border bg-muted/30 opacity-70 cursor-not-allowed'
