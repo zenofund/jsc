@@ -625,52 +625,57 @@ export function ArrearsPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6 justify-items-center md:justify-items-stretch max-w-sm md:max-w-none mx-auto">
-        <div className="bg-card border border-border rounded-lg p-6 w-full">
+      <div className="grid w-full max-w-sm grid-cols-2 gap-3 mx-auto mb-6 justify-items-stretch sm:max-w-none sm:gap-4 md:grid-cols-3 xl:grid-cols-6">
+        <div className="min-w-0 w-full rounded-xl border border-border bg-card p-3 sm:p-4 xl:p-5">
           <div className="flex items-center justify-between mb-2">
             <AlertCircle className="w-8 h-8 text-gray-600 dark:text-gray-500" />
           </div>
-          <div className="text-2xl font-semibold text-foreground">{stats.total}</div>
+          <div className="text-xl font-semibold tabular-nums text-foreground sm:text-2xl">{stats.total}</div>
           <div className="text-sm text-muted-foreground">Total Cases</div>
         </div>
 
-        <div className="bg-card border border-border rounded-lg p-6 w-full">
+        <div className="min-w-0 w-full rounded-xl border border-border bg-card p-3 sm:p-4 xl:p-5">
           <div className="flex items-center justify-between mb-2">
             <AlertCircle className="w-8 h-8 text-yellow-600 dark:text-yellow-500" />
           </div>
-          <div className="text-2xl font-semibold text-foreground">{stats.pending}</div>
+          <div className="text-xl font-semibold tabular-nums text-foreground sm:text-2xl">{stats.pending}</div>
           <div className="text-sm text-muted-foreground">Pending</div>
         </div>
 
-        <div className="bg-card border border-border rounded-lg p-6 w-full">
+        <div className="min-w-0 w-full rounded-xl border border-border bg-card p-3 sm:p-4 xl:p-5">
           <div className="flex items-center justify-between mb-2">
             <TrendingUp className="w-8 h-8 text-green-600 dark:text-green-500" />
           </div>
-          <div className="text-2xl font-semibold text-foreground">{stats.approved}</div>
+          <div className="text-xl font-semibold tabular-nums text-foreground sm:text-2xl">{stats.approved}</div>
           <div className="text-sm text-muted-foreground">Approved</div>
         </div>
 
-        <div className="bg-card border border-border rounded-lg p-6 w-full">
+        <div className="min-w-0 w-full rounded-xl border border-border bg-card p-3 sm:p-4 xl:p-5">
           <div className="flex items-center justify-between mb-2">
             <XCircle className="w-8 h-8 text-red-600 dark:text-red-500" />
           </div>
-          <div className="text-2xl font-semibold text-foreground">{stats.rejected}</div>
+          <div className="text-xl font-semibold tabular-nums text-foreground sm:text-2xl">{stats.rejected}</div>
           <div className="text-sm text-muted-foreground">Rejected</div>
         </div>
 
-        <div className="bg-card border border-border rounded-lg p-6 w-full">
+        <div className="min-w-0 w-full rounded-xl border border-border bg-card p-3 sm:p-4 xl:p-5">
           <div className="flex items-center justify-between mb-2">
             <CheckCircle className="w-8 h-8 text-purple-600 dark:text-purple-500" />
           </div>
-          <div className="text-2xl font-semibold text-foreground">{stats.processed}</div>
+          <div className="text-xl font-semibold tabular-nums text-foreground sm:text-2xl">{stats.processed}</div>
           <div className="text-sm text-muted-foreground">Processed</div>
         </div>
 
-        <div className="bg-card border border-border rounded-lg p-6 w-full">
+        <div className="min-w-0 w-full rounded-xl border border-border bg-card p-3 sm:p-4 xl:p-5">
           <div className="flex items-center justify-between mb-2">
             <DollarSign className="w-8 h-8 text-accent" />
           </div>
-          <div className="text-2xl font-semibold text-foreground">₦{stats.totalAmount.toLocaleString()}</div>
+          <div
+            className="break-all text-[clamp(0.75rem,3.2vw,1.5rem)] font-semibold leading-tight tracking-tight tabular-nums text-foreground"
+            title={formatCurrency(stats.totalAmount)}
+          >
+            {formatCurrency(stats.totalAmount)}
+          </div>
           <div className="text-sm text-muted-foreground">Total Amount</div>
         </div>
       </div>

@@ -400,11 +400,14 @@ export function Layout({ children }: LayoutProps) {
             return (
               <div key={group.group}>
                 <button
+                  aria-expanded={expandedGroups.includes(group.group)}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm text-foreground hover:bg-accent active:bg-accent`}
                   onClick={() => toggleGroup(group.group)}
                 >
-                  <ChevronDown className={`w-4 h-4 flex-shrink-0 ${expandedGroups.includes(group.group) ? 'rotate-180' : ''}`} />
-                  <span className="whitespace-nowrap">{group.group}</span>
+                  <span className="flex-1 whitespace-nowrap text-left">{group.group}</span>
+                  {expandedGroups.includes(group.group)
+                    ? <ChevronDown className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+                    : <ChevronRight className="w-4 h-4 flex-shrink-0" aria-hidden="true" />}
                 </button>
                 {expandedGroups.includes(group.group) && (
                   <div className="pl-5">

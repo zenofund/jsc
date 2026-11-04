@@ -1,8 +1,9 @@
 import React, { ReactNode, useState, useEffect, useRef } from 'react';
-import { Search, Loader2, User } from 'lucide-react';
+import { Search, Loader2, User, X } from 'lucide-react';
 import { staffAPI } from '../../lib/api-client';
 import { formatStaffName } from '../../lib/name-utils';
 import { Staff } from '../../types/entities';
+import { Portal } from '../Portal';
 
 const STAFF_SEARCH_RESULT_LIMIT = 20;
 const STAFF_SEARCH_DEBOUNCE_MS = 300;
@@ -34,6 +35,8 @@ export function StaffSearch({
   const [searchError, setSearchError] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const statusFilter = Array.isArray(status) ? status.join(',') : status;
 
   const normalizeStaff = (item: any): Staff => {
@@ -78,7 +81,12 @@ export function StaffSearch({
   // Close dropdown when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (
+        wrapperRef.current &&
+        !wrapperRef.current.contains(target) &&
+        !dialogRef.current?.contains(target)
+      ) {
         setIsOpen(false);
       }
     }
@@ -133,6 +141,33 @@ export function StaffSearch({
     };
   }, [query, statusFilter]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const focusTimer = window.setTimeout(() => searchInputRef.current?.focus(), 0);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.clearTimeout(focusTimer);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen]);
+
+  const selectStaff = (staffMember: Staff) => {
+    onSelect(staffMember);
+    setQuery('');
+    setIsOpen(false);
+  };
+
+  const renderResultDetails = (staffMember: Staff) =>
+    renderStaffDetails?.(staffMember) ?? staffMember.appointment?.department ?? '';
+
   return (
     <div className="relative" ref={wrapperRef}>
       <div className="flex items-center gap-3 mb-2">
@@ -169,43 +204,85 @@ export function StaffSearch({
         )}
       </div>
 
-      {isOpen && results.length > 0 && (
-        <div className="absolute z-10 w-full mt-1 bg-popover border border-border rounded-md shadow-lg max-h-60 overflow-auto">
-          {results.map((staff) => (
-            <button
-              key={staff.id}
-              type="button"
-              className="w-full text-left px-4 py-2 hover:bg-accent/50 focus:bg-accent/50 outline-none transition-colors border-b border-border last:border-0"
-              onClick={() => {
-                onSelect(staff);
-                setQuery('');
-                setIsOpen(false);
-              }}
+      {isOpen && (
+        <Portal>
+          <div className="fixed inset-0 z-[100] flex items-stretch justify-center bg-black/40 backdrop-blur-sm sm:items-center sm:p-6">
+            <div
+              ref={dialogRef}
+              className="flex h-dvh w-full flex-col bg-background p-4 sm:h-auto sm:max-h-[85dvh] sm:max-w-2xl sm:rounded-2xl sm:border sm:border-border sm:p-6 sm:shadow-2xl"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Search staff"
             >
-              <div className="font-medium text-foreground">
-                {formatStaffName(staff)}
-              </div>
-              <div className="text-xs text-muted-foreground flex justify-between">
-                <span>{staff.staff_number}</span>
-                <span>{renderStaffDetails?.(staff) ?? staff.appointment?.department ?? ''}</span>
-              </div>
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-foreground">Select staff member</h2>
+              <p className="text-sm text-muted-foreground">Search by name or staff number.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsOpen(false)}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full hover:bg-muted"
+              aria-label="Close staff search"
+            >
+              <X className="h-5 w-5" />
             </button>
-          ))}
-        </div>
-      )}
-      
-      {isOpen && searchError && (
-        <div className="absolute z-10 w-full mt-1 bg-popover border border-border rounded-md shadow-lg p-4 text-center text-destructive text-sm">
-          Staff search failed: {searchError}
-        </div>
-      )}
-
-      {isOpen && query && results.length === 0 && !loading && (
-        searchError ? null : (
-          <div className="absolute z-10 w-full mt-1 bg-popover border border-border rounded-md shadow-lg p-4 text-center text-muted-foreground text-sm">
-            No staff found matching "{query}"
           </div>
-        )
+          <div className="relative mb-4 shrink-0">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={query}
+              placeholder={placeholder}
+              disabled={disabled}
+              onChange={(event) => {
+                if (selectedStaff) onSelect(null);
+                setQuery(event.target.value);
+              }}
+              className="w-full rounded-lg border border-border bg-background py-3 pl-10 pr-10 text-base text-foreground outline-none focus:ring-2 focus:ring-primary/50"
+            />
+            {loading && (
+              <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-primary" />
+            )}
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-xl border border-border bg-card">
+            {results.map((staffMember) => (
+              <button
+                key={staffMember.id}
+                type="button"
+                className="flex min-h-16 w-full flex-col justify-center border-b border-border px-4 py-3 text-left last:border-0 hover:bg-accent/50 focus:bg-accent/50"
+                onClick={() => selectStaff(staffMember)}
+              >
+                <span className="font-medium text-foreground">{formatStaffName(staffMember)}</span>
+                <span className="mt-1 flex flex-wrap justify-between gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                  <span>{staffMember.staff_number}</span>
+                  <span>{renderResultDetails(staffMember)}</span>
+                </span>
+              </button>
+            ))}
+            {searchError && (
+              <p className="p-4 text-center text-sm text-destructive">Staff search failed: {searchError}</p>
+            )}
+            {query && !loading && !searchError && results.length === 0 && (
+              <p className="p-4 text-center text-sm text-muted-foreground">No staff found matching "{query}"</p>
+            )}
+            {query && loading && results.length === 0 && (
+              <p className="flex items-center justify-center gap-2 p-4 text-center text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Searching staff...
+              </p>
+            )}
+            {!query && !loading && results.length === 0 && (
+              <p className="p-4 text-center text-sm text-muted-foreground">Enter a name or staff number to search.</p>
+            )}
+          </div>
+          <p className="shrink-0 pt-3 text-center text-xs text-muted-foreground">
+            {results.length > 0 ? `${results.length} results · Select a staff member` : 'Search results will appear here'}
+          </p>
+            </div>
+          </div>
+        </Portal>
       )}
     </div>
   );
