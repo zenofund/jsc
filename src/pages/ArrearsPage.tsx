@@ -121,7 +121,7 @@ export function ArrearsPage() {
       const pendingArrears = await arrearsAPI.getPendingArrears();
       setArrears(pendingArrears);
       
-      const batches = await payrollAPI.getAllPayrollBatches();
+      const batches = await payrollAPI.getAllPayrollBatches({ status: 'draft' });
       setPayrollBatches(batches.filter((b: PayrollBatch) => b.status === 'draft'));
     } catch (error) {
       console.error('Failed to load arrears data:', error);
@@ -139,6 +139,18 @@ export function ArrearsPage() {
 
   const isPromotionApprovalBlocked = (item: Arrears) =>
     item.reason === 'promotion' && Boolean(item.staff_status) && item.staff_status !== 'active';
+
+  // payrollBatches only holds draft batches, so membership means the arrears is still editable.
+  const draftPayrollBatchIds = useMemo(
+    () => new Set(payrollBatches.map((batch) => batch.id)),
+    [payrollBatches],
+  );
+
+  const canDeleteArrears = (item: Arrears) =>
+    item.status === 'pending' ||
+    (item.status === 'processed' &&
+      Boolean(item.payroll_batch_id) &&
+      draftPayrollBatchIds.has(item.payroll_batch_id as string));
 
   const selectableArrearsIds = useMemo(
     () => arrears.filter((item) => isSelectableArrears(item)).map((item) => item.id),
@@ -279,11 +291,8 @@ export function ArrearsPage() {
 
   const handleDeleteArrears = async (id: string) => {
     const arrearsItem = arrears.find((item) => item.id === id);
-    const allowDelete = 
-      arrearsItem?.status === 'pending' ||
-      (arrearsItem?.status === 'processed' && Boolean(arrearsItem.payroll_batch_id));
 
-    if (!allowDelete) {
+    if (!arrearsItem || !canDeleteArrears(arrearsItem)) {
       showToast.error('Delete is only allowed for pending arrears or processed arrears linked to a draft payroll batch.');
       return;
     }
@@ -547,7 +556,7 @@ export function ArrearsPage() {
                   Recalculate
                 </DropdownMenuItem>
               )}
-              {(row.status === 'pending' || (row.status === 'processed' && Boolean(row.payroll_batch_id))) && (
+              {canDeleteArrears(row) && (
                 <DropdownMenuItem
                   onClick={() => handleDeleteArrears(row.id)}
                   className="text-destructive focus:text-destructive"
