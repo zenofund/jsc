@@ -541,7 +541,10 @@ export function PromotionsPage() {
       resetForm();
       loadData();
     } catch (error) {
-      showToast('error', 'Failed to create promotion request');
+      const message = error instanceof Error && error.message
+        ? error.message
+        : 'Failed to create promotion request';
+      showToast('error', message);
     } finally {
       setIsSubmitting(false);
     }
