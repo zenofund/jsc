@@ -4,9 +4,10 @@ import { useToast } from '../components/Toast';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { departmentAPI } from '../lib/api-client';
 import { Department } from '../types/entities';
-import { Building2, Plus, Edit2, Trash2, Users, X, Search, Loader2 } from 'lucide-react';
+import { Building2, Plus, Edit2, Trash2, Users, Search, Loader2 } from 'lucide-react';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { PageSkeleton } from '../components/PageLoader';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 
 export function DepartmentManagementPage() {
   const { user } = useAuth();
@@ -283,18 +284,11 @@ export function DepartmentManagementPage() {
 
       {/* Create/Edit Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-background/30 backdrop-blur-md flex items-center justify-center z-50 p-4">
-          <div className="max-w-2xl w-full rounded-lg p-6 max-h-[90vh] overflow-y-auto bg-card border border-border">
-            <div className="flex justify-between items-center mb-6">
-              <h3>{editingDepartment ? 'Edit Department' : 'Create Department'}</h3>
-              <button
-                onClick={() => setShowModal(false)}
-                className="p-1 hover:bg-accent rounded transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
+        <Dialog open={showModal} onOpenChange={setShowModal}>
+          <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>{editingDepartment ? 'Edit Department' : 'Create Department'}</DialogTitle>
+            </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -405,8 +399,8 @@ export function DepartmentManagementPage() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );

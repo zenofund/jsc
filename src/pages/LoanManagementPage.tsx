@@ -3,7 +3,7 @@ import { ActionMenuEllipsis } from '../components/ui/action-menu-trigger';
 import { 
   DollarSign, TrendingUp, Users, Clock, CheckCircle, XCircle, FileText,
   Plus, Edit2, Trash2, Download, Search, Building2,
-  Wallet, RefreshCw, CreditCard, X, Loader2
+  Wallet, RefreshCw, CreditCard, Loader2
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useConfirm } from '../contexts/ConfirmContext';
@@ -18,6 +18,7 @@ import { formatCompactCurrency, formatCurrency } from '../utils/format';
 import { CompactAmount } from '../components/CompactAmount';
 import { exportSpreadsheet } from '../utils/exportSpreadsheet';
 import { Modal } from '../components/Modal';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { StaffSearch } from '../components/ui/StaffSearch';
 import { NumberInput } from '../components/NumberInput';
 import { formatStaffName } from '../lib/name-utils';
@@ -785,14 +786,11 @@ function ApplicationsTab({
 
       {/* Disbursement Modal */}
       {showDisbursementModal && selectedApp && (
-        <div className="fixed inset-0 bg-background/30 backdrop-blur-md flex items-center justify-center z-50 p-4">
-          <div className="max-w-md w-full rounded-lg p-6 bg-card border border-border">
-            <div className="flex justify-between items-center mb-4">
-              <h3>Disburse Loan</h3>
-              <button onClick={() => setShowDisbursementModal(false)} className="p-1 hover:bg-accent rounded">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+        <Dialog open={showDisbursementModal} onOpenChange={setShowDisbursementModal}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Disburse Loan</DialogTitle>
+            </DialogHeader>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm mb-1 text-card-foreground">Disbursement Method</label>
@@ -857,8 +855,8 @@ function ApplicationsTab({
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+          </DialogContent>
+        </Dialog>
       )}
 
       {applicationEditModal.open && applicationEditModal.app && applicationEditData && applicationEditPreview && (
@@ -988,14 +986,16 @@ function ApplicationsTab({
 
       {/* Approval Modal */}
       {approvalModal.open && approvalModal.app && approvalModal.action && (
-        <div className="fixed inset-0 bg-background/30 backdrop-blur-md flex items-center justify-center z-50 p-4">
-          <div className="max-w-md w-full rounded-lg p-6 bg-card border border-border">
-            <div className="flex justify-between items-center mb-4">
-              <h3>{approvalModal.action === 'approved' ? 'Approve Loan' : 'Reject Loan'}</h3>
-              <button onClick={() => setApprovalModal({ open: false, app: null, action: null })} className="p-1 hover:bg-accent rounded">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+        <Dialog
+          open={approvalModal.open}
+          onOpenChange={(open) => {
+            if (!open) setApprovalModal({ open: false, app: null, action: null });
+          }}
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>{approvalModal.action === 'approved' ? 'Approve Loan' : 'Reject Loan'}</DialogTitle>
+            </DialogHeader>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm mb-1 text-card-foreground">Comment (Optional)</label>
@@ -1030,8 +1030,8 @@ function ApplicationsTab({
                   </button>
                 </div>
               </div>
-            </div>
-          </div>
+            </DialogContent>
+          </Dialog>
         )}
 
       {/* Assign Loan Modal */}
@@ -1437,14 +1437,11 @@ function LoanTypesTab({
 
       {/* Create/Edit Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-background/30 backdrop-blur-md flex items-center justify-center z-50 p-4">
-          <div className="max-w-2xl w-full rounded-lg p-6 max-h-[90vh] overflow-y-auto bg-card border border-border">
-            <div className="flex justify-between items-center mb-4">
-              <h3>{editingType ? 'Edit Loan Type' : 'Create Loan Type'}</h3>
-              <button onClick={() => setShowModal(false)} className="p-1 hover:bg-accent rounded">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+        <Dialog open={showModal} onOpenChange={setShowModal}>
+          <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>{editingType ? 'Edit Loan Type' : 'Create Loan Type'}</DialogTitle>
+            </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -1624,8 +1621,8 @@ function LoanTypesTab({
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );
@@ -1957,14 +1954,11 @@ function DisbursementsTab({
 
       {/* Statement Modal */}
       {showStatementModal && statement && (
-        <div className="fixed inset-0 bg-background/30 backdrop-blur-md flex items-center justify-center z-50 p-4">
-          <div className="max-w-2xl w-full rounded-lg p-6 max-h-[80vh] overflow-y-auto bg-card border border-border">
-            <div className="flex justify-between items-center mb-6">
-              <h3>Loan Statement</h3>
-              <button onClick={() => setShowStatementModal(false)} className="p-1 hover:bg-accent rounded">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+        <Dialog open={showStatementModal} onOpenChange={setShowStatementModal}>
+          <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Loan Statement</DialogTitle>
+            </DialogHeader>
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4 p-4 bg-muted rounded">
                 <div>
@@ -2016,8 +2010,8 @@ function DisbursementsTab({
                 </div>
               </div>
             </div>
-          </div>
-        </div>
+          </DialogContent>
+        </Dialog>
       )}
 
       {editModal.open && editModal.disbursement && editData && editPreview && (

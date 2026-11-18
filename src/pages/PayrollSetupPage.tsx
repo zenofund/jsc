@@ -13,6 +13,7 @@ import { SalaryStructureUpload } from '../components/SalaryStructureUpload';
 import { PageSkeleton } from '../components/PageLoader';
 import { CompactAmount } from '../components/CompactAmount';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../components/ui/dropdown-menu';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 
 type TabType = 'structures' | 'allowances' | 'deductions';
 
@@ -1147,21 +1148,19 @@ export function PayrollSetupPage() {
 
       {/* Allowance Modal */}
       {showAllowanceModal && (
-        <div className="fixed inset-0 bg-background/30 backdrop-blur-md flex items-center justify-center z-50 p-4">
-          <div className="max-w-md w-full rounded-lg p-6 bg-card border border-border max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-6">
-              <h3>{editingItem ? 'Edit Allowance' : 'Create Allowance'}</h3>
-              <button
-                onClick={() => {
-                  setShowAllowanceModal(false);
-                  setEditingItem(null);
-                }}
-                className="p-1 hover:bg-accent rounded transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
+        <Dialog
+          open={showAllowanceModal}
+          onOpenChange={(open) => {
+            if (!open) {
+              setShowAllowanceModal(false);
+              setEditingItem(null);
+            }
+          }}
+        >
+          <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>{editingItem ? 'Edit Allowance' : 'Create Allowance'}</DialogTitle>
+            </DialogHeader>
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -1395,27 +1394,25 @@ export function PayrollSetupPage() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+          </DialogContent>
+        </Dialog>
       )}
 
       {/* Deduction Modal */}
       {showDeductionModal && (
-        <div className="fixed inset-0 bg-background/30 backdrop-blur-md flex items-center justify-center z-50 p-4">
-          <div className="max-w-md w-full rounded-lg p-6 bg-card border border-border max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-6">
-              <h3>{editingItem ? 'Edit Deduction' : 'Create Deduction'}</h3>
-              <button
-                onClick={() => {
-                  setShowDeductionModal(false);
-                  setEditingItem(null);
-                }}
-                className="p-1 hover:bg-accent rounded transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
+        <Dialog
+          open={showDeductionModal}
+          onOpenChange={(open) => {
+            if (!open) {
+              setShowDeductionModal(false);
+              setEditingItem(null);
+            }
+          }}
+        >
+          <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>{editingItem ? 'Edit Deduction' : 'Create Deduction'}</DialogTitle>
+            </DialogHeader>
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -1660,8 +1657,8 @@ export function PayrollSetupPage() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+          </DialogContent>
+        </Dialog>
       )}
 
       {/* Upload Modal */}
