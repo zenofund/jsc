@@ -169,12 +169,20 @@ export function AdminPage() {
   const groupedPermissions = useMemo(() => {
     const grouped: Record<string, PermissionCatalogItem[]> = {};
     for (const permission of permissionCatalog) {
+      const isCoopOrLoanPermission = /coop|cooperative|loan/i.test(
+        `${permission.module_name || ''} ${permission.permission_key} ${permission.display_name}`,
+      );
+      if (isSuperAdmin && isCoopOrLoanPermission) continue;
       const moduleName = permission.module_name || 'general';
       if (!grouped[moduleName]) grouped[moduleName] = [];
       grouped[moduleName].push(permission);
     }
     return grouped;
-  }, [permissionCatalog]);
+  }, [permissionCatalog, isSuperAdmin]);
+
+  const visiblePermissionCount = Object.values(groupedPermissions)
+    .flat()
+    .filter((permission) => selectedPermissions.includes(permission.permission_key)).length;
 
   const handleEditWorkflow = () => {
     setWorkflowStages([...(settings?.approval_workflow || [])].map((s: any) => ({
@@ -1453,7 +1461,7 @@ export function AdminPage() {
             )}
 
             <p className="text-xs text-muted-foreground">
-              Selected permissions: {selectedPermissions.length}
+              Selected permissions: {visiblePermissionCount}
             </p>
           </div>
 
