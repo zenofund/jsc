@@ -82,4 +82,34 @@ describe('PayeCalculatorService one-off arrears tax', () => {
 
     expect(additionalTax).toBe(0);
   });
+
+  it('skips PAYE calculation when tax is disabled, even without configured tax brackets', () => {
+    expect(service.calculate(100000, [], { enabled: false })).toEqual({
+      taxable_income: 0,
+      annual_taxable_income: 0,
+      total_reliefs: 0,
+      taxable_income_after_reliefs: 0,
+      annual_tax: 0,
+      monthly_tax: 0,
+      tax_breakdown: [],
+    });
+  });
+
+  it('skips one-off arrears PAYE when tax is disabled', () => {
+    expect(
+      service.calculateOneOffAdditionalTax(
+        {
+          grossPay: 100000,
+          allowances: [],
+          isContractStaff: false,
+          pensionDeduction: 0,
+          nhfDeduction: 0,
+          nhisDeduction: 0,
+        },
+        120000,
+        {},
+        { enabled: false },
+      ),
+    ).toBe(0);
+  });
 });

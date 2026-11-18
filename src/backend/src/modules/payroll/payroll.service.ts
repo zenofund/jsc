@@ -1351,15 +1351,16 @@ export class PayrollService {
       );
       taxDetails.regular_monthly_tax = regularTaxDetails.monthly_tax;
       taxDetails.paye_on_promotion_arrears = round2(
-        Math.max(0, taxDetails.monthly_tax - regularTaxDetails.monthly_tax) + storedPromotionArrears.paye,
+        Math.max(0, taxDetails.monthly_tax - regularTaxDetails.monthly_tax) +
+          (taxConfig.enabled === false ? 0 : storedPromotionArrears.paye),
       );
-      const storedManualArrearsPaye = calculatedManualArrears.reduce(
+      const storedManualArrearsPaye = taxConfig.enabled === false ? 0 : calculatedManualArrears.reduce(
         (sum, arrear) => sum + this.getManualArrearsDetails(arrear)
           .filter((detail: any) => detail?.calculation_method === 'manual_salary_period_v1')
           .reduce((detailSum: number, detail: any) => detailSum + Number(detail?.paye_amount || 0), 0),
         0,
       );
-      const legacyManualArrearsPaye = legacyManualArrearsGrossTotal > 0
+      const legacyManualArrearsPaye = taxConfig.enabled !== false && legacyManualArrearsGrossTotal > 0
         ? this.payeCalculator.calculateOneOffAdditionalTax(
             {
               grossPay: round2(grossPay - manualArrearsGrossTotal - storedPromotionArrears.gross),
@@ -1376,7 +1377,10 @@ export class PayrollService {
         : 0;
       const manualArrearsPaye = round2(storedManualArrearsPaye + legacyManualArrearsPaye);
       taxDetails.manual_arrears_paye = manualArrearsPaye;
-      taxDetails.monthly_tax = round2(taxDetails.monthly_tax + storedPromotionArrears.paye + manualArrearsPaye);
+      taxDetails.monthly_tax = round2(
+        taxDetails.monthly_tax +
+          (taxConfig.enabled === false ? 0 : storedPromotionArrears.paye + manualArrearsPaye),
+      );
       taxDetails.promotion_arrears_deductions = {
         pension: round2(arrearsPensionDeduction + storedPromotionArrears.payeReliefs.pension),
         nhia: round2(arrearsNhiaDeduction + storedPromotionArrears.payeReliefs.nhia),
@@ -1388,16 +1392,17 @@ export class PayrollService {
         items: manualArrearsDeductions.items,
       };
 
-      // Add Tax deduction
-      deductionsArray.push({
-        code: 'TAX',
-        name: 'PAYE Tax',
-        amount: taxDetails.monthly_tax,
-        is_statutory: true,
-        remittance_type: 'tax',
-        remittance_key: 'PAYE',
-      });
-      totalDeductionsAmount += taxDetails.monthly_tax;
+      if (taxConfig.enabled !== false) {
+        deductionsArray.push({
+          code: 'TAX',
+          name: 'PAYE Tax',
+          amount: taxDetails.monthly_tax,
+          is_statutory: true,
+          remittance_type: 'tax',
+          remittance_key: 'PAYE',
+        });
+        totalDeductionsAmount += taxDetails.monthly_tax;
+      }
 
       // Loan repayments with carry-forward for missed payroll months.
       const staffLoans = loanRepayments.filter((loan) => loan.staff_id === staffMember.id);

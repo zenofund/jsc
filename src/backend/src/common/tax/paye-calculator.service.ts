@@ -38,6 +38,18 @@ export class PayeCalculatorService {
     return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
   }
 
+  private emptyCalculation(): PayeCalculation {
+    return {
+      taxable_income: 0,
+      annual_taxable_income: 0,
+      total_reliefs: 0,
+      taxable_income_after_reliefs: 0,
+      annual_tax: 0,
+      monthly_tax: 0,
+      tax_breakdown: [],
+    };
+  }
+
   calculate(
     grossPay: number,
     allowances: any[],
@@ -47,6 +59,10 @@ export class PayeCalculatorService {
     nhfDeduction = 0,
     nhisDeduction = 0,
   ): PayeCalculation {
+    if (taxConfig?.enabled === false) {
+      return this.emptyCalculation();
+    }
+
     const nonTaxableAllowances = (allowances || [])
       .filter((allowance) => !allowance.is_taxable)
       .reduce((sum, allowance) => sum + allowance.amount, 0);
@@ -150,6 +166,10 @@ export class PayeCalculatorService {
     arrearsReliefs: OneOffPayeReliefs,
     taxConfig: any,
   ): number {
+    if (taxConfig?.enabled === false) {
+      return 0;
+    }
+
     const oneOffGross = Math.max(0, Number(arrearsGrossAmount) || 0);
     if (oneOffGross === 0) {
       return 0;
