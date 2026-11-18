@@ -4,6 +4,7 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
 import { JwtPayload } from '../interfaces/jwt-payload.interface';
 import { DatabaseService } from '@common/database/database.service';
+import { PLATFORM_PERMISSION_KEYS } from '@common/permissions/platform-permissions';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -32,12 +33,16 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
                 JOIN app_permissions ap
                   ON ap.permission_key = assigned.permission_key
                  AND ap.is_active = TRUE
+                 AND (
+                   LOWER(u.role) <> 'super_admin'
+                   OR assigned.permission_key = ANY($2::TEXT[])
+                 )
                 ORDER BY assigned.permission_key
               ) AS permissions,
               u.current_session_id
        FROM users u
        WHERE u.id = $1`,
-      [payload.sub],
+      [payload.sub, PLATFORM_PERMISSION_KEYS],
     );
 
     if (!userRow || String(userRow.status || '').toLowerCase() !== 'active') {

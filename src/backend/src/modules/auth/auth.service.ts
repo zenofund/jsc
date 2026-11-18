@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, Logger, BadRequestException, NotFoundException, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Logger, BadRequestException, NotFoundException, InternalServerErrorException, ForbiddenException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { DatabaseService } from '@common/database/database.service';
 import { EmailService } from '@modules/email/email.service';
@@ -10,6 +10,7 @@ import { LoginDto } from './dto/login.dto';
 import { JwtPayload } from './interfaces/jwt-payload.interface';
 import { buildOtpAuthUrl, generateTotpSecret, verifyTotp } from './totp.util';
 import { evaluateGeoFencingPolicy } from './geo-fencing.util';
+import { isPlatformPermissionKey } from '@common/permissions/platform-permissions';
 
 @Injectable()
 export class AuthService {
@@ -130,7 +131,11 @@ export class AuthService {
        ORDER BY permission_key`,
       [assigned],
     );
-    return activeRows.map((row: any) => String(row.permission_key));
+    return activeRows
+      .filter((row: any) =>
+        this.normalizeRole(user.role) !== 'super_admin' || isPlatformPermissionKey(row.permission_key),
+      )
+      .map((row: any) => String(row.permission_key));
   }
 
   async getPermissionCatalog() {
@@ -671,7 +676,7 @@ export class AuthService {
   /**
    * Update user details (Admin only)
    */
-  async updateUser(userId: string, updateUserDto: any, updatedBy?: string) {
+  async updateUser(userId: string, updateUserDto: any, updatedBy: string) {
     const existingUser = await this.databaseService.queryOne(
       `SELECT id, email, full_name, role, permissions, department_id, staff_id, status
        FROM users
@@ -681,6 +686,13 @@ export class AuthService {
 
     if (!existingUser) {
       throw new NotFoundException('User not found');
+    }
+
+    const editingOwnSuperAdminAccount =
+      updatedBy === userId && this.normalizeRole(existingUser.role) === 'super_admin';
+    const roleToSet = updateUserDto.role ? this.normalizeRole(updateUserDto.role) : undefined;
+    if (editingOwnSuperAdminAccount && roleToSet && roleToSet !== 'super_admin') {
+      throw new ForbiddenException('A Super Admin cannot change their own account role');
     }
 
     const fields = [];
@@ -704,15 +716,21 @@ export class AuthService {
       values.push(fullName);
     }
     
-    const roleToSet = updateUserDto.role ? this.normalizeRole(updateUserDto.role) : undefined;
     if (roleToSet) {
       fields.push(`role = $${paramIndex++}`);
       values.push(roleToSet);
     }
 
     if (Object.prototype.hasOwnProperty.call(updateUserDto, 'permissions')) {
+      const permissions = await this.normalizePermissions(updateUserDto.permissions);
+      if (editingOwnSuperAdminAccount) {
+        const policyPermissions = permissions.filter((permission) => !isPlatformPermissionKey(permission));
+        if (policyPermissions.length > 0) {
+          throw new ForbiddenException('A Super Admin cannot assign policy-level permissions to their own account');
+        }
+      }
       fields.push(`permissions = $${paramIndex++}`);
-      values.push(await this.normalizePermissions(updateUserDto.permissions));
+      values.push(permissions);
     }
 
     let deptId = updateUserDto.department_id !== undefined ? updateUserDto.department_id : updateUserDto.departmentId;

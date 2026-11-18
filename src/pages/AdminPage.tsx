@@ -25,6 +25,16 @@ type PermissionCatalogItem = {
   is_active: boolean;
 };
 
+const PLATFORM_PERMISSION_KEYS = new Set([
+  'user.account.read',
+  'user.account.create',
+  'user.account.update',
+  'user.account.delete',
+  'settings.manage',
+  'audit.read',
+  'profile.read',
+]);
+
 export function AdminPage() {
   const { user } = useAuth();
   const { refresh: refreshSystemSettings } = useSystemSettings();
@@ -56,6 +66,7 @@ export function AdminPage() {
   const [selectedTemplatePermissions, setSelectedTemplatePermissions] = useState<string[]>([]);
   const [isSavingRoleTemplate, setIsSavingRoleTemplate] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const isEditingOwnSuperAdminAccount = isSuperAdmin && editingUser?.id === user?.id;
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [idempotencyKey, setIdempotencyKey] = useState('');
@@ -160,6 +171,9 @@ export function AdminPage() {
       .filter((permission) => assignablePermissions.has(permission));
   };
 
+  const isPlatformPermission = (permission: PermissionCatalogItem) =>
+    PLATFORM_PERMISSION_KEYS.has(String(permission.permission_key || '').trim().toLowerCase());
+
   const roleOptions = useMemo(() => {
     const configured = Object.keys(roleTemplates);
     const addRequiredRoles = (arr: string[]) =>
@@ -181,12 +195,13 @@ export function AdminPage() {
         `${permission.module_name || ''} ${permission.permission_key} ${permission.display_name}`,
       );
       if (isSuperAdmin && isCoopOrLoanPermission) continue;
+      if (isEditingOwnSuperAdminAccount && !isPlatformPermission(permission)) continue;
       const moduleName = permission.module_name || 'general';
       if (!grouped[moduleName]) grouped[moduleName] = [];
       grouped[moduleName].push(permission);
     }
     return grouped;
-  }, [permissionCatalog, isSuperAdmin]);
+  }, [permissionCatalog, isSuperAdmin, isEditingOwnSuperAdminAccount]);
 
   const visiblePermissionCount = Object.values(groupedPermissions)
     .flat()
@@ -674,10 +689,17 @@ export function AdminPage() {
                   status: row.status,
                 });
                 const existingPermissions = Array.isArray((row as any).permissions) ? (row as any).permissions : [];
+                const editablePermissions = isSuperAdmin && row.id === user?.id
+                  ? existingPermissions.filter((key: string) =>
+                      permissionCatalog.some((permission) =>
+                        permission.permission_key === key && isPlatformPermission(permission),
+                      ),
+                    )
+                  : existingPermissions;
                 const templatePermissions = getTemplatePermissions(row.role);
-                const usesRoleTemplate = existingPermissions.length === templatePermissions.length &&
-                  templatePermissions.every((permission) => existingPermissions.includes(permission));
-                setSelectedPermissions(existingPermissions);
+                const usesRoleTemplate = editablePermissions.length === templatePermissions.length &&
+                  templatePermissions.every((permission) => editablePermissions.includes(permission));
+                setSelectedPermissions(editablePermissions);
                 setCustomPermissionsEnabled(!usesRoleTemplate);
                 setShowUserModal(true);
               }}
@@ -1441,6 +1463,7 @@ export function AdminPage() {
               }}
               className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
               required
+              disabled={isEditingOwnSuperAdminAccount}
             >
               {roleOptions.map((role) => (
                 <option key={role} value={role}>
@@ -1451,6 +1474,11 @@ export function AdminPage() {
           </div>
 
           <div className="space-y-3">
+            {isEditingOwnSuperAdminAccount && (
+              <p className="text-xs text-muted-foreground">
+                Platform Super Admin accounts cannot be assigned policy-level permissions.
+              </p>
+            )}
             <div className="flex items-center justify-between">
               <label className="block text-sm font-medium text-foreground">
                 App Permissions
