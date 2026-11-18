@@ -4,9 +4,9 @@ import { StatusBadge } from '../components/StatusBadge';
 import { Modal } from '../components/Modal';
 import { DashboardMetricCard } from '../components/DashboardMetricCard';
 import { useAuth } from '../contexts/AuthContext';
-import { dashboardAPI } from '../lib/api-client';
+import { dashboardAPI, userAPI } from '../lib/api-client';
 import { 
-  Users, DollarSign, AlertCircle, CheckCircle, 
+  Users, DollarSign, AlertCircle, CheckCircle, UserCheck, UserX, ShieldCheck,
   TrendingUp, FileText, Clock, ChevronLeft, ChevronRight
 } from 'lucide-react';
 
@@ -21,6 +21,8 @@ export function DashboardPage() {
   const [calendarDate, setCalendarDate] = useState(new Date());
   const [calendarEvents, setCalendarEvents] = useState<any[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
+  const role = String(user?.role || '').trim().toLowerCase();
+  const isSuperAdmin = role === 'super_admin';
 
   useEffect(() => {
     const role = String(user?.role || '').trim().toLowerCase();
@@ -49,12 +51,33 @@ export function DashboardPage() {
       (window as any).navigateTo?.('staff-portal');
       return;
     }
-    loadDashboardData();
+    if (normalizedRole === 'super_admin') {
+      loadSystemAdminStats();
+    } else {
+      loadDashboardData();
+    }
   }, [user]);
 
   useEffect(() => {
+    if (String(user?.role || '').trim().toLowerCase() === 'super_admin') return;
     loadCalendarEvents();
-  }, [calendarDate]);
+  }, [calendarDate, user?.role]);
+
+  const loadSystemAdminStats = async () => {
+    try {
+      const response = await userAPI.getAllUsers();
+      const users = Array.isArray(response) ? response : Array.isArray((response as any)?.data) ? (response as any).data : [];
+      const activeUsers = users.filter((account: any) => String(account.status || '').toLowerCase() === 'active');
+      const inactiveUsers = users.filter((account: any) => String(account.status || '').toLowerCase() !== 'active');
+      const adminUsers = users.filter((account: any) => ['super_admin', 'policy_admin'].includes(String(account.role || '').toLowerCase()));
+      setStats({ total_users: users.length, active_users: activeUsers.length, inactive_users: inactiveUsers.length, admin_users: adminUsers.length });
+    } catch (error) {
+      console.error('Error loading system administration stats:', error);
+      setStats({ total_users: 0, active_users: 0, inactive_users: 0, admin_users: 0 });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const loadDashboardData = async () => {
     try {
@@ -83,7 +106,7 @@ export function DashboardPage() {
     return <PageSkeleton mode="grid" />;
   }
 
-  const statCards = [
+  const payrollStatCards = [
     {
       title: 'Active Staff',
       value: stats?.active_staff || 0,
@@ -114,6 +137,14 @@ export function DashboardPage() {
     },
   ];
 
+  const systemStatCards = [
+    { title: 'User Accounts', value: stats?.total_users || 0, icon: Users, tone: 'blue', description: 'All registered accounts' },
+    { title: 'Active Accounts', value: stats?.active_users || 0, icon: UserCheck, tone: 'green', description: 'Currently able to sign in' },
+    { title: 'Inactive Accounts', value: stats?.inactive_users || 0, icon: UserX, tone: 'yellow', description: 'Currently disabled' },
+    { title: 'Admin Accounts', value: stats?.admin_users || 0, icon: ShieldCheck, tone: 'red', description: 'Super Admin and Policy Admin' },
+  ];
+  const statCards = isSuperAdmin ? systemStatCards : payrollStatCards;
+
   return (
     <div className="space-y-5 sm:space-y-7">
       <Breadcrumb items={[{ label: 'Dashboard' }]} />
@@ -123,12 +154,12 @@ export function DashboardPage() {
         <div aria-hidden="true" className="absolute -right-2 -top-12 h-48 w-48 rounded-full border border-white/10" />
         <div className="relative flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-200">Payroll operations</p>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-200">{isSuperAdmin ? 'System administration' : 'Payroll operations'}</p>
             <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
               Welcome back, {user?.full_name || 'there'}
             </h1>
             <p className="mt-2 max-w-xl text-sm text-green-50/80 sm:text-base">
-              Your workforce and payroll activity at a glance.
+              {isSuperAdmin ? 'System accounts and administrator access at a glance.' : 'Your workforce and payroll activity at a glance.'}
             </p>
           </div>
           <div className="inline-flex w-fit items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-medium text-white shadow-sm backdrop-blur-sm">
@@ -139,11 +170,11 @@ export function DashboardPage() {
         <div aria-hidden="true" className="absolute -bottom-16 right-24 h-36 w-36 rounded-full bg-amber-300/10 blur-2xl" />
       </section>
 
-      <section aria-label="Payroll snapshot">
+      <section aria-label={isSuperAdmin ? 'System administration snapshot' : 'Payroll snapshot'}>
         <div className="mb-3 flex items-end justify-between gap-3">
           <div>
-            <h2 className="text-base font-semibold text-foreground sm:text-lg">Payroll snapshot</h2>
-            <p className="mt-0.5 text-xs text-muted-foreground sm:text-sm">Key figures that need your attention.</p>
+            <h2 className="text-base font-semibold text-foreground sm:text-lg">{isSuperAdmin ? 'System overview' : 'Payroll snapshot'}</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground sm:text-sm">{isSuperAdmin ? 'Account totals based on your system administration access.' : 'Key figures that need your attention.'}</p>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
@@ -160,6 +191,7 @@ export function DashboardPage() {
         </div>
       </section>
 
+      {!isSuperAdmin && <>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 sm:gap-6">
         {/* Quick Actions */}
         <div className="rounded-xl border border-border/70 bg-card p-4 shadow-sm sm:p-6">
@@ -415,6 +447,7 @@ export function DashboardPage() {
           </div>
         </Modal>
       )}
+      </>}
     </div>
   );
 }
