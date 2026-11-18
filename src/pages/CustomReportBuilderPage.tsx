@@ -87,7 +87,7 @@ const CustomReportBuilderPage: React.FC = () => {
   const [builderMode, setBuilderMode] = useState<BuilderMode>('create');
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
   const [builderView, setBuilderView] = useState<'guided' | 'advanced'>('guided');
-  const [userRole, setUserRole] = useState<'accountant' | 'analyst' | 'admin'>('accountant');
+  const [userRole, setUserRole] = useState<'accountant' | 'analyst' | 'policy_admin'>('accountant');
   const [selectedReportType, setSelectedReportType] = useState('payroll-summary');
   const [selectedBusinessArea, setSelectedBusinessArea] = useState('payroll');
   const [guideStep, setGuideStep] = useState<'type' | 'business' | 'columns' | 'filters' | 'preview'>('type');

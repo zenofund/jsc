@@ -161,7 +161,7 @@ export function ApprovalsPageEnhanced() {
         // But if workflow is empty, maybe we shouldn't show anything or show all to admin?
         // Assuming admin is always safe.
         const canApprove = 
-          normalizeRole(user?.role) === 'admin' || 
+          normalizeRole(user?.role) === 'policy_admin' ||
           (requiredRole && normalizeRole(user?.role) === requiredRole);
 
         if (canApprove) {

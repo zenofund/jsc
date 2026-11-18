@@ -55,7 +55,7 @@ INSERT INTO users (
         'admin@jsc.gov.ng',
         '$2b$10$REPLACE_WITH_REAL_HASH_FOR_admin123_____________________',
         'System Administrator',
-        'Admin',
+        'super_admin',
         'b3333333-3333-3333-3333-333333333333',
         'active'
     ),

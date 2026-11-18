@@ -9,9 +9,9 @@
 INSERT INTO system_settings (id, approval_workflow, tax_configuration, payroll_settings) VALUES (
     'default',
     '[
-        {"stage": 1, "name": "HR Review", "role": "Payroll/HR Manager"},
-        {"stage": 2, "name": "Finance Review", "role": "Accountant"},
-        {"stage": 3, "name": "Final Approval", "role": "Admin"}
+        {"stage": 1, "name": "HR Review", "role": "hr_manager"},
+        {"stage": 2, "name": "Finance Review", "role": "accountant"},
+        {"stage": 3, "name": "Final Approval", "role": "policy_admin"}
     ]'::jsonb,
     '{
         "tax_year": 2025,
@@ -180,7 +180,7 @@ INSERT INTO leave_types (id, name, code, description, default_days_per_year, is_
 -- Replace the hash values below with actual bcrypt hashes before running this SQL file directly.
 
 INSERT INTO users (id, email, password_hash, full_name, role, department_id, status) VALUES
-    ('a0000001-0001-0001-0001-000000000001', 'admin@jsc.gov.ng', '$2b$10$8eJ5lQXQX5X5X5X5X5X5XeJ5lQXQX5X5X5X5X5X5XeJ5lQXQX5X5X5a', 'System Administrator', 'Admin', 'b3333333-3333-3333-3333-333333333333', 'active'),
+    ('a0000001-0001-0001-0001-000000000001', 'admin@jsc.gov.ng', '$2b$10$8eJ5lQXQX5X5X5X5X5X5XeJ5lQXQX5X5X5X5X5X5XeJ5lQXQX5X5X5a', 'System Administrator', 'super_admin', 'b3333333-3333-3333-3333-333333333333', 'active'),
     ('a0000002-0002-0002-0002-000000000002', 'payroll@jsc.gov.ng', '$2b$10$9fK6mRYRY6Y6Y6Y6Y6Y6YfK6mRYRY6Y6Y6Y6Y6Y6YfK6mRYRY6Y6Y6b', 'Payroll Officer', 'Payroll Officer', 'b1111111-1111-1111-1111-111111111111', 'active'),
     ('a0000003-0003-0003-0003-000000000003', 'hr@jsc.gov.ng', '$2b$10$7dI4kPXPX4X4X4X4X4X4XdI4kPXPX4X4X4X4X4X4XdI4kPXPX4X4X4c', 'HR Manager', 'Payroll/HR Manager', 'b1111111-1111-1111-1111-111111111111', 'active'),
     ('a0000004-0004-0004-0004-000000000004', 'accounts@jsc.gov.ng', '$2b$10$5bG2iNVNV2V2V2V2V2V2VbG2iNVNV2V2V2V2V2V2VbG2iNVNV2V2V2d', 'Chief Accountant', 'Accountant', 'b2222222-2222-2222-2222-222222222222', 'active'),

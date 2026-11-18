@@ -13,10 +13,8 @@ const isCoopOnlyKey = (k: string): k is CoopOnlyKey =>
 const normalizeRole = (r: unknown): string => String(r || '').trim().toLowerCase();
 
 const isCoopManager = (user: any): boolean => normalizeRole(user?.role) === 'coop_manager';
-const isAdmin = (user: any): boolean => {
-  const r = normalizeRole(user?.role);
-  return r === 'admin' || r === 'super_admin';
-};
+const isPolicyAdmin = (user: any): boolean => normalizeRole(user?.role) === 'policy_admin';
+const isSuperAdmin = (user: any): boolean => normalizeRole(user?.role) === 'super_admin';
 
 @ApiTags('Settings')
 @ApiBearerAuth()
@@ -33,8 +31,8 @@ export class SettingsController {
   }
 
   @Put()
-  @Roles('admin', 'super_admin', 'coop_manager')
-  @ApiOperation({ summary: 'Update system settings (Coop Manager may only toggle Loan/Cooperative modules)' })
+  @Roles('super_admin', 'policy_admin', 'coop_manager')
+  @ApiOperation({ summary: 'Update system settings or policy workflow (Coop Manager may only toggle Cooperative modules)' })
   @ApiResponse({ status: 200, description: 'Settings updated successfully' })
   async updateSettings(@Body() settings: any, @Request() req) {
     const user = req.user;
@@ -47,8 +45,15 @@ export class SettingsController {
           'Cooperative Manager can only modify loan_management_enabled and cooperative_management_enabled settings',
         );
       }
-    } else if (!isAdmin(user)) {
+    } else if (isPolicyAdmin(user)) {
+      const disallowed = Object.keys(settings || {}).filter((key) => key !== 'approval_workflow');
+      if (disallowed.length > 0) {
+        throw new ForbiddenException('Policy Admin can only modify the approval workflow');
+      }
+    } else if (!isSuperAdmin(user)) {
       throw new ForbiddenException('You do not have permission to update system settings');
+    } else if (Object.keys(settings || {}).some(isCoopOnlyKey)) {
+      throw new ForbiddenException('Super Admin cannot modify Cooperative or Loan module settings');
     }
 
     return this.settingsService.updateSettings(settings, req.user.userId);
@@ -61,7 +66,7 @@ export class SettingsController {
   }
 
   @Put('tax-configuration')
-  @Roles('admin', 'super_admin')
+  @Roles('policy_admin')
   @ApiOperation({ summary: 'Update tax configuration' })
   async updateTaxConfiguration(@Body() config: any, @Request() req) {
     return this.settingsService.updateTaxConfiguration(config, req.user.userId);

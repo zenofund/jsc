@@ -1,12 +1,14 @@
-import { Controller, Get, Post, Put, Body, Param, UseGuards, Request, InternalServerErrorException } from '@nestjs/common';
+﻿import { Controller, Get, Post, Put, Body, Param, UseGuards, Request, InternalServerErrorException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger';
 import { EmailService } from './email.service';
 import { CreateSmtpSettingDto, UpdateSmtpSettingDto, TestSmtpDto } from './dto/smtp-settings.dto';
 import { Roles } from '@common/decorators/roles.decorator';
 import { DatabaseService } from '@common/database/database.service';
+import { RolesGuard } from '@common/guards/roles.guard';
 
 @ApiTags('Email')
 @Controller('email')
+@UseGuards(RolesGuard)
 @ApiBearerAuth()
 export class EmailController {
   constructor(
@@ -15,7 +17,7 @@ export class EmailController {
   ) {}
 
   @Get('smtp-settings')
-  @Roles('admin', 'super_admin')
+  @Roles('super_admin')
   @ApiOperation({ summary: 'Get SMTP settings (Admin only)' })
   @ApiResponse({ status: 200, description: 'SMTP settings retrieved' })
   async getSmtpSettings() {
@@ -34,7 +36,7 @@ export class EmailController {
   }
 
   @Post('smtp-settings')
-  @Roles('admin', 'super_admin')
+  @Roles('super_admin')
   @ApiOperation({ summary: 'Create or update SMTP settings (Admin only)' })
   @ApiResponse({ status: 201, description: 'SMTP settings saved' })
   async createSmtpSettings(@Body() dto: CreateSmtpSettingDto, @Request() req) {
@@ -69,7 +71,7 @@ export class EmailController {
   }
 
   @Put('smtp-settings/:id')
-  @Roles('admin', 'super_admin')
+  @Roles('super_admin')
   @ApiOperation({ summary: 'Update SMTP settings (Admin only)' })
   @ApiResponse({ status: 200, description: 'SMTP settings updated' })
   async updateSmtpSettings(
@@ -140,7 +142,7 @@ export class EmailController {
   }
 
   @Post('smtp-settings/test')
-  @Roles('admin', 'super_admin')
+  @Roles('super_admin')
   @ApiOperation({ summary: 'Test SMTP connection (Admin only)' })
   @ApiResponse({ status: 200, description: 'SMTP connection test result' })
   async testSmtpConnection(@Body() dto: TestSmtpDto, @Request() req) {
@@ -197,7 +199,7 @@ export class EmailController {
   }
 
   @Get('logs')
-  @Roles('admin', 'super_admin')
+  @Roles('super_admin')
   @ApiOperation({ summary: 'Get email logs (Admin only)' })
   @ApiResponse({ status: 200, description: 'Email logs retrieved' })
   async getEmailLogs() {
@@ -213,7 +215,7 @@ export class EmailController {
   }
 
   @Get('logs/stats')
-  @Roles('admin', 'super_admin')
+  @Roles('super_admin')
   @ApiOperation({ summary: 'Get email statistics (Admin only)' })
   @ApiResponse({ status: 200, description: 'Email statistics retrieved' })
   async getEmailStats() {

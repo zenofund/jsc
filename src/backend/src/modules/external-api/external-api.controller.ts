@@ -36,7 +36,7 @@ export class ApiKeyAdminController {
   constructor(private externalApiService: ExternalApiService) {}
 
   @Post()
-  @Roles('Admin')
+  @Roles('super_admin')
   @ApiOperation({ summary: 'Create new API key for external system' })
   @ApiResponse({ status: 201, description: 'API key created successfully' })
   async createApiKey(@Body() dto: CreateApiKeyDto, @Request() req) {
@@ -44,7 +44,7 @@ export class ApiKeyAdminController {
   }
 
   @Get()
-  @Roles('Admin')
+  @Roles('super_admin')
   @ApiOperation({ summary: 'List all API keys' })
   @ApiResponse({ status: 200, description: 'API keys retrieved successfully' })
   async listApiKeys() {
@@ -52,7 +52,7 @@ export class ApiKeyAdminController {
   }
 
   @Delete(':id')
-  @Roles('Admin')
+  @Roles('super_admin')
   @ApiOperation({ summary: 'Revoke an API key' })
   @ApiResponse({ status: 200, description: 'API key revoked successfully' })
   async revokeApiKey(@Param('id') id: string, @Request() req) {

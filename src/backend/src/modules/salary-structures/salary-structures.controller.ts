@@ -23,7 +23,7 @@ export class SalaryStructuresController {
   constructor(private readonly salaryStructuresService: SalaryStructuresService) {}
 
   @Post()
-  @Roles('admin', 'hr_manager')
+  @Roles('policy_admin', 'hr_manager')
   @ApiOperation({ summary: 'Create salary structure' })
   @ApiResponse({ status: 201, description: 'Salary structure created successfully' })
   create(@Body() dto: any, @Request() req) {
@@ -78,7 +78,7 @@ export class SalaryStructuresController {
   }
 
   @Patch(':id')
-  @Roles('admin', 'hr_manager')
+  @Roles('policy_admin', 'hr_manager')
   @ApiOperation({ summary: 'Update salary structure' })
   @ApiResponse({ status: 200, description: 'Salary structure updated successfully' })
   update(@Param('id') id: string, @Body() dto: any, @Request() req) {
@@ -86,7 +86,7 @@ export class SalaryStructuresController {
   }
 
   @Delete(':id')
-  @Roles('admin')
+  @Roles('policy_admin')
   @ApiOperation({ summary: 'Deactivate salary structure (soft delete)' })
   @ApiResponse({ status: 200, description: 'Salary structure deactivated successfully' })
   remove(@Param('id') id: string, @Request() req) {
@@ -94,7 +94,7 @@ export class SalaryStructuresController {
   }
 
   @Delete(':id/permanent')
-  @Roles('admin')
+  @Roles('policy_admin')
   @ApiOperation({ summary: 'Permanently delete salary structure (hard delete)' })
   @ApiResponse({ status: 200, description: 'Salary structure permanently deleted' })
   hardDelete(@Param('id') id: string, @Request() req) {

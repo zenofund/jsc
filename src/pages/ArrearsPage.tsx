@@ -137,8 +137,8 @@ export function ArrearsPage() {
     }
   };
 
-  const canReviewArrears = ['admin', 'payroll_officer', 'payroll_manager'].includes(user?.role || '');
-  const canMergeArrears = ['admin', 'payroll_officer', 'payroll_manager', 'hr_manager'].includes(user?.role || '');
+  const canReviewArrears = ['policy_admin', 'payroll_officer', 'payroll_manager'].includes(user?.role || '');
+  const canMergeArrears = ['policy_admin', 'payroll_officer', 'payroll_manager', 'hr_manager'].includes(user?.role || '');
   const canBulkSelectArrears = canReviewArrears || canMergeArrears;
 
   const isSelectableArrears = (item: Arrears) =>

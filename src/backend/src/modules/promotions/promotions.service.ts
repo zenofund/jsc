@@ -750,7 +750,7 @@ export class PromotionsService {
       const staffName = this.getStaffName(staff);
 
       await Promise.all(
-        ['admin', 'payroll_officer'].map((role) =>
+        ['policy_admin', 'payroll_officer'].map((role) =>
           this.notificationsService.createRoleNotification({
             role,
             type: NotificationType.ARREARS,
@@ -1037,7 +1037,7 @@ export class PromotionsService {
 
     if (status === 'pending') {
       await Promise.all(
-        ['admin', 'hr_manager'].map((role) =>
+        ['policy_admin', 'hr_manager'].map((role) =>
           this.notificationsService.createRoleNotification({
             role,
             type: NotificationType.PROMOTION,

@@ -629,7 +629,7 @@ export class ArrearsService {
     );
 
     await Promise.all(
-      ['admin', 'payroll_officer'].map((role) =>
+      ['policy_admin', 'payroll_officer'].map((role) =>
         this.notificationsService.createRoleNotification({
           role,
           type: NotificationType.ARREARS,
@@ -710,7 +710,7 @@ export class ArrearsService {
 
     const staffName = this.getStaffName(staff);
     await Promise.all(
-      ['admin', 'payroll_officer'].map((role) =>
+      ['policy_admin', 'payroll_officer'].map((role) =>
         this.notificationsService.createRoleNotification({
           role,
           type: NotificationType.ARREARS,

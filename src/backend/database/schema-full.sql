@@ -48,7 +48,12 @@ CREATE TABLE users (
     email VARCHAR(255) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     full_name VARCHAR(255) NOT NULL,
-    role VARCHAR(50) NOT NULL CHECK (role IN ('admin', 'payroll_officer', 'hr_manager', 'reviewer', 'approver', 'auditor', 'cashier', 'staff')),
+    role VARCHAR(50) NOT NULL CHECK (role IN (
+        'super_admin', 'policy_admin', 'staff', 'payroll_officer', 'payroll_loader',
+        'payroll_manager', 'payroll_hr_manager', 'hr_manager', 'reviewer', 'checking',
+        'approver', 'cpo', 'auditor', 'audit_officer', 'cashier', 'accountant',
+        'analyst', 'cooperative_officer', 'loan_officer', 'coop_manager'
+    )),
     permissions TEXT[],
     department_id UUID REFERENCES departments(id) ON DELETE SET NULL,
     staff_id UUID,

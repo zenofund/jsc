@@ -107,7 +107,7 @@ export function PromotionsPage() {
   const { showToast } = useToast();
   const confirm = useConfirm();
   const normalizedUserRole = String(user?.role || '').trim().toLowerCase();
-  const canReviewPromotions = normalizedUserRole === 'admin' || ['cpo', 'approver'].includes(normalizedUserRole) || user?.role === 'hr_manager';
+  const canReviewPromotions = normalizedUserRole === 'policy_admin' || ['cpo', 'approver'].includes(normalizedUserRole) || user?.role === 'hr_manager';
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [staff, setStaff] = useState<Staff[]>([]);
   const [loading, setLoading] = useState(true);
@@ -591,7 +591,7 @@ export function PromotionsPage() {
 
   const canDeletePromotion = (status: unknown) => {
     const normalizedStatus = String(status || '').trim().toLowerCase();
-    const allowedRole = ['admin', 'hr_manager', 'payroll_officer'].includes(normalizedUserRole);
+    const allowedRole = ['policy_admin', 'hr_manager', 'payroll_officer'].includes(normalizedUserRole);
     return allowedRole && (normalizedStatus === 'pending' || normalizedStatus === 'rejected');
   };
 
@@ -958,7 +958,7 @@ export function PromotionsPage() {
           <h1 className="page-title">Staff Promotions</h1>
           <p className="text-muted-foreground text-sm sm:text-base">Manage staff promotions, grade level changes, and automatic arrears calculation</p>
         </div>
-        {(user?.role === 'admin' || user?.role === 'payroll_officer' || user?.role === 'hr_manager') && (
+        {(user?.role === 'policy_admin' || user?.role === 'payroll_officer' || user?.role === 'hr_manager') && (
           <button
             onClick={() => {
               promotionCreateIdempotencyRef.current = null;
@@ -1504,7 +1504,7 @@ export function PromotionsPage() {
                   {processingPromotionId === selectedPromotion.id && processingPromotionAction === 'delete' ? 'Deleting…' : 'Delete'}
                 </button>
               )}
-              {selectedPromotion.status === 'pending' && (user?.role === 'admin' || user?.role === 'hr_manager') && (
+              {selectedPromotion.status === 'pending' && (user?.role === 'policy_admin' || user?.role === 'hr_manager') && (
                 <>
                   <button
                     onClick={() => handleRejectPromotion(selectedPromotion.id)}
@@ -1594,7 +1594,7 @@ export function PromotionsPage() {
               </div>
             )}
 
-            {selectedPromotion.status === 'pending' && (user?.role === 'admin' || user?.role === 'hr_manager') && (
+            {selectedPromotion.status === 'pending' && (user?.role === 'policy_admin' || user?.role === 'hr_manager') && (
               <div className="p-4 bg-muted/30 rounded-lg">
                 <label className="block text-xs text-muted-foreground mb-2">Approval / Rejection Comment (Optional)</label>
                 <textarea

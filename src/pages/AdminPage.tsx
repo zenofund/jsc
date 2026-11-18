@@ -39,10 +39,11 @@ export function AdminPage() {
   };
   const userRole = normalizeRoleForView(user?.role);
   const isCoopManager = userRole === 'coop_manager';
-  const isAdminUser = userRole === 'admin' || userRole === 'super_admin';
+  const isPolicyAdmin = userRole === 'policy_admin';
+  const isSuperAdmin = userRole === 'super_admin';
 
   const [activeTab, setActiveTab] = useState<'users' | 'settings' | 'app-security'>(
-    isCoopManager ? 'settings' : 'users',
+    isCoopManager || isPolicyAdmin ? 'settings' : 'users',
   );
   const [users, setUsers] = useState<User[]>([]);
   const [settings, setSettings] = useState<SystemSettings | null>(null);
@@ -133,6 +134,13 @@ export function AdminPage() {
     } as SystemSettings;
   };
 
+  const getSystemAdminSettingsPayload = (value: SystemSettings) => {
+    const payload = { ...value } as any;
+    delete payload.loan_management_enabled;
+    delete payload.cooperative_management_enabled;
+    return payload;
+  };
+
   const formatRoleLabel = (role: any) => {
     const r = normalizeRole(role);
     if (r === 'cpo') return 'CPO';
@@ -146,16 +154,16 @@ export function AdminPage() {
 
   const roleOptions = useMemo(() => {
     const configured = Object.keys(roleTemplates);
-    const addCoopIfMissing = (arr: string[]) =>
-      arr.includes('coop_manager') ? arr : [...arr, 'coop_manager'];
+    const addRequiredRoles = (arr: string[]) =>
+      Array.from(new Set([...arr, 'super_admin', 'policy_admin', 'coop_manager']));
     if (configured.length > 0) {
       // De-duplicate alias roles so UI does not show both reviewer/checking or approver/cpo.
-      return addCoopIfMissing(
+      return addRequiredRoles(
         Array.from(new Set(configured.map((role) => normalizeRole(role))))
           .sort((a, b) => a.localeCompare(b)),
       );
     }
-    return addCoopIfMissing(['staff', 'payroll_officer', 'checking', 'cpo', 'auditor', 'admin', 'hr_manager', 'cashier', 'payroll_loader']);
+    return addRequiredRoles(['staff', 'payroll_officer', 'checking', 'cpo', 'auditor', 'hr_manager', 'cashier', 'payroll_loader']);
   }, [roleTemplates]);
 
   const groupedPermissions = useMemo(() => {
@@ -249,7 +257,10 @@ export function AdminPage() {
         approval_workflow: workflowStages,
       });
       if (!updatedSettings) return;
-      await settingsAPI.updateSettings(updatedSettings);
+      const settingsPayload = isPolicyAdmin
+        ? { approval_workflow: workflowStages }
+        : getSystemAdminSettingsPayload(updatedSettings);
+      await settingsAPI.updateSettings(settingsPayload);
       await refreshSystemSettings();
       setSettings(updatedSettings);
       setIsEditingWorkflow(false);
@@ -267,10 +278,10 @@ export function AdminPage() {
   }, [activeTab]);
 
   useEffect(() => {
-    if (!isCoopManager) {
+    if (isSuperAdmin) {
       loadPermissionConfig();
     }
-  }, [isCoopManager]);
+  }, [isSuperAdmin]);
 
   const loadPermissionConfig = async () => {
     try {
@@ -463,7 +474,7 @@ export function AdminPage() {
         setAllowedGradesError('');
 
         const updated = normalizeSettings({ ...settings, allowed_grades: allowedGrades }) as any;
-        const saved = normalizeSettings(await settingsAPI.updateSettings(updated));
+        const saved = normalizeSettings(await settingsAPI.updateSettings(getSystemAdminSettingsPayload(updated)));
         await refreshSystemSettings();
         setSettings(saved);
         const allowedGradesSaved = saved?.allowed_grades;
@@ -485,7 +496,7 @@ export function AdminPage() {
     try {
       const normalizedSettings = normalizeSettings(settings);
       if (!normalizedSettings) return;
-      const saved = normalizeSettings(await settingsAPI.updateSettings(normalizedSettings));
+      const saved = normalizeSettings(await settingsAPI.updateSettings(getSystemAdminSettingsPayload(normalizedSettings)));
       await refreshSystemSettings();
       setSettings(saved);
       showToast.success('App security settings updated successfully');
@@ -658,26 +669,32 @@ export function AdminPage() {
 
   const tabs = isCoopManager
     ? [{ id: 'settings' as const, label: 'Module Activation', icon: SettingsIcon }]
-    : [
+    : isPolicyAdmin
+      ? [{ id: 'settings' as const, label: 'Workflow Policy', icon: SettingsIcon }]
+      : isSuperAdmin ? [
         { id: 'users' as const, label: 'User Management', icon: Users },
         { id: 'settings' as const, label: 'System Settings', icon: SettingsIcon },
         { id: 'app-security' as const, label: 'App Security', icon: Shield },
-      ];
+      ] : [];
+
+  if (!isSuperAdmin && !isPolicyAdmin && !isCoopManager) {
+    return <div className="p-6 text-muted-foreground">You do not have permission to access System Administration.</div>;
+  }
 
   return (
     <div>
-      <Breadcrumb items={[{ label: isCoopManager ? 'Cooperative Setup' : 'System Administration' }]} />
+      <Breadcrumb items={[{ label: isCoopManager ? 'Cooperative Setup' : isPolicyAdmin ? 'Policy Administration' : 'System Administration' }]} />
       
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
         <div>
-          <h1 className="page-title">{isCoopManager ? 'Cooperative & Loan Module Setup' : 'System Administration'}</h1>
+          <h1 className="page-title">{isCoopManager ? 'Cooperative & Loan Module Setup' : isPolicyAdmin ? 'Policy Administration' : 'System Administration'}</h1>
           <p className="text-muted-foreground">
             {isCoopManager
               ? 'Activate or deactivate Cooperative and Loan Management modules for the organization.'
-              : 'Manage users, system settings, and audit logs'}
+              : isPolicyAdmin ? 'Manage approval workflow policy.' : 'Manage users, system settings, and application security.'}
           </p>
         </div>
-        {!isCoopManager && activeTab === 'users' && (
+        {isSuperAdmin && activeTab === 'users' && (
           <div className="flex items-center gap-2">
             <button
               onClick={() => {
@@ -795,6 +812,7 @@ export function AdminPage() {
           </div>
         ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {isSuperAdmin && (
           <div className="bg-card border border-border rounded-lg p-6">
             <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
               <Building className="w-5 h-5 text-primary" />
@@ -921,6 +939,7 @@ export function AdminPage() {
               Save Changes
             </button>
           </div>
+          )}
 
           {/* Approval Workflow */}
           <div className="bg-card border border-border rounded-lg p-6">
@@ -985,7 +1004,7 @@ export function AdminPage() {
                             <option value="checking">Checking</option>
                             <option value="cpo">CPO</option>
                             <option value="auditor">Auditor</option>
-                            <option value="admin">Administrator</option>
+                            <option value="policy_admin">Policy Admin</option>
                             <option value="cashier">Cashier</option>
                             <option value="staff">Staff</option>
                           </select>
@@ -1032,6 +1051,7 @@ export function AdminPage() {
           </div>
 
           {/* Tax Zones */}
+          {isSuperAdmin && (
           <div className="bg-card border border-border rounded-lg p-6">
             <h3 className="font-semibold text-foreground mb-4">Tax Zones</h3>
             <div className="space-y-2">
@@ -1043,8 +1063,10 @@ export function AdminPage() {
               ))}
             </div>
           </div>
+          )}
 
           {/* System Info */}
+          {isSuperAdmin && (
           <div className="bg-card border border-border rounded-lg p-6">
             <h3 className="font-semibold text-foreground mb-4">System Information</h3>
             <dl className="space-y-2 text-sm">
@@ -1066,6 +1088,7 @@ export function AdminPage() {
               </div>
             </dl>
           </div>
+          )}
         </div>
         )
         )

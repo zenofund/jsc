@@ -153,29 +153,29 @@ export function Layout({ children }: LayoutProps) {
   const navigationGroups: NavigationGroup[] = [
     {
       group: 'Human Resources',
-      roles: ['admin', 'payroll_officer', 'hr_manager'],
+      roles: ['policy_admin', 'payroll_officer', 'hr_manager'],
       items: [
-        { name: 'Staff Management', icon: Users, view: 'staff', roles: ['admin', 'payroll_officer', 'hr_manager'] },
-        { name: 'Staff Requests', icon: CheckSquare, view: 'staff-requests', roles: ['admin', 'hr_manager'] },
-        { name: 'Leave Management', icon: Calendar, view: 'leave-management', roles: ['admin', 'payroll_officer', 'hr_manager'] },
-        { name: 'Department Management', icon: Building2, view: 'department-management', roles: ['admin', 'payroll_officer', 'hr_manager'] },
-        { name: 'Promotions', icon: Award, view: 'promotions', roles: ['admin', 'payroll_officer', 'hr_manager'] },
+        { name: 'Staff Management', icon: Users, view: 'staff', roles: ['policy_admin', 'payroll_officer', 'hr_manager'] },
+        { name: 'Staff Requests', icon: CheckSquare, view: 'staff-requests', roles: ['policy_admin', 'hr_manager'] },
+        { name: 'Leave Management', icon: Calendar, view: 'leave-management', roles: ['policy_admin', 'payroll_officer', 'hr_manager'] },
+        { name: 'Department Management', icon: Building2, view: 'department-management', roles: ['policy_admin', 'payroll_officer', 'hr_manager'] },
+        { name: 'Promotions', icon: Award, view: 'promotions', roles: ['policy_admin', 'payroll_officer', 'hr_manager'] },
       ],
     },
     {
       group: 'Payroll Operations',
-      roles: ['admin', 'payroll_officer', 'payroll_manager', 'cpo', 'checking', 'auditor', 'payroll_loader'],
+      roles: ['policy_admin', 'payroll_officer', 'payroll_manager', 'cpo', 'checking', 'auditor', 'payroll_loader'],
       items: [
-        { name: 'Payroll Processing', icon: DollarSign, view: 'payroll', roles: ['admin', 'payroll_officer', 'cpo', 'checking', 'auditor', 'payroll_loader'] },
-        { name: 'Staff Adjustments', icon: TrendingUp, view: 'staff-allowances', roles: ['admin', 'payroll_officer', 'payroll_loader'] },
-        { name: 'Adjustment Approvals', icon: CheckSquare, view: 'staff-adjustment-approvals', roles: ['admin', 'payroll_officer'] },
-        { name: 'Arrears & Adjustments', icon: TrendingUp, view: 'arrears', roles: ['admin', 'payroll_officer', 'payroll_manager', 'payroll_loader'] },
+        { name: 'Payroll Processing', icon: DollarSign, view: 'payroll', roles: ['policy_admin', 'payroll_officer', 'cpo', 'checking', 'auditor', 'payroll_loader'] },
+        { name: 'Staff Adjustments', icon: TrendingUp, view: 'staff-allowances', roles: ['policy_admin', 'payroll_officer', 'payroll_loader'] },
+        { name: 'Adjustment Approvals', icon: CheckSquare, view: 'staff-adjustment-approvals', roles: ['policy_admin', 'payroll_officer'] },
+        { name: 'Arrears & Adjustments', icon: TrendingUp, view: 'arrears', roles: ['policy_admin', 'payroll_officer', 'payroll_manager', 'payroll_loader'] },
         { name: 'Payslips', icon: FileText, view: 'payslips', roles: ['*'] },
       ],
     },
     {
       group: 'Financial Services',
-      roles: ['admin', 'payroll_officer', 'cashier', 'coop_manager'],
+      roles: ['policy_admin', 'payroll_officer', 'cashier', 'coop_manager'],
       items: [
         ...(loanManagementEnabled
           ? [{ name: 'Loan Management', icon: Wallet, view: 'loan-management', roles: ['coop_manager'] }]
@@ -186,7 +186,7 @@ export function Layout({ children }: LayoutProps) {
               { name: 'Cooperative Reports', icon: Building2, view: 'cooperative-reports', roles: ['coop_manager'] },
             ]
           : []),
-        { name: 'E-Mandate', icon: Building2, view: 'bank-payments', roles: ['admin', 'payroll_officer', 'cashier'] },
+        { name: 'E-Mandate', icon: Building2, view: 'bank-payments', roles: ['policy_admin', 'payroll_officer', 'cashier'] },
       ],
     },
     {
@@ -198,26 +198,27 @@ export function Layout({ children }: LayoutProps) {
     },
     {
       group: 'Reporting & Analytics',
-      roles: ['admin', 'payroll_officer', 'hr_manager'],
+      roles: ['policy_admin', 'payroll_officer', 'hr_manager'],
       items: [
-        { name: 'Reports', icon: BarChart3, view: 'reports', roles: ['admin', 'payroll_officer', 'hr_manager'] },
+        { name: 'Reports', icon: BarChart3, view: 'reports', roles: ['policy_admin', 'payroll_officer', 'hr_manager'] },
         ...(CUSTOM_REPORTS_ENABLED
           ? [
-              { name: 'Custom Reports', icon: Table, view: 'reports-list', roles: ['admin', 'payroll_officer', 'hr_manager'] },
-              { name: 'Report Builder', icon: PlusCircle, view: 'custom-report-builder', roles: ['admin', 'payroll_officer', 'hr_manager'] },
+              { name: 'Custom Reports', icon: Table, view: 'reports-list', roles: ['policy_admin', 'payroll_officer', 'hr_manager'] },
+              { name: 'Report Builder', icon: PlusCircle, view: 'custom-report-builder', roles: ['policy_admin', 'payroll_officer', 'hr_manager'] },
             ]
           : []),
       ],
     },
     {
       group: 'Config & Settings',
-      roles: ['admin', 'payroll_officer'],
+      roles: ['super_admin', 'policy_admin', 'payroll_officer'],
       items: [
-        { name: 'Payroll Setup', icon: FolderOpen, view: 'setup', roles: ['admin', 'payroll_officer'] },
-        { name: 'System Admin', icon: Settings, view: 'admin', roles: ['admin'] },
-        { name: 'Tax Configuration', icon: DollarSign, view: 'tax-configuration', roles: ['admin'] },
-        { name: 'SMTP Settings', icon: Mail, view: 'smtp-settings', roles: ['admin'] },
-        { name: 'Audit Log', icon: FileText, view: 'audit-log', roles: ['admin'] },
+        { name: 'Payroll Setup', icon: FolderOpen, view: 'setup', roles: ['policy_admin', 'payroll_officer'] },
+        { name: 'Policy Administration', icon: Settings, view: 'admin', roles: ['policy_admin'] },
+        { name: 'System Admin', icon: Settings, view: 'admin', roles: ['super_admin'] },
+        { name: 'Tax Configuration', icon: DollarSign, view: 'tax-configuration', roles: ['policy_admin'] },
+        { name: 'SMTP Settings', icon: Mail, view: 'smtp-settings', roles: ['super_admin'] },
+        { name: 'Audit Log', icon: FileText, view: 'audit-log', roles: ['super_admin'] },
       ],
     },
   ];
@@ -227,7 +228,7 @@ export function Layout({ children }: LayoutProps) {
       name: 'Dashboard',
       icon: LayoutDashboard,
       view: String(user?.role || '').trim().toLowerCase() === 'coop_manager' ? 'coop-dashboard' : 'dashboard',
-      roles: ['admin', 'payroll_officer', 'hr_manager', 'cpo', 'checking', 'auditor', 'cashier', 'payroll_loader', 'coop_manager'],
+      roles: ['policy_admin', 'payroll_officer', 'hr_manager', 'cpo', 'checking', 'auditor', 'cashier', 'payroll_loader', 'coop_manager'],
     },
     { name: 'Staff Portal', icon: UserCircle, view: 'staff-portal', roles: ['staff'] },
     { name: 'My Requests', icon: FileText, view: 'staff-request-status', roles: ['staff'] },

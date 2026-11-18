@@ -87,7 +87,7 @@ export class WorkflowService {
     // Check if user is authorized to approve
     const isSpecificUser = request.specific_user_id === approverId;
     const hasRole = normalizeRole(request.role_required) === normalizeRole(approver.role);
-    const isAdmin = normalizeRole(approver.role) === 'admin' || normalizeRole(approver.role) === 'super_admin';
+    const isAdmin = normalizeRole(approver.role) === 'policy_admin';
 
     if (!isSpecificUser && !hasRole && !isAdmin) {
          // Allow admin override for now

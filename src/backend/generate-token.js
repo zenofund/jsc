@@ -3,7 +3,7 @@ const fs = require('fs');
 const secret = '59861c038df581c5e7edebdbb37e323e';
 const payload = { 
   userId: '79d8d0b2-5458-45c0-befb-0471fdc1d23b', 
-  role: 'admin',
+  role: 'policy_admin',
   email: 'test@example.com',
   sub: '79d8d0b2-5458-45c0-befb-0471fdc1d23b'
 };

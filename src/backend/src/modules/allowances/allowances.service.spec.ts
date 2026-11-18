@@ -43,7 +43,7 @@ describe('AllowancesService', () => {
           frequency: 'one-time',
         },
         'user-1',
-        'admin',
+        'policy_admin',
       );
 
       expect(databaseService.queryOne).toHaveBeenCalledWith(
@@ -83,7 +83,7 @@ describe('AllowancesService', () => {
           effective_from: '2026-07',
         },
         'user-2',
-        'admin',
+        'policy_admin',
       );
 
       expect(databaseService.queryOne).toHaveBeenCalledWith(
@@ -111,7 +111,7 @@ describe('AllowancesService', () => {
             effective_from: '2026-07',
           },
           'user-3',
-          'admin',
+          'policy_admin',
         ),
       ).rejects.toThrow('Amount is required');
     });

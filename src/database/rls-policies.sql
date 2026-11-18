@@ -48,14 +48,14 @@ ALTER TABLE payroll_lines DISABLE ROW LEVEL SECURITY;
 
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 
--- Admin can see all users
+-- Super Admin can see all users
 CREATE POLICY "Admins can view all users"
   ON users FOR SELECT
   USING (
     EXISTS (
       SELECT 1 FROM users u
       WHERE u.id = auth.uid()
-      AND u.role = 'Admin'
+      AND u.role = 'super_admin'
       AND u.status = 'active'
     )
   );
@@ -65,14 +65,14 @@ CREATE POLICY "Users can view own record"
   ON users FOR SELECT
   USING (id = auth.uid());
 
--- Admin can manage users
+-- Super Admin can manage users
 CREATE POLICY "Admins can manage users"
   ON users FOR ALL
   USING (
     EXISTS (
       SELECT 1 FROM users u
       WHERE u.id = auth.uid()
-      AND u.role = 'Admin'
+      AND u.role = 'super_admin'
       AND u.status = 'active'
     )
   );
@@ -93,7 +93,7 @@ CREATE POLICY "Authorized roles can create staff"
     EXISTS (
       SELECT 1 FROM users u
       WHERE u.id = auth.uid()
-      AND u.role IN ('Admin', 'Payroll Officer', 'Payroll/HR Manager')
+      AND u.role IN ('policy_admin', 'payroll_officer', 'hr_manager')
       AND u.status = 'active'
     )
   );
@@ -105,7 +105,7 @@ CREATE POLICY "Authorized roles can update staff"
     EXISTS (
       SELECT 1 FROM users u
       WHERE u.id = auth.uid()
-      AND u.role IN ('Admin', 'Payroll Officer', 'Payroll/HR Manager')
+      AND u.role IN ('policy_admin', 'payroll_officer', 'hr_manager')
       AND u.status = 'active'
     )
   );
@@ -117,7 +117,7 @@ CREATE POLICY "Only admins can delete staff"
     EXISTS (
       SELECT 1 FROM users u
       WHERE u.id = auth.uid()
-      AND u.role = 'Admin'
+      AND u.role = 'policy_admin'
       AND u.status = 'active'
     )
   );
@@ -138,7 +138,7 @@ CREATE POLICY "Only admins can manage departments"
     EXISTS (
       SELECT 1 FROM users u
       WHERE u.id = auth.uid()
-      AND u.role = 'Admin'
+      AND u.role = 'policy_admin'
       AND u.status = 'active'
     )
   );
@@ -159,7 +159,7 @@ CREATE POLICY "Authorized roles can create payroll batches"
     EXISTS (
       SELECT 1 FROM users u
       WHERE u.id = auth.uid()
-      AND u.role IN ('Admin', 'Payroll Officer')
+      AND u.role IN ('policy_admin', 'payroll_officer')
       AND u.status = 'active'
     )
   );
@@ -172,7 +172,7 @@ CREATE POLICY "Authorized roles can update draft payroll batches"
     AND EXISTS (
       SELECT 1 FROM users u
       WHERE u.id = auth.uid()
-      AND u.role IN ('Admin', 'Payroll Officer')
+      AND u.role IN ('policy_admin', 'payroll_officer')
       AND u.status = 'active'
     )
   );
@@ -185,7 +185,7 @@ CREATE POLICY "Only admins can delete draft payroll batches"
     AND EXISTS (
       SELECT 1 FROM users u
       WHERE u.id = auth.uid()
-      AND u.role = 'Admin'
+      AND u.role = 'policy_admin'
       AND u.status = 'active'
     )
   );
@@ -212,7 +212,7 @@ CREATE POLICY "Authorized roles can view all payroll lines"
     EXISTS (
       SELECT 1 FROM users u
       WHERE u.id = auth.uid()
-      AND u.role IN ('Admin', 'Payroll Officer', 'Payroll/HR Manager', 'Accountant', 'Auditor', 'Cashier')
+      AND u.role IN ('policy_admin', 'payroll_officer', 'hr_manager', 'accountant', 'auditor', 'cashier')
       AND u.status = 'active'
     )
   );
@@ -224,7 +224,7 @@ CREATE POLICY "System can manage payroll lines"
     EXISTS (
       SELECT 1 FROM users u
       WHERE u.id = auth.uid()
-      AND u.role IN ('Admin', 'Payroll Officer')
+      AND u.role IN ('policy_admin', 'payroll_officer')
       AND u.status = 'active'
     )
   );
@@ -245,7 +245,7 @@ CREATE POLICY "Authorized roles can manage allowances"
     EXISTS (
       SELECT 1 FROM users u
       WHERE u.id = auth.uid()
-      AND u.role IN ('Admin', 'Payroll/HR Manager')
+      AND u.role IN ('policy_admin', 'hr_manager')
       AND u.status = 'active'
     )
   );
@@ -266,7 +266,7 @@ CREATE POLICY "Authorized roles can manage deductions"
     EXISTS (
       SELECT 1 FROM users u
       WHERE u.id = auth.uid()
-      AND u.role IN ('Admin', 'Payroll/HR Manager')
+      AND u.role IN ('policy_admin', 'hr_manager')
       AND u.status = 'active'
     )
   );
@@ -293,7 +293,7 @@ CREATE POLICY "Authorized roles can view all staff allowances"
     EXISTS (
       SELECT 1 FROM users u
       WHERE u.id = auth.uid()
-      AND u.role IN ('Admin', 'Payroll Officer', 'Payroll/HR Manager', 'Accountant', 'Auditor')
+      AND u.role IN ('policy_admin', 'payroll_officer', 'hr_manager', 'accountant', 'auditor')
       AND u.status = 'active'
     )
   );
@@ -305,7 +305,7 @@ CREATE POLICY "Authorized roles can manage staff allowances"
     EXISTS (
       SELECT 1 FROM users u
       WHERE u.id = auth.uid()
-      AND u.role IN ('Admin', 'Payroll Officer', 'Payroll/HR Manager')
+      AND u.role IN ('policy_admin', 'payroll_officer', 'hr_manager')
       AND u.status = 'active'
     )
   );
@@ -332,7 +332,7 @@ CREATE POLICY "Authorized roles can view all staff deductions"
     EXISTS (
       SELECT 1 FROM users u
       WHERE u.id = auth.uid()
-      AND u.role IN ('Admin', 'Payroll Officer', 'Payroll/HR Manager', 'Accountant', 'Auditor')
+      AND u.role IN ('policy_admin', 'payroll_officer', 'hr_manager', 'accountant', 'auditor')
       AND u.status = 'active'
     )
   );
@@ -344,7 +344,7 @@ CREATE POLICY "Authorized roles can manage staff deductions"
     EXISTS (
       SELECT 1 FROM users u
       WHERE u.id = auth.uid()
-      AND u.role IN ('Admin', 'Payroll Officer', 'Payroll/HR Manager')
+      AND u.role IN ('policy_admin', 'payroll_officer', 'hr_manager')
       AND u.status = 'active'
     )
   );
@@ -360,7 +360,7 @@ CREATE POLICY "Authorized roles can view approvals"
     EXISTS (
       SELECT 1 FROM users u
       WHERE u.id = auth.uid()
-      AND u.role IN ('Admin', 'Payroll/HR Manager', 'Accountant', 'Auditor')
+      AND u.role IN ('policy_admin', 'hr_manager', 'accountant', 'auditor')
       AND u.status = 'active'
     )
   );
@@ -372,7 +372,7 @@ CREATE POLICY "System can manage approvals"
     EXISTS (
       SELECT 1 FROM users u
       WHERE u.id = auth.uid()
-      AND u.role IN ('Admin', 'Payroll Officer')
+      AND u.role IN ('policy_admin', 'payroll_officer')
       AND u.status = 'active'
     )
   );
@@ -381,14 +381,14 @@ CREATE POLICY "System can manage approvals"
 
 ALTER TABLE audit_trail ENABLE ROW LEVEL SECURITY;
 
--- Only Admin and Auditor can view audit trail
+-- Super Admin and Auditors can view audit trail
 CREATE POLICY "Authorized roles can view audit trail"
   ON audit_trail FOR SELECT
   USING (
     EXISTS (
       SELECT 1 FROM users u
       WHERE u.id = auth.uid()
-      AND u.role IN ('Admin', 'Auditor')
+      AND u.role IN ('super_admin', 'auditor')
       AND u.status = 'active'
     )
   );
@@ -407,14 +407,14 @@ CREATE POLICY "Authenticated users can view cooperatives"
   ON cooperatives FOR SELECT
   USING (auth.role() = 'authenticated');
 
--- Only Admin can manage cooperatives
+-- Only Cooperative Managers can manage cooperatives
 CREATE POLICY "Only admins can manage cooperatives"
   ON cooperatives FOR ALL
   USING (
     EXISTS (
       SELECT 1 FROM users u
       WHERE u.id = auth.uid()
-      AND u.role = 'Admin'
+      AND u.role = 'coop_manager'
       AND u.status = 'active'
     )
   );
@@ -441,7 +441,7 @@ CREATE POLICY "Authorized roles can view all loan applications"
     EXISTS (
       SELECT 1 FROM users u
       WHERE u.id = auth.uid()
-      AND u.role IN ('Admin', 'Payroll Officer', 'Payroll/HR Manager', 'Accountant')
+      AND u.role IN ('policy_admin', 'payroll_officer', 'hr_manager', 'accountant')
       AND u.status = 'active'
     )
   );
@@ -464,7 +464,7 @@ CREATE POLICY "Authorized roles can update loan applications"
     EXISTS (
       SELECT 1 FROM users u
       WHERE u.id = auth.uid()
-      AND u.role IN ('Admin', 'Payroll Officer', 'Payroll/HR Manager')
+      AND u.role IN ('policy_admin', 'payroll_officer', 'hr_manager')
       AND u.status = 'active'
     )
   );
@@ -506,7 +506,7 @@ CREATE POLICY "Authorized roles can manage arrears"
     EXISTS (
       SELECT 1 FROM users u
       WHERE u.id = auth.uid()
-      AND u.role IN ('Admin', 'Payroll Officer', 'Payroll/HR Manager')
+      AND u.role IN ('policy_admin', 'payroll_officer', 'hr_manager')
       AND u.status = 'active'
     )
   );
@@ -518,7 +518,7 @@ CREATE POLICY "Authorized roles can manage promotions"
     EXISTS (
       SELECT 1 FROM users u
       WHERE u.id = auth.uid()
-      AND u.role IN ('Admin', 'Payroll/HR Manager')
+      AND u.role IN ('policy_admin', 'hr_manager')
       AND u.status = 'active'
     )
   );
@@ -568,7 +568,7 @@ CREATE POLICY "Only admins can manage system settings"
     EXISTS (
       SELECT 1 FROM users u
       WHERE u.id = auth.uid()
-      AND u.role = 'Admin'
+      AND u.role = 'super_admin'
       AND u.status = 'active'
     )
   );

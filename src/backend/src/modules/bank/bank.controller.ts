@@ -38,7 +38,7 @@ export class BankController {
   // ==================== BANK GROUPS ====================
 
   @Post('groups')
-  @Roles('admin', 'super_admin', 'payroll_manager')
+  @Roles('policy_admin', 'payroll_manager')
   @ApiOperation({ summary: 'Create bank group' })
   createBankGroup(@Body() dto: CreateBankGroupDto, @Request() req) {
     return this.bankService.createBankGroup(dto, req.user.userId);
@@ -59,14 +59,14 @@ export class BankController {
   }
 
   @Get('groups/staff-assignments')
-  @Roles('admin', 'super_admin', 'payroll_manager')
+  @Roles('policy_admin', 'payroll_manager')
   @ApiOperation({ summary: 'Get staff bank-group assignment list' })
   getBankGroupAssignableStaff() {
     return this.bankService.getBankGroupAssignableStaff();
   }
 
   @Post('groups/bulk-assign-staff')
-  @Roles('admin', 'super_admin', 'payroll_manager')
+  @Roles('policy_admin', 'payroll_manager')
   @ApiOperation({ summary: 'Bulk assign staff to a bank group' })
   bulkAssignStaffToBankGroup(@Body() dto: BulkAssignBankGroupDto, @Request() req) {
     return this.bankService.bulkAssignStaffToBankGroup(dto, req.user.userId);
@@ -79,7 +79,7 @@ export class BankController {
   }
 
   @Put('groups/:id')
-  @Roles('admin', 'super_admin', 'payroll_manager')
+  @Roles('policy_admin', 'payroll_manager')
   @ApiOperation({ summary: 'Update bank group' })
   updateBankGroup(
     @Param('id') id: string,
@@ -90,7 +90,7 @@ export class BankController {
   }
 
   @Delete('groups/:id')
-  @Roles('admin', 'super_admin', 'payroll_manager')
+  @Roles('policy_admin', 'payroll_manager')
   @ApiOperation({ summary: 'Delete bank group' })
   deleteBankGroup(@Param('id') id: string, @Request() req) {
     return this.bankService.deleteBankGroup(id, req.user.userId);
@@ -99,7 +99,7 @@ export class BankController {
   // ==================== BANK ACCOUNTS ====================
 
   @Post('accounts')
-  @Roles('admin', 'super_admin')
+  @Roles('policy_admin')
   @ApiOperation({ summary: 'Create bank account' })
   createBankAccount(@Body() dto: CreateBankAccountDto, @Request() req) {
     return this.bankService.createBankAccount(dto, req.user.userId);
@@ -121,7 +121,7 @@ export class BankController {
   }
 
   @Put('accounts/:id')
-  @Roles('admin', 'super_admin', 'payroll_manager')
+  @Roles('policy_admin', 'payroll_manager')
   @ApiOperation({ summary: 'Update bank account' })
   updateBankAccount(
     @Param('id') id: string,
@@ -132,7 +132,7 @@ export class BankController {
   }
 
   @Delete('accounts/:id')
-  @Roles('admin', 'super_admin', 'payroll_manager')
+  @Roles('policy_admin', 'payroll_manager')
   @ApiOperation({ summary: 'Delete bank account' })
   deleteBankAccount(@Param('id') id: string, @Request() req) {
     return this.bankService.deleteBankAccount(id, req.user.userId);
@@ -187,7 +187,7 @@ export class BankController {
   }
 
   @Post('payment-batches/:id/process')
-  @Roles('admin', 'cashier')
+  @Roles('policy_admin', 'cashier')
   @ApiOperation({ summary: 'Process payment batch' })
   processPayment(
     @Param('id') id: string,

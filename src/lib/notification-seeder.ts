@@ -20,7 +20,7 @@ export async function seedDemoNotifications(userId: string, userRole: string) {
     const twoDaysAgo = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
 
     // Sample notifications based on user role
-    if (userRole === 'admin' || userRole === 'payroll_officer') {
+    if (userRole === 'policy_admin' || userRole === 'payroll_officer') {
       // Payroll notifications
       await notificationAPI.createNotification({
         recipient_id: userId,
@@ -58,7 +58,7 @@ export async function seedDemoNotifications(userId: string, userRole: string) {
       } as any);
     }
 
-    if (userRole === 'hr_manager' || userRole === 'admin') {
+    if (userRole === 'hr_manager' || userRole === 'policy_admin') {
       // Leave management notifications
       await notificationAPI.createNotification({
         recipient_id: userId,
@@ -237,7 +237,7 @@ export async function testNotifications(userId: string) {
     console.log('✅ Test 1 passed: Created notification', notification.id);
 
     // Test 2: Fetch notifications
-    const notifications = await notificationAPI.getUserNotifications(userId, 'admin');
+    const notifications = await notificationAPI.getUserNotifications(userId, 'policy_admin');
     console.log('✅ Test 2 passed: Fetched', notifications.length, 'notifications');
 
     // Test 3: Mark as read

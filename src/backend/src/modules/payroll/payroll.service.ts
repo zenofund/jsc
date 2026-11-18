@@ -1761,7 +1761,7 @@ export class PayrollService {
     // Ideally we should use slugs everywhere. Assuming slugs are used.
     
     // Allow admin/super_admin to override any stage
-    if (user.role.toLowerCase() !== 'admin' && user.role.toLowerCase() !== 'super_admin') {
+    if (user.role.toLowerCase() !== 'policy_admin') {
       const requiredRole = normalizeApprovalRole(currentApproval.approver_role);
       const userRole = normalizeApprovalRole(user.role);
       if (userRole !== requiredRole) {
@@ -1866,7 +1866,7 @@ export class PayrollService {
           `SELECT id
            FROM users
            WHERE LOWER(REGEXP_REPLACE(BTRIM(COALESCE(role, '')), '[^a-z0-9]+', '_', 'g')) = ANY($1::text[])`,
-          [['admin', 'super_admin', 'payroll_manager', 'payroll_hr_manager', 'hr_manager']],
+          [['policy_admin', 'payroll_manager', 'payroll_hr_manager', 'hr_manager']],
         );
         const recipientIds = Array.from(new Set([
           batch.created_by,

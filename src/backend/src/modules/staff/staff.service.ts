@@ -804,7 +804,7 @@ export class StaffService implements OnModuleInit {
     // Notify HR
     try {
       const hrUsers = await this.databaseService.query(
-        "SELECT id FROM users WHERE role IN ('admin', 'hr_manager')"
+        "SELECT id FROM users WHERE role IN ('policy_admin', 'hr_manager')"
       );
 
       // Get staff details for the message
@@ -937,7 +937,7 @@ export class StaffService implements OnModuleInit {
     // Notify HR about new document
     try {
       const hrUsers = await this.databaseService.query(
-        "SELECT id FROM users WHERE role IN ('admin', 'hr_manager')"
+        "SELECT id FROM users WHERE role IN ('policy_admin', 'hr_manager')"
       );
 
       const staff = await this.databaseService.queryOne(

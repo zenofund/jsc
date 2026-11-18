@@ -33,7 +33,7 @@ export class StaffController {
   ) {}
 
   @Post()
-  @Roles('admin', 'hr_manager')
+  @Roles('policy_admin', 'hr_manager')
   @SkipAudit()
   @ApiOperation({ summary: 'Create a new staff member' })
   @ApiResponse({ status: 201, description: 'Staff created successfully' })
@@ -43,7 +43,7 @@ export class StaffController {
   }
 
   @Get()
-  @Roles('admin', 'hr_manager', 'payroll_officer', 'payroll_loader', 'coop_manager')
+  @Roles('policy_admin', 'hr_manager', 'payroll_officer', 'payroll_loader', 'coop_manager')
   @ApiOperation({ summary: 'Get all staff with pagination and filtering' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
@@ -69,7 +69,7 @@ export class StaffController {
 
 
   @Get('payroll-eligible')
-  @Roles('admin', 'payroll_officer', 'hr_manager', 'accountant', 'payroll_loader')
+  @Roles('policy_admin', 'payroll_officer', 'hr_manager', 'accountant', 'payroll_loader')
   @ApiOperation({ summary: 'Get staff eligible for payroll processing' })
   getPayrollEligible() {
     return this.staffService.getPayrollEligibleStaff();
@@ -114,7 +114,7 @@ export class StaffController {
   }
 
   @Get('requests')
-  @Roles('admin', 'hr_manager')
+  @Roles('policy_admin', 'hr_manager')
   @ApiOperation({ summary: 'List staff requests with filters' })
   @ApiQuery({ name: 'status', required: false, type: String })
   @ApiQuery({ name: 'page', required: false, type: Number })
@@ -124,14 +124,14 @@ export class StaffController {
   }
 
   @Post('requests/:id/approve')
-  @Roles('admin', 'hr_manager')
+  @Roles('policy_admin', 'hr_manager')
   @ApiOperation({ summary: 'Approve staff request' })
   approveRequest(@Param('id') id: string, @Body() body: { notes?: string }, @Request() req) {
     return this.staffService.processStaffRequest(id, 'approved', body?.notes, req.user.userId);
   }
 
   @Post('requests/:id/reject')
-  @Roles('admin', 'hr_manager')
+  @Roles('policy_admin', 'hr_manager')
   @ApiOperation({ summary: 'Reject staff request' })
   rejectRequest(@Param('id') id: string, @Body() body: { notes?: string }, @Request() req) {
     return this.staffService.processStaffRequest(id, 'rejected', body?.notes, req.user.userId);
@@ -158,7 +158,7 @@ export class StaffController {
   }
 
   @Patch(':id')
-  @Roles('admin', 'hr_manager')
+  @Roles('policy_admin', 'hr_manager')
   @SkipAudit()
   @ApiOperation({ summary: 'Update staff information' })
   @ApiResponse({ status: 200, description: 'Staff updated successfully' })
@@ -167,7 +167,7 @@ export class StaffController {
   }
 
   @Delete(':id')
-  @Roles('admin')
+  @Roles('policy_admin')
   @SkipAudit()
   @ApiOperation({ summary: 'Delete staff (soft delete)' })
   @ApiResponse({ status: 200, description: 'Staff deleted successfully' })
@@ -176,21 +176,21 @@ export class StaffController {
   }
 
   @Post('bulk-import')
-  @Roles('admin', 'hr_manager')
+  @Roles('policy_admin', 'hr_manager')
   @ApiOperation({ summary: 'Bulk import staff records' })
   bulkImport(@Body() staffRecords: BulkCreateStaffDto[], @Request() req) {
     return this.staffService.bulkImport(staffRecords, req.user.userId);
   }
 
   @Post('sync-users')
-  @Roles('admin')
+  @Roles('policy_admin')
   @ApiOperation({ summary: 'Sync legacy staff members who do not have user accounts' })
   syncLegacyStaffUsers(@Request() req) {
     return this.staffService.syncLegacyStaffUsers(req.user.userId);
   }
 
   @Post(':id/create-user')
-  @Roles('admin')
+  @Roles('policy_admin')
   @ApiOperation({ summary: 'Create user account for staff member and send welcome email' })
   @ApiResponse({ status: 201, description: 'User account created and welcome email sent' })
   createUserAccount(

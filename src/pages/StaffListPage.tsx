@@ -102,8 +102,8 @@ export function StaffListPage() {
   const [statusFilter, setStatusFilter] = useState('all');
 
   // Check if user can manage staff
-  const canManageStaff = user?.role === 'admin' || user?.role === 'hr_manager';
-  const canEditStaffNumber = user?.role === 'admin' || user?.role === 'hr_manager';
+  const canManageStaff = user?.role === 'policy_admin' || user?.role === 'hr_manager';
+  const canEditStaffNumber = user?.role === 'policy_admin' || user?.role === 'hr_manager';
   const staffStatuses: Staff['status'][] = [
     'active',
     'suspended',
@@ -1769,7 +1769,7 @@ export function StaffListPage() {
                     placeholder="dd/mm/yyyy"
                     inputMode="numeric"
                     required
-                    disabled={!!editingStaff && user?.role !== 'admin'}
+                    disabled={!!editingStaff && user?.role !== 'policy_admin'}
                   />
                   {formErrors.appointment_date && <p className="text-red-500 text-xs mt-1">{formErrors.appointment_date}</p>}
                 </div>

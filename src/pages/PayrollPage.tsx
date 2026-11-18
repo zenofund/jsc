@@ -46,9 +46,9 @@ export function PayrollPage() {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
   // Check if user can manage payroll
-  const canManagePayroll = user?.role === 'admin' || user?.role === 'payroll_officer';
+  const canManagePayroll = user?.role === 'policy_admin' || user?.role === 'payroll_officer';
   // Only Admin can lock payroll
-  const canLockPayroll = user?.role === 'admin';
+  const canLockPayroll = user?.role === 'policy_admin';
   // Reviewer, Approver, Audit can only view and download
   const role = String(user?.role || '').trim().toLowerCase();
   const normalizedRole = role === 'reviewer' ? 'checking' : role === 'approver' ? 'cpo' : role;

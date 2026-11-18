@@ -70,7 +70,7 @@ async function run() {
            
            await client.query(`
              ALTER TABLE users ADD CONSTRAINT ${row.conname} 
-             CHECK (role IN ('admin', 'super_admin', 'staff', 'payroll_officer', 'hr_manager', 'reviewer', 'checking', 'approver', 'cpo', 'auditor', 'cashier', 'payroll_loader', 'coop_manager'))
+             CHECK (role IN ('policy_admin', 'super_admin', 'staff', 'payroll_officer', 'hr_manager', 'reviewer', 'checking', 'approver', 'cpo', 'auditor', 'cashier', 'payroll_loader', 'coop_manager'))
            `);
            console.log(`✅ Updated constraint ${row.conname}`);
            constraintUpdated = true;

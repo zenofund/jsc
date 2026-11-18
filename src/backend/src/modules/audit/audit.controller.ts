@@ -1,11 +1,15 @@
-import { Controller, Get, Post, Body, Param, Query, Request } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, Request, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuditService } from './audit.service';
 import { CreateAuditDto, AuditAction } from './dto/audit.dto';
+import { RolesGuard } from '@common/guards/roles.guard';
+import { Roles } from '@common/decorators/roles.decorator';
 
 @ApiTags('Audit Trail')
 @ApiBearerAuth()
 @Controller('audit')
+@UseGuards(RolesGuard)
+@Roles('super_admin')
 export class AuditController {
   constructor(private readonly auditService: AuditService) {}
 

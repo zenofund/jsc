@@ -197,7 +197,7 @@ export function BankPaymentsPage() {
     description: '',
     is_active: true,
   });
-  const canManageBankAccounts = ['admin', 'super_admin', 'payroll_manager'].includes(user?.role || '');
+  const canManageBankAccounts = ['policy_admin', 'payroll_manager'].includes(user?.role || '');
   const canManageBankGroups = canManageBankAccounts;
 
   useEffect(() => {

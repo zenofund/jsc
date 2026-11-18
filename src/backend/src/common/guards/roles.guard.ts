@@ -1,7 +1,6 @@
 import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ROLES_KEY } from '../decorators/roles.decorator';
-import { NO_ADMIN_BYPASS_KEY } from '../decorators/no-admin-bypass.decorator';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -19,15 +18,7 @@ export class RolesGuard implements CanActivate {
 
     const { user } = context.switchToHttp().getRequest();
 
-    const noAdminBypass = this.reflector.getAllAndOverride<boolean>(NO_ADMIN_BYPASS_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
-
-    // Allow admin and super_admin to access all resources UNLESS @NoAdminBypass() is set
-    if (!noAdminBypass && user.role && (user.role.toLowerCase() === 'admin' || user.role.toLowerCase() === 'super_admin')) {
-      return true;
-    }
+    // Administrative roles must still match the endpoint's explicit role list.
 
     const normalizeRole = (role: any) => {
       const r = String(role || '').toLowerCase();

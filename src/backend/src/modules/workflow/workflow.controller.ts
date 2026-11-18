@@ -10,13 +10,13 @@ export class WorkflowController {
   constructor(private readonly workflowService: WorkflowService) {}
 
   @Post('workflows')
-  @Roles('admin', 'super_admin')
+  @Roles('policy_admin')
   createWorkflow(@Body() createWorkflowDto: any) {
     return this.workflowService.createWorkflow(createWorkflowDto);
   }
 
   @Post('steps')
-  @Roles('admin', 'super_admin')
+  @Roles('policy_admin')
   addStep(@Body() createStepDto: any) {
     return this.workflowService.addStep(createStepDto);
   }

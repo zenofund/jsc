@@ -168,7 +168,7 @@ export function DashboardPage() {
             <p className="mt-1 text-sm text-muted-foreground">Common tasks for your role.</p>
           </div>
           <div className="space-y-2 sm:space-y-3">
-            {['admin', 'payroll_officer', 'cpo', 'checking', 'payroll_loader'].includes((String(user?.role || '').trim().toLowerCase() === 'reviewer' ? 'checking' : String(user?.role || '').trim().toLowerCase() === 'approver' ? 'cpo' : String(user?.role || '').trim().toLowerCase())) && (
+            {['policy_admin', 'payroll_officer', 'cpo', 'checking', 'payroll_loader'].includes((String(user?.role || '').trim().toLowerCase() === 'reviewer' ? 'checking' : String(user?.role || '').trim().toLowerCase() === 'approver' ? 'cpo' : String(user?.role || '').trim().toLowerCase())) && (
               <button 
                 onClick={() => (window as any).navigateTo?.('payroll')}
                 className="w-full flex items-center gap-3 rounded-xl border border-green-200/70 bg-green-50 p-3 text-left transition-colors hover:bg-green-100 active:bg-green-200 dark:border-green-900/50 dark:bg-green-950/30 dark:hover:bg-green-950/50 dark:active:bg-green-950/70 sm:p-4">
@@ -182,7 +182,7 @@ export function DashboardPage() {
               </button>
             )}
 
-            {['admin', 'payroll_officer'].includes(user?.role || '') && (
+            {['policy_admin', 'payroll_officer'].includes(user?.role || '') && (
               <button 
                 onClick={() => (window as any).navigateTo?.('staff')}
                 className="w-full flex items-center gap-3 rounded-xl border border-border/60 bg-muted/40 p-3 text-left transition-colors hover:bg-muted active:bg-muted/80 sm:p-4">
@@ -196,7 +196,7 @@ export function DashboardPage() {
               </button>
             )}
 
-            {['admin', 'payroll_officer', 'payroll_loader'].includes(user?.role || '') && (
+            {['policy_admin', 'payroll_officer', 'payroll_loader'].includes(user?.role || '') && (
               <button 
                 onClick={() => (window as any).navigateTo?.('arrears')}
                 className="w-full flex items-center gap-3 rounded-xl border border-green-200/50 bg-green-50/50 p-3 text-left transition-colors hover:bg-green-100/70 active:bg-green-200/70 dark:border-green-900/40 dark:bg-green-950/20 dark:hover:bg-green-950/40 dark:active:bg-green-950/60 sm:p-4">

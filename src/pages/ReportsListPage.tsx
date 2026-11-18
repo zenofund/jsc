@@ -52,7 +52,7 @@ import { CompactAmount } from '../components/CompactAmount';
 const REPORT_BUILDER_EDIT_KEY = 'jsc_report_builder_template_id';
 const REPORTS_LIST_FOCUS_TEMPLATE_KEY = 'jsc_reports_list_focus_template_id';
 const SHARE_ROLE_OPTIONS = [
-  { value: 'admin', label: 'Admin' },
+  { value: 'policy_admin', label: 'Policy Admin' },
   { value: 'payroll_officer', label: 'Payroll Officer' },
   { value: 'hr_manager', label: 'HR Manager' },
 ];

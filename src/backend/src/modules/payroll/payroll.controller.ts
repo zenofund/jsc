@@ -27,7 +27,7 @@ export class PayrollController {
   constructor(private readonly payrollService: PayrollService) {}
 
   @Post('batches')
-  @Roles('admin', 'payroll_officer', 'payroll_loader')
+  @Roles('policy_admin', 'payroll_officer', 'payroll_loader')
   @ApiOperation({ summary: 'Create new payroll batch' })
   @ApiResponse({ status: 201, description: 'Payroll batch created successfully' })
   createBatch(@Body() createDto: CreatePayrollBatchDto, @Request() req) {
@@ -35,7 +35,7 @@ export class PayrollController {
   }
 
   @Post('batches/:id/generate-lines')
-  @Roles('admin', 'payroll_officer', 'payroll_loader')
+  @Roles('policy_admin', 'payroll_officer', 'payroll_loader')
   @ApiOperation({ summary: 'Generate payroll lines for all eligible staff (BULK)' })
   @ApiResponse({ status: 200, description: 'Payroll lines generated successfully' })
   generateLines(@Param('id') id: string, @Request() req) {
@@ -43,7 +43,7 @@ export class PayrollController {
   }
 
   @Post('batches/:id/submit')
-  @Roles('admin', 'payroll_officer', 'payroll_loader')
+  @Roles('policy_admin', 'payroll_officer', 'payroll_loader')
   @SkipAudit()
   @ApiOperation({ summary: 'Submit batch for approval workflow' })
   @ApiResponse({ status: 200, description: 'Batch submitted successfully' })
@@ -55,7 +55,7 @@ export class PayrollController {
   }
 
   @Post('batches/:id/approve')
-  @Roles('admin', 'payroll_officer', 'cpo', 'checking', 'auditor', 'hr_manager', 'payroll_loader')
+  @Roles('policy_admin', 'payroll_officer', 'cpo', 'checking', 'auditor', 'hr_manager', 'payroll_loader')
   @SkipAudit()
   @ApiOperation({ summary: 'Approve or reject payroll batch' })
   @ApiResponse({ status: 200, description: 'Batch approval action completed' })
@@ -64,7 +64,7 @@ export class PayrollController {
   }
 
   @Post('batches/:id/lock')
-  @Roles('admin')
+  @Roles('policy_admin')
   @ApiOperation({ summary: 'Lock approved payroll batch' })
   @ApiResponse({ status: 200, description: 'Batch locked successfully' })
   lockBatch(@Param('id') id: string, @Request() req) {
@@ -72,7 +72,7 @@ export class PayrollController {
   }
 
   @Get('pending-payments')
-  @Roles('admin', 'cashier')
+  @Roles('policy_admin', 'cashier')
   @ApiOperation({ summary: 'Get pending payments' })
   @ApiResponse({ status: 200, description: 'List of pending payments' })
   getPendingPayments() {
@@ -80,7 +80,7 @@ export class PayrollController {
   }
 
   @Post('batches/:id/execute-payment')
-  @Roles('admin', 'cashier')
+  @Roles('policy_admin', 'cashier')
   @SkipAudit()
   @ApiOperation({ summary: 'Execute payment for a payroll batch' })
   @ApiResponse({ status: 200, description: 'Payment executed successfully' })
@@ -110,7 +110,7 @@ export class PayrollController {
   }
 
   @Get('batches/:id/payment-trace')
-  @Roles('admin', 'payroll_officer', 'cashier')
+  @Roles('policy_admin', 'payroll_officer', 'cashier')
   @ApiOperation({ summary: 'Get payment trace for a payroll batch' })
   getPaymentTrace(@Param('id') id: string) {
     return this.payrollService.getPaymentTrace(id);
@@ -135,7 +135,7 @@ export class PayrollController {
   }
 
   @Delete('batches/:id')
-  @Roles('admin')
+  @Roles('policy_admin')
   @ApiOperation({ summary: 'Delete draft payroll batch' })
   @ApiResponse({ status: 200, description: 'Batch deleted successfully' })
   removeBatch(@Param('id') id: string, @Request() req) {

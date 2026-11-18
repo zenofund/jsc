@@ -20,7 +20,7 @@ export class PromotionsController {
   }
 
   @Post('preview-arrears')
-  @Roles('admin', 'payroll_officer', 'hr_manager', 'cpo', 'approver')
+  @Roles('policy_admin', 'payroll_officer', 'hr_manager', 'cpo', 'approver')
   @ApiOperation({ summary: 'Preview arrears for a promotion' })
   previewArrears(@Body() body: any) {
     return this.promotionsService.calculateArrearsPreview(
@@ -35,42 +35,42 @@ export class PromotionsController {
   }
 
   @Post('create')
-  @Roles('admin', 'payroll_officer', 'hr_manager')
+  @Roles('policy_admin', 'payroll_officer', 'hr_manager')
   @ApiOperation({ summary: 'Promote a staff member' })
   promoteStaff(@Body() promoteStaffDto: any, @Request() req) {
     return this.promotionsService.createPromotion(promoteStaffDto, req.user.userId);
   }
 
   @Post(':id/approve')
-  @Roles('admin', 'hr_manager')
+  @Roles('policy_admin', 'hr_manager')
   @ApiOperation({ summary: 'Approve promotion' })
   approvePromotion(@Param('id') id: string, @Request() req) {
     return this.promotionsService.approvePromotion(id, req.user.userId);
   }
 
   @Post('bulk-approve')
-  @Roles('admin', 'hr_manager')
+  @Roles('policy_admin', 'hr_manager')
   @ApiOperation({ summary: 'Bulk approve promotions' })
   bulkApprovePromotions(@Body() body: any, @Request() req) {
     return this.promotionsService.bulkApprovePromotions(body.promotionIds || [], req.user.userId);
   }
 
   @Post(':id/reject')
-  @Roles('admin', 'hr_manager')
+  @Roles('policy_admin', 'hr_manager')
   @ApiOperation({ summary: 'Reject promotion' })
   rejectPromotion(@Param('id') id: string, @Body() body: any, @Request() req) {
     return this.promotionsService.rejectPromotion(id, req.user.userId, body.reason);
   }
 
   @Post('bulk-reject')
-  @Roles('admin', 'hr_manager')
+  @Roles('policy_admin', 'hr_manager')
   @ApiOperation({ summary: 'Bulk reject promotions' })
   bulkRejectPromotions(@Body() body: any, @Request() req) {
     return this.promotionsService.bulkRejectPromotions(body.promotionIds || [], req.user.userId, body.reason);
   }
 
   @Get('eligible')
-  @Roles('admin', 'payroll_officer', 'hr_manager')
+  @Roles('policy_admin', 'payroll_officer', 'hr_manager')
   @ApiOperation({ summary: 'Get staff eligible for promotion' })
   getEligiblePromotions() {
     return this.promotionsService.getEligiblePromotions();
@@ -83,7 +83,7 @@ export class PromotionsController {
   }
 
   @Delete(':id')
-  @Roles('admin', 'hr_manager', 'payroll_officer')
+  @Roles('policy_admin', 'hr_manager', 'payroll_officer')
   @ApiOperation({ summary: 'Delete a pending or rejected promotion' })
   @ApiResponse({ status: 200, description: 'Promotion deleted successfully' })
   @ApiResponse({ status: 400, description: 'Only pending or rejected promotions can be deleted' })

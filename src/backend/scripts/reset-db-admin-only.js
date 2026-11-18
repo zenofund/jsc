@@ -38,7 +38,7 @@ async function resetDatabase() {
            full_name = EXCLUDED.full_name,
            role = EXCLUDED.role,
            status = 'active'`,
-      ['admin@jsc.gov.ng', passwordHash, 'System Administrator', 'admin'],
+      ['admin@jsc.gov.ng', passwordHash, 'System Administrator', 'super_admin'],
     );
 
     await client.query('COMMIT');

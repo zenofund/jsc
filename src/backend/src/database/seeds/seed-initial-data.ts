@@ -27,7 +27,7 @@ async function seedDatabase() {
     const coopPassword = await bcrypt.hash('coop123', 10);
 
     const users = [
-      { email: 'admin@jsc.gov.ng', password: adminPassword, full_name: 'System Administrator', role: 'admin' },
+      { email: 'admin@jsc.gov.ng', password: adminPassword, full_name: 'System Administrator', role: 'super_admin' },
       { email: 'hr@jsc.gov.ng', password: hrPassword, full_name: 'HR Manager', role: 'hr_manager' },
       { email: 'accounts@jsc.gov.ng', password: accountantPassword, full_name: 'Chief Accountant', role: 'cashier' },
       { email: 'loader@jsc.gov.ng', password: loaderPassword, full_name: 'Payroll Loader', role: 'payroll_loader' },

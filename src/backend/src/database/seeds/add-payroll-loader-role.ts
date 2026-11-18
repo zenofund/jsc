@@ -80,7 +80,7 @@ async function run() {
            // We assume the standard list + payroll_loader
            await client.query(`
              ALTER TABLE users ADD CONSTRAINT ${row.conname} 
-             CHECK (role IN ('admin', 'super_admin', 'staff', 'payroll_officer', 'payroll_manager', 'cooperative_officer', 'loan_officer', 'audit_officer', 'payroll_loader'))
+             CHECK (role IN ('policy_admin', 'super_admin', 'staff', 'payroll_officer', 'payroll_manager', 'cooperative_officer', 'loan_officer', 'audit_officer', 'payroll_loader'))
            `);
            console.log(`✅ Updated constraint ${row.conname}`);
            constraintUpdated = true;

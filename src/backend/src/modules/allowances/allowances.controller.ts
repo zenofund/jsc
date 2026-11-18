@@ -25,7 +25,7 @@ export class AllowancesController {
   // ==================== GLOBAL ALLOWANCES ====================
 
   @Post('global')
-  @Roles('admin', 'hr_manager')
+  @Roles('policy_admin', 'hr_manager')
   @ApiOperation({ summary: 'Create global allowance' })
   createGlobalAllowance(@Body() dto: any, @Request() req) {
     return this.allowancesService.createGlobalAllowance(dto, req.user.userId);
@@ -38,14 +38,14 @@ export class AllowancesController {
   }
 
   @Patch('global/:id')
-  @Roles('admin', 'hr_manager')
+  @Roles('policy_admin', 'hr_manager')
   @ApiOperation({ summary: 'Update global allowance' })
   updateGlobalAllowance(@Param('id') id: string, @Body() dto: any, @Request() req) {
     return this.allowancesService.updateGlobalAllowance(id, dto, req.user.userId);
   }
 
   @Delete('global/:id')
-  @Roles('admin')
+  @Roles('policy_admin')
   @ApiOperation({ summary: 'Delete global allowance' })
   removeGlobalAllowance(@Param('id') id: string, @Request() req) {
     return this.allowancesService.removeGlobalAllowance(id, req.user.userId);
@@ -54,14 +54,14 @@ export class AllowancesController {
   // ==================== STAFF-SPECIFIC ALLOWANCES ====================
 
   @Post('staff')
-  @Roles('admin', 'payroll_officer', 'hr_manager', 'payroll_loader')
+  @Roles('policy_admin', 'payroll_officer', 'hr_manager', 'payroll_loader')
   @ApiOperation({ summary: 'Create staff-specific allowance' })
   createStaffAllowance(@Body() dto: any, @Request() req) {
     return this.allowancesService.createStaffAllowance(dto, req.user.userId, req.user.role);
   }
 
   @Get('staff/all')
-  @Roles('admin', 'payroll_officer', 'payroll_loader')
+  @Roles('policy_admin', 'payroll_officer', 'payroll_loader')
   @ApiOperation({ summary: 'Get all staff allowances with pagination' })
   findAllStaffAllowances(@Query() query: any) {
     return this.allowancesService.findAllStaffAllowances(query);
@@ -74,21 +74,21 @@ export class AllowancesController {
   }
 
   @Patch('staff/bulk-status')
-  @Roles('admin', 'payroll_officer', 'hr_manager')
+  @Roles('policy_admin', 'payroll_officer', 'hr_manager')
   @ApiOperation({ summary: 'Bulk update status of staff allowances' })
   bulkUpdateStaffAllowanceStatus(@Body() body: { ids: string[], status: string }, @Request() req) {
     return this.allowancesService.bulkUpdateStaffAllowanceStatus(body.ids, body.status, req.user.userId);
   }
 
   @Patch('staff/:id')
-  @Roles('admin', 'payroll_officer', 'hr_manager', 'payroll_loader')
+  @Roles('policy_admin', 'payroll_officer', 'hr_manager', 'payroll_loader')
   @ApiOperation({ summary: 'Update staff-specific allowance' })
   updateStaffAllowance(@Param('id') id: string, @Body() dto: any, @Request() req) {
     return this.allowancesService.updateStaffAllowance(id, dto, req.user.userId);
   }
 
   @Delete('staff/:id')
-  @Roles('admin', 'payroll_officer', 'hr_manager', 'payroll_loader')
+  @Roles('policy_admin', 'payroll_officer', 'hr_manager', 'payroll_loader')
   @ApiOperation({ summary: 'Delete staff-specific allowance' })
   removeStaffAllowance(@Param('id') id: string, @Request() req) {
     return this.allowancesService.removeStaffAllowance(id, req.user.userId);

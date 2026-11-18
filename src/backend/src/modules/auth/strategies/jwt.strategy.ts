@@ -24,19 +24,19 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     );
     const singleSessionOnly = Boolean(settingsRow?.value?.single_session_only);
 
+    const userRow = await this.databaseService.queryOne(
+      `SELECT status, role, current_session_id
+       FROM users
+       WHERE id = $1`,
+      [payload.sub],
+    );
+
+    if (!userRow || String(userRow.status || '').toLowerCase() !== 'active') {
+      throw new UnauthorizedException('Session expired. Please login again.');
+    }
+
     if (singleSessionOnly) {
       if (!payload?.sid) {
-        throw new UnauthorizedException('Session expired. Please login again.');
-      }
-
-      const userRow = await this.databaseService.queryOne(
-        `SELECT status, current_session_id
-         FROM users
-         WHERE id = $1`,
-        [payload.sub],
-      );
-
-      if (!userRow || String(userRow.status || '').toLowerCase() !== 'active') {
         throw new UnauthorizedException('Session expired. Please login again.');
       }
 
@@ -48,7 +48,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     return {
       userId: payload.sub,
       email: payload.email,
-      role: payload.role,
+      role: userRow.role || payload.role,
       permissions: payload.permissions || [],
       departmentId: payload.departmentId,
       staffId: payload.staffId,

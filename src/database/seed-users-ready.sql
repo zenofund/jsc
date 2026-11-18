@@ -73,7 +73,7 @@ INSERT INTO users (
         'admin@jsc.gov.ng',
         '$2b$10$YourGeneratedBcryptHashForAdmin123GoesHereXXXXXXXXXXXX',
         'System Administrator',
-        'Admin',
+        'super_admin',
         'b3333333-3333-3333-3333-333333333333',
         'active',
         NOW(),

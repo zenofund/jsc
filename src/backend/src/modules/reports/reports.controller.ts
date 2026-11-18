@@ -19,14 +19,14 @@ import {
 @ApiBearerAuth()
 @Controller('reports')
 @UseGuards(RolesGuard)
-@Roles('admin', 'payroll_officer', 'hr_manager')
+@Roles('policy_admin', 'payroll_officer', 'hr_manager')
 export class ReportsController {
   constructor(private readonly reportsService: ReportsService) {}
 
   // ==================== STANDARD REPORTS ====================
 
   @Get('staff')
-  @Roles('admin', 'hr_manager', 'payroll_officer')
+  @Roles('policy_admin', 'hr_manager', 'payroll_officer')
   @ApiOperation({ summary: 'Get staff report' })
   getStaffReport(
     @Query('department') department?: string,
@@ -36,14 +36,14 @@ export class ReportsController {
   }
 
   @Get('payroll/:month')
-  @Roles('admin', 'payroll_officer')
+  @Roles('policy_admin', 'payroll_officer')
   @ApiOperation({ summary: 'Get payroll report' })
   getPayrollReport(@Param('month') month: string) {
     return this.reportsService.getPayrollReport(month);
   }
 
   @Get('payroll/:month/bank-schedule')
-  @Roles('admin', 'payroll_officer')
+  @Roles('policy_admin', 'payroll_officer')
   @ApiOperation({ summary: 'Get payroll E-Mandate schedule grouped by bank or bank group' })
   getPayrollBankSchedule(
     @Param('month') month: string,

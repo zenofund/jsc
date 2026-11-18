@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Delete, Put, Patch, UseGuards, Request, BadRequestException } from '@nestjs/common';
+﻿import { Controller, Get, Post, Body, Param, Delete, Put, Patch, UseGuards, Request, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger';
 import { AuthService } from '../auth/auth.service';
 import { RolesGuard } from '@common/guards/roles.guard';
@@ -12,7 +12,7 @@ export class UsersController {
   constructor(private readonly authService: AuthService) {}
 
   @Get()
-  @Roles('admin')
+  @Roles('super_admin')
   @ApiOperation({ summary: 'Get all users' })
   @ApiResponse({ status: 200, description: 'List of users retrieved successfully' })
   async getAllUsers() {
@@ -20,7 +20,7 @@ export class UsersController {
   }
 
   @Get('permission-catalog')
-  @Roles('admin', 'super_admin')
+  @Roles('super_admin')
   @ApiOperation({ summary: 'Get permission catalog and role templates' })
   @ApiResponse({ status: 200, description: 'Permission catalog retrieved successfully' })
   async getPermissionCatalog() {
@@ -28,7 +28,7 @@ export class UsersController {
   }
 
   @Post()
-  @Roles('admin')
+  @Roles('super_admin')
   @ApiOperation({ summary: 'Create new user' })
   @ApiResponse({ status: 201, description: 'User created successfully' })
   async createUser(@Body() createUserDto: any, @Request() req) {
@@ -36,7 +36,7 @@ export class UsersController {
   }
 
   @Put(':id')
-  @Roles('admin')
+  @Roles('super_admin')
   @ApiOperation({ summary: 'Update user' })
   @ApiResponse({ status: 200, description: 'User updated successfully' })
   async updateUser(@Param('id') id: string, @Body() updateUserDto: any, @Request() req) {
@@ -44,7 +44,7 @@ export class UsersController {
   }
 
   @Patch(':id/password')
-  @Roles('admin')
+  @Roles('super_admin')
   @ApiOperation({ summary: 'Set user password (Admin only)' })
   @ApiResponse({ status: 200, description: 'Password updated successfully' })
   async setUserPassword(@Param('id') id: string, @Body() body: any, @Request() req) {
@@ -66,7 +66,7 @@ export class UsersController {
   }
 
   @Delete(':id')
-  @Roles('admin')
+  @Roles('super_admin')
   @ApiOperation({ summary: 'Delete user' })
   @ApiResponse({ status: 200, description: 'User deleted successfully' })
   async deleteUser(@Param('id') id: string, @Request() req) {
