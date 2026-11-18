@@ -2352,18 +2352,18 @@ export function StaffListPage() {
           size="lg"
         >
           <div className="space-y-6">
-            <div className="flex items-center justify-between p-4 bg-muted/30 rounded-lg">
+            <div className="flex flex-col gap-4 rounded-lg bg-muted/30 p-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h3 className="font-semibold text-foreground">
                   {formatStaffName(viewingStaff)}
                 </h3>
                 <p className="text-sm text-muted-foreground">{viewingStaff.appointment.designation}</p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <StatusBadge status={viewingStaff.status} />
                 <button
                   onClick={handlePrintStaff}
-                  className="px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700"
+                  className="min-h-10 rounded bg-green-600 px-4 py-2 text-sm text-white hover:bg-green-700"
                 >
                   Print PDF
                 </button>
@@ -2371,15 +2371,37 @@ export function StaffListPage() {
             </div>
 
             <Tabs defaultValue="bio">
-              <TabsList>
-                <TabsTrigger value="bio">Bio Data</TabsTrigger>
-                <TabsTrigger value="nok">Next of Kin</TabsTrigger>
-                <TabsTrigger value="appointment">Appointment</TabsTrigger>
-                <TabsTrigger value="salary">Salary & Bank</TabsTrigger>
-              </TabsList>
+              <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:overflow-visible sm:px-0">
+                <TabsList className="h-auto w-max min-w-full justify-start gap-1 rounded-lg border border-border bg-muted p-1 sm:w-fit sm:min-w-0">
+                  <TabsTrigger
+                    value="bio"
+                    className="h-10 flex-none rounded-md px-3 text-muted-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
+                  >
+                    Bio Data
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="nok"
+                    className="h-10 flex-none rounded-md px-3 text-muted-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
+                  >
+                    Next of Kin
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="appointment"
+                    className="h-10 flex-none rounded-md px-3 text-muted-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
+                  >
+                    Appointment
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="salary"
+                    className="h-10 flex-none rounded-md px-3 text-muted-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
+                  >
+                    Salary & Bank
+                  </TabsTrigger>
+                </TabsList>
+              </div>
 
               <TabsContent value="bio">
-                <dl className="grid grid-cols-2 gap-4 text-sm">
+                <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 [&>div]:min-w-0 [&>div]:flex-col [&>div]:gap-1 [&>div]:rounded-lg [&>div]:border [&>div]:border-border/60 [&>div]:bg-muted/20 [&>div]:p-3 [&_dt]:text-xs [&_dd]:break-words [&_dd]:font-medium">
                   <div className="flex justify-between">
                     <dt className="text-muted-foreground">Date of Birth</dt>
                     <dd className="text-foreground">{formatDateDisplay(viewingStaff.bio_data.date_of_birth)}</dd>
@@ -2420,7 +2442,7 @@ export function StaffListPage() {
               </TabsContent>
 
               <TabsContent value="nok">
-                <dl className="grid grid-cols-2 gap-4 text-sm">
+                <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 [&>div]:min-w-0 [&>div]:flex-col [&>div]:gap-1 [&>div]:rounded-lg [&>div]:border [&>div]:border-border/60 [&>div]:bg-muted/20 [&>div]:p-3 [&_dt]:text-xs [&_dd]:break-words [&_dd]:font-medium">
                   <div className="flex justify-between">
                     <dt className="text-muted-foreground">Name</dt>
                     <dd className="text-foreground">{viewingStaff.next_of_kin.name}</dd>
@@ -2441,7 +2463,7 @@ export function StaffListPage() {
               </TabsContent>
 
               <TabsContent value="appointment">
-                <dl className="grid grid-cols-2 gap-4 text-sm">
+                <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 [&>div]:min-w-0 [&>div]:flex-col [&>div]:gap-1 [&>div]:rounded-lg [&>div]:border [&>div]:border-border/60 [&>div]:bg-muted/20 [&>div]:p-3 [&_dt]:text-xs [&_dd]:break-words [&_dd]:font-medium">
                   <div className="flex justify-between">
                     <dt className="text-muted-foreground">Department</dt>
                     <dd className="text-foreground">{viewingStaff.appointment.department}</dd>
@@ -2486,7 +2508,7 @@ export function StaffListPage() {
               </TabsContent>
 
               <TabsContent value="salary">
-                <dl className="grid grid-cols-2 gap-4 text-sm">
+                <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 [&>div]:min-w-0 [&>div]:flex-col [&>div]:gap-1 [&>div]:rounded-lg [&>div]:border [&>div]:border-border/60 [&>div]:bg-muted/20 [&>div]:p-3 [&_dt]:text-xs [&_dd]:break-words [&_dd]:font-medium">
                   <div className="flex justify-between">
                     <dt className="text-muted-foreground">Grade Level</dt>
                     <dd className="text-foreground">{viewingStaff.salary_info.grade_level}</dd>
