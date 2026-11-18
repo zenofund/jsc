@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSystemSettings } from '../contexts/SystemSettingsContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -63,6 +63,13 @@ export function Layout({ children }: LayoutProps) {
   const { showToast } = useToast();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
+  useEffect(() => {
+    if (String(user?.role || '').trim().toLowerCase() === 'super_admin') {
+      setExpandedGroups((groups) =>
+        groups.includes('Config & Settings') ? groups : [...groups, 'Config & Settings'],
+      );
+    }
+  }, [user?.role]);
   const [pwaInstallState, setPwaInstallState] = useState(getPwaInstallManagerState);
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
   const isInstalled = pwaInstallState.isInstalled;
@@ -228,7 +235,7 @@ export function Layout({ children }: LayoutProps) {
       name: 'Dashboard',
       icon: LayoutDashboard,
       view: String(user?.role || '').trim().toLowerCase() === 'coop_manager' ? 'coop-dashboard' : 'dashboard',
-      roles: ['policy_admin', 'payroll_officer', 'hr_manager', 'cpo', 'checking', 'auditor', 'cashier', 'payroll_loader', 'coop_manager'],
+      roles: ['super_admin', 'policy_admin', 'payroll_officer', 'hr_manager', 'cpo', 'checking', 'auditor', 'cashier', 'payroll_loader', 'coop_manager'],
     },
     { name: 'Staff Portal', icon: UserCircle, view: 'staff-portal', roles: ['staff'] },
     { name: 'My Requests', icon: FileText, view: 'staff-request-status', roles: ['staff'] },
