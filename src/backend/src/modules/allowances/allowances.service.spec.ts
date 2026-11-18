@@ -99,6 +99,41 @@ describe('AllowancesService', () => {
       );
     });
 
+    it('allows configured staff allowances to override taxable and pensionable defaults', async () => {
+      (databaseService.queryOne as jest.Mock)
+        .mockResolvedValueOnce({
+          id: 'allowance-1',
+          code: 'MEAL',
+          name: 'Meal Allowance',
+          type: 'fixed',
+          calculation_basis: 'basic',
+          is_taxable: false,
+          is_pensionable: false,
+          applies_to_all: false,
+          status: 'active',
+        })
+        .mockResolvedValueOnce({ id: 'sa-4' });
+
+      await service.createStaffAllowance(
+        {
+          staff_id: 'staff-4',
+          entry_mode: 'configured',
+          allowance_id: 'allowance-1',
+          amount: 15000,
+          is_taxable: true,
+          is_pensionable: true,
+          effective_from: '2026-07',
+        },
+        'user-4',
+        'policy_admin',
+      );
+
+      expect(databaseService.queryOne).toHaveBeenLastCalledWith(
+        expect.stringContaining('INSERT INTO staff_allowances'),
+        expect.arrayContaining(['allowance-1', true, true]),
+      );
+    });
+
     it('rejects blank amount values for fixed staff allowances', async () => {
       await expect(
         service.createStaffAllowance(
@@ -118,6 +153,44 @@ describe('AllowancesService', () => {
   });
 
   describe('updateStaffAllowance', () => {
+    it('persists taxable and pensionable overrides for configured staff allowances', async () => {
+      (databaseService.queryOne as jest.Mock)
+        .mockResolvedValueOnce({
+          id: 'sa-5',
+          allowance_id: 'allowance-1',
+          status: 'active',
+        })
+        .mockResolvedValueOnce({
+          id: 'allowance-1',
+          code: 'MEAL',
+          name: 'Meal Allowance',
+          type: 'fixed',
+          calculation_basis: 'basic',
+          is_taxable: false,
+          is_pensionable: false,
+          applies_to_all: false,
+          status: 'active',
+        })
+        .mockResolvedValueOnce({ id: 'sa-5' });
+
+      await service.updateStaffAllowance(
+        'sa-5',
+        {
+          entry_mode: 'configured',
+          allowance_id: 'allowance-1',
+          amount: 15000,
+          is_taxable: true,
+          is_pensionable: false,
+        },
+        'user-5',
+      );
+
+      expect(databaseService.queryOne).toHaveBeenLastCalledWith(
+        expect.stringContaining('UPDATE staff_allowances'),
+        expect.arrayContaining([true, false]),
+      );
+    });
+
     it('rejects blank amount values when updating a fixed staff allowance', async () => {
       (databaseService.queryOne as jest.Mock).mockResolvedValue({
         id: 'sa-3',

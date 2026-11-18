@@ -5,6 +5,12 @@ import { AuditAction } from '../audit/dto/audit.dto';
 
 @Injectable()
 export class SettingsService {
+  private readonly taxConfigurationDefaults = {
+    include_staff_adjustments_in_pension_base: false,
+    include_staff_adjustments_in_nhia_base: false,
+    include_staff_adjustments_in_nhf_base: false,
+  };
+
   private readonly generalSettingsDefaults = {
     organization_name: 'Judicial Service Committee',
     organization_logo: '',
@@ -218,17 +224,29 @@ export class SettingsService {
     const result = await this.databaseService.queryOne(
       `SELECT tax_configuration FROM system_settings WHERE key = 'general_settings'`,
     );
-    return result?.tax_configuration || {};
+    return {
+      ...this.taxConfigurationDefaults,
+      ...(result?.tax_configuration || {}),
+    };
   }
 
   async updateTaxConfiguration(config: any, userId: string) {
     const oldConfig = await this.getTaxConfiguration();
+    const updatedConfig = {
+      ...oldConfig,
+      ...(config || {}),
+    };
+    for (const key of Object.keys(this.taxConfigurationDefaults) as Array<
+      keyof typeof this.taxConfigurationDefaults
+    >) {
+      updatedConfig[key] = updatedConfig[key] === true;
+    }
 
     await this.databaseService.query(
       `UPDATE system_settings 
        SET tax_configuration = $1, updated_at = NOW() 
        WHERE key = 'general_settings'`,
-      [config],
+      [updatedConfig],
     );
 
     // Audit Log
@@ -239,7 +257,7 @@ export class SettingsService {
       entityId: 'tax_configuration',
       description: 'Updated tax configuration',
       oldValues: oldConfig,
-      newValues: config,
+      newValues: updatedConfig,
     });
 
     return this.getTaxConfiguration();

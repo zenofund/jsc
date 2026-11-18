@@ -424,7 +424,6 @@ function StaffAllowanceForm({
             <input
               type="checkbox"
               checked={localFormData.is_taxable}
-              disabled={localFormData.entry_mode === 'configured'}
               onChange={(e) => setLocalFormData((prev) => ({ ...prev, is_taxable: e.target.checked }))}
               className="size-4"
             />
@@ -434,7 +433,6 @@ function StaffAllowanceForm({
             <input
               type="checkbox"
               checked={localFormData.is_pensionable}
-              disabled={localFormData.entry_mode === 'configured'}
               onChange={(e) => setLocalFormData((prev) => ({ ...prev, is_pensionable: e.target.checked }))}
               className="size-4"
             />

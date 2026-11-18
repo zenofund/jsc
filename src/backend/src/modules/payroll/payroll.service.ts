@@ -570,6 +570,39 @@ export class PayrollService {
     return round2((baseAmount * percentage) / 100);
   }
 
+  private calculateRegularContributionBase(
+    grossPay: number,
+    staffAdjustmentAllowances: number,
+    pensionableStaffAdjustmentAllowances: number,
+    includePensionableStaffAdjustments: boolean,
+    round2: (value: number) => number,
+  ): number {
+    const includedAdjustments = includePensionableStaffAdjustments
+      ? pensionableStaffAdjustmentAllowances
+      : 0;
+    return round2(grossPay - staffAdjustmentAllowances + includedAdjustments);
+  }
+
+  private getRegularPayrollDeductionBase(
+    deduction: any,
+    grossPay: number,
+    contributionBases: { pension: number; nhf: number; nhia: number },
+  ): number {
+    const code = String(deduction.code || deduction.deduction_code || '').trim().toUpperCase();
+    const name = String(deduction.name || deduction.deduction_name || '').trim().toUpperCase();
+
+    if (code === 'PENSION' || name.includes('PENSION')) return contributionBases.pension;
+    if (code === 'NHF' || name.includes('NHF') || name.includes('HOUSING FUND')) return contributionBases.nhf;
+    if (
+      ['NHIA', 'NHIS'].includes(code) ||
+      ['NHIA', 'NHIS', 'HEALTH INSURANCE'].some((term) => name.includes(term))
+    ) {
+      return contributionBases.nhia;
+    }
+
+    return grossPay;
+  }
+
   /**
    * Get all payslips for a staff member
    */
@@ -718,6 +751,7 @@ export class PayrollService {
               COALESCE(sa.custom_type, a.type) as type,
               COALESCE(sa.custom_calculation_basis, a.calculation_basis, 'basic') as calculation_basis,
               COALESCE(sa.custom_is_taxable, a.is_taxable, true) as is_taxable,
+              COALESCE(sa.custom_is_pensionable, a.is_pensionable, false) as is_pensionable,
               a.excluded_grades,
               a.excluded_employment_types
        FROM staff_allowances sa
@@ -858,6 +892,8 @@ export class PayrollService {
       const staffSpecificAllowances = staffAllowances.filter(
         (a) => a.staff_id === staffMember.id,
       );
+      let staffAdjustmentAllowanceTotal = 0;
+      let pensionableStaffAdjustmentAllowanceTotal = 0;
       for (const allowance of staffSpecificAllowances) {
         // Check dynamic exclusions
         if (this.isExcludedFromPayrollItem(allowance, staffMember)) {
@@ -883,6 +919,10 @@ export class PayrollService {
             calculation_basis: this.normalizeCalculationBasis(allowance.calculation_basis),
           });
           totalAllowances += amount;
+          staffAdjustmentAllowanceTotal += amount;
+          if (allowance.is_pensionable === true) {
+            pensionableStaffAdjustmentAllowanceTotal += amount;
+          }
         }
       }
 
@@ -986,10 +1026,37 @@ export class PayrollService {
             calculation_basis: 'gross',
           });
           totalAllowances += amount;
+          staffAdjustmentAllowanceTotal += amount;
+          if (allowance.is_pensionable === true) {
+            pensionableStaffAdjustmentAllowanceTotal += amount;
+          }
         }
       }
 
       const regularGrossPay = round2(adjustedBasicSalary + totalAllowances - arrearsGrossTotal);
+      const regularContributionBases = {
+        pension: this.calculateRegularContributionBase(
+          regularGrossPay,
+          staffAdjustmentAllowanceTotal,
+          pensionableStaffAdjustmentAllowanceTotal,
+          taxConfig.include_staff_adjustments_in_pension_base === true,
+          round2,
+        ),
+        nhf: this.calculateRegularContributionBase(
+          regularGrossPay,
+          staffAdjustmentAllowanceTotal,
+          pensionableStaffAdjustmentAllowanceTotal,
+          taxConfig.include_staff_adjustments_in_nhf_base === true,
+          round2,
+        ),
+        nhia: this.calculateRegularContributionBase(
+          regularGrossPay,
+          staffAdjustmentAllowanceTotal,
+          pensionableStaffAdjustmentAllowanceTotal,
+          taxConfig.include_staff_adjustments_in_nhia_base === true,
+          round2,
+        ),
+      };
 
       // Calculate gross pay
       const grossPay = round2(adjustedBasicSalary + totalAllowances);
@@ -1020,7 +1087,7 @@ export class PayrollService {
           amount = this.calculatePercentageAmount(
             deduction.percentage,
             adjustedBasicSalary,
-            regularGrossPay,
+            this.getRegularPayrollDeductionBase(deduction, regularGrossPay, regularContributionBases),
             deduction.calculation_basis,
             round2,
           );
@@ -1066,7 +1133,7 @@ export class PayrollService {
           amount = this.calculatePercentageAmount(
             deduction.percentage,
             adjustedBasicSalary,
-            regularGrossPay,
+            this.getRegularPayrollDeductionBase(deduction, regularGrossPay, regularContributionBases),
             deduction.calculation_basis,
             round2,
           );

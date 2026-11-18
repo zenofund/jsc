@@ -200,8 +200,8 @@ export class AllowancesService {
         allowanceName: configuredAllowance.name,
         type: configuredAllowance.type,
         calculationBasis: this.normalizeCalculationBasis(configuredAllowance.calculation_basis),
-        isTaxable: configuredAllowance.is_taxable,
-        isPensionable: configuredAllowance.is_pensionable,
+        isTaxable: dto.is_taxable ?? dto.isTaxable ?? configuredAllowance.is_taxable,
+        isPensionable: dto.is_pensionable ?? dto.isPensionable ?? configuredAllowance.is_pensionable,
       };
     }
 
@@ -400,8 +400,8 @@ export class AllowancesService {
         definition.entryMode === 'custom' ? definition.allowanceName : null,
         definition.entryMode === 'custom' ? definition.type : null,
         definition.entryMode === 'custom' ? definition.calculationBasis : null,
-        definition.entryMode === 'custom' ? definition.isTaxable : null,
-        definition.entryMode === 'custom' ? definition.isPensionable : null,
+        definition.isTaxable,
+        definition.isPensionable,
         amountValue,
         percentageValue,
         this.toMonthStart(dto.effective_from || dto.startMonth),
@@ -557,8 +557,8 @@ export class AllowancesService {
         definition.entryMode === 'custom' ? definition.allowanceName : null,
         definition.entryMode === 'custom' ? definition.type : null,
         definition.entryMode === 'custom' ? definition.calculationBasis : null,
-        definition.entryMode === 'custom' ? definition.isTaxable : null,
-        definition.entryMode === 'custom' ? definition.isPensionable : null,
+        definition.isTaxable,
+        definition.isPensionable,
         hasDefinitionInput
           ? (definition.type === 'fixed' ? (amountValue ?? null) : null)
           : amountValue,

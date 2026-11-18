@@ -103,3 +103,47 @@ describe('PayrollService arrears deductions', () => {
     })).toBe(50000);
   });
 });
+
+describe('PayrollService regular contribution bases', () => {
+  let service: PayrollService;
+
+  beforeEach(() => {
+    service = Object.create(PayrollService.prototype);
+  });
+
+  const round2 = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
+
+  it('excludes staff adjustment allowances by default while leaving them in gross pay', () => {
+    expect(
+      (service as any).calculateRegularContributionBase(455104.15, 2000, 0, false, round2),
+    ).toBe(453104.15);
+  });
+
+  it('includes only pensionable staff adjustments when the contribution setting is enabled', () => {
+    expect(
+      (service as any).calculateRegularContributionBase(458104.15, 5000, 3000, true, round2),
+    ).toBe(456104.15);
+  });
+
+  it.each([
+    [{ code: 'PENSION' }, 'pension'],
+    [{ name: 'NHF' }, 'nhf'],
+    [{ code: 'NHIA', name: '\tNHIA' }, 'nhia'],
+  ])('uses the contribution-specific base for %o deductions', (deduction, contribution) => {
+    const bases = { pension: 100, nhf: 200, nhia: 300 };
+
+    expect((service as any).getRegularPayrollDeductionBase(deduction, 500, bases)).toBe(
+      bases[contribution as keyof typeof bases],
+    );
+  });
+
+  it('leaves other gross-based deductions on the regular gross amount', () => {
+    expect(
+      (service as any).getRegularPayrollDeductionBase({ code: 'UNION' }, 500, {
+        pension: 100,
+        nhf: 200,
+        nhia: 300,
+      }),
+    ).toBe(500);
+  });
+});

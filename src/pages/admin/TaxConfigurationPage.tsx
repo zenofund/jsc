@@ -27,6 +27,9 @@ interface TaxConfiguration {
   pension_relief_percentage: number; // percentage
   nhf_relief_percentage: number; // percentage
   nhis_relief_percentage: number; // percentage
+  include_staff_adjustments_in_pension_base: boolean;
+  include_staff_adjustments_in_nhia_base: boolean;
+  include_staff_adjustments_in_nhf_base: boolean;
   tax_brackets: TaxBand[];
 }
 
@@ -37,6 +40,9 @@ const DEFAULT_CONFIG: TaxConfiguration = {
   pension_relief_percentage: 8,
   nhf_relief_percentage: 2.5,
   nhis_relief_percentage: 5,
+  include_staff_adjustments_in_pension_base: false,
+  include_staff_adjustments_in_nhia_base: false,
+  include_staff_adjustments_in_nhf_base: false,
   tax_brackets: [
     { id: '1', min: 0, max: 800000, rate: 0 },
     { id: '2', min: 800000, max: 2200000, rate: 15 },
@@ -71,6 +77,15 @@ export function TaxConfigurationPage() {
           pension_relief_percentage: data.pension_relief_percentage ?? DEFAULT_CONFIG.pension_relief_percentage,
           nhf_relief_percentage: data.nhf_relief_percentage ?? DEFAULT_CONFIG.nhf_relief_percentage,
           nhis_relief_percentage: data.nhis_relief_percentage ?? DEFAULT_CONFIG.nhis_relief_percentage,
+          include_staff_adjustments_in_pension_base:
+            data.include_staff_adjustments_in_pension_base ??
+            DEFAULT_CONFIG.include_staff_adjustments_in_pension_base,
+          include_staff_adjustments_in_nhia_base:
+            data.include_staff_adjustments_in_nhia_base ??
+            DEFAULT_CONFIG.include_staff_adjustments_in_nhia_base,
+          include_staff_adjustments_in_nhf_base:
+            data.include_staff_adjustments_in_nhf_base ??
+            DEFAULT_CONFIG.include_staff_adjustments_in_nhf_base,
           tax_brackets: Array.isArray(data.tax_brackets) ? data.tax_brackets : DEFAULT_CONFIG.tax_brackets,
         });
       }
@@ -250,6 +265,32 @@ export function TaxConfigurationPage() {
                     />
                   </div>
                 </div>
+              </div>
+
+              <Separator />
+
+              <div className="space-y-3">
+                <div>
+                  <h4 className="text-sm font-medium">Staff Adjustment Contribution Bases</h4>
+                  <p className="text-xs text-muted-foreground">
+                    Staff-specific allowances remain in gross pay. When enabled, only allowances marked
+                    pensionable are included in each contribution base.
+                  </p>
+                </div>
+                {([
+                  ['include_staff_adjustments_in_pension_base', 'Include in Pension base'],
+                  ['include_staff_adjustments_in_nhia_base', 'Include in NHIA base'],
+                  ['include_staff_adjustments_in_nhf_base', 'Include in NHF base'],
+                ] as const).map(([key, label]) => (
+                  <div key={key} className="flex items-center justify-between gap-3">
+                    <Label htmlFor={key}>{label}</Label>
+                    <Switch
+                      id={key}
+                      checked={config[key]}
+                      onCheckedChange={(checked: boolean) => setConfig({ ...config, [key]: checked })}
+                    />
+                  </div>
+                ))}
               </div>
             </CardContent>
           </Card>
