@@ -14,6 +14,7 @@ import type { BeforeInstallPromptEvent } from '../lib/pwa-install';
 import { useToast } from './Toast';
 import { NotificationDropdown } from './NotificationDropdown';
 import { CUSTOM_REPORTS_ENABLED } from '../lib/feature-flags';
+import { hasPermission } from '../lib/permissions';
 import { 
   X, User, LogOut, Lock,
   LayoutDashboard, Users, DollarSign, 
@@ -43,6 +44,9 @@ interface NavigationItem {
   icon: any;
   view: string;
   roles: string[];
+  permissions?: string[];
+  requiredPermissions?: string[];
+  permissionGroups?: string[][];
 }
 
 function UniqueMenuIcon(props: React.SVGProps<SVGSVGElement>) {
@@ -162,8 +166,24 @@ export function Layout({ children }: LayoutProps) {
       group: 'Human Resources',
       roles: ['policy_admin', 'payroll_officer', 'hr_manager'],
       items: [
-        { name: 'Staff Management', icon: Users, view: 'staff', roles: ['policy_admin', 'payroll_officer', 'hr_manager'] },
-        { name: 'Staff Requests', icon: CheckSquare, view: 'staff-requests', roles: ['policy_admin', 'hr_manager'] },
+        {
+          name: 'Staff Management',
+          icon: Users,
+          view: 'staff',
+          roles: [],
+          permissions: [
+            'staff.record.read',
+            'staff.record.create',
+            'staff.record.import',
+          ],
+        },
+        {
+          name: 'Staff Requests',
+          icon: CheckSquare,
+          view: 'staff-requests',
+          roles: [],
+          permissions: ['staff.request.read.all'],
+        },
         { name: 'Leave Management', icon: Calendar, view: 'leave-management', roles: ['policy_admin', 'payroll_officer', 'hr_manager'] },
         { name: 'Department Management', icon: Building2, view: 'department-management', roles: ['policy_admin', 'payroll_officer', 'hr_manager'] },
         { name: 'Promotions', icon: Award, view: 'promotions', roles: ['policy_admin', 'payroll_officer', 'hr_manager'] },
@@ -173,10 +193,19 @@ export function Layout({ children }: LayoutProps) {
       group: 'Payroll Operations',
       roles: ['policy_admin', 'payroll_officer', 'payroll_manager', 'cpo', 'checking', 'auditor', 'payroll_loader'],
       items: [
-        { name: 'Payroll Processing', icon: DollarSign, view: 'payroll', roles: ['policy_admin', 'payroll_officer', 'cpo', 'checking', 'auditor', 'payroll_loader'] },
-        { name: 'Staff Adjustments', icon: TrendingUp, view: 'staff-allowances', roles: ['policy_admin', 'payroll_officer', 'payroll_loader'] },
-        { name: 'Adjustment Approvals', icon: CheckSquare, view: 'staff-adjustment-approvals', roles: ['policy_admin', 'payroll_officer'] },
-        { name: 'Arrears & Adjustments', icon: TrendingUp, view: 'arrears', roles: ['policy_admin', 'payroll_officer', 'payroll_manager', 'payroll_loader'] },
+        { name: 'Payroll Processing', icon: DollarSign, view: 'payroll', roles: [], permissions: ['payroll.batch.read'] },
+        { name: 'Staff Adjustments', icon: TrendingUp, view: 'staff-allowances', roles: [], permissions: ['staff.allowance.read', 'staff.deduction.read'], requiredPermissions: ['staff.record.read'] },
+        {
+          name: 'Adjustment Approvals',
+          icon: CheckSquare,
+          view: 'staff-adjustment-approvals',
+          roles: [],
+          permissionGroups: [
+            ['staff.allowance.read', 'staff.allowance.status.update'],
+            ['staff.deduction.read', 'staff.deduction.status.update'],
+          ],
+        },
+        { name: 'Arrears & Adjustments', icon: TrendingUp, view: 'arrears', roles: [], permissions: ['arrears.read'] },
         { name: 'Payslips', icon: FileText, view: 'payslips', roles: ['*'] },
       ],
     },
@@ -220,7 +249,20 @@ export function Layout({ children }: LayoutProps) {
       group: 'Config & Settings',
       roles: ['super_admin', 'policy_admin', 'payroll_officer'],
       items: [
-        { name: 'Payroll Setup', icon: FolderOpen, view: 'setup', roles: ['policy_admin', 'payroll_officer'] },
+        {
+          name: 'Payroll Setup',
+          icon: FolderOpen,
+          view: 'setup',
+          roles: [],
+          permissionGroups: [
+            ['payroll.structure.read'],
+            ['payroll.structure.create'],
+            ['staff.allowance.catalog.read'],
+            ['staff.allowance.catalog.create'],
+            ['staff.deduction.catalog.read'],
+            ['staff.deduction.catalog.create'],
+          ],
+        },
         { name: 'Policy Administration', icon: Settings, view: 'admin', roles: ['policy_admin'] },
         { name: 'System Admin', icon: Settings, view: 'admin', roles: ['super_admin'] },
         { name: 'Tax Configuration', icon: DollarSign, view: 'tax-configuration', roles: ['policy_admin'] },
@@ -254,9 +296,19 @@ export function Layout({ children }: LayoutProps) {
     return user && allowedRoles.map(normalizeRole).includes(userRole);
   };
 
+  const canAccessItem = (item: NavigationItem) => {
+    const hasAnyPermission = item.permissions?.some((permission) => hasPermission(user, permission)) ?? false;
+    const hasAllRequiredPermissions =
+      item.requiredPermissions?.every((permission) => hasPermission(user, permission)) ?? true;
+    const hasPermissionGroup = item.permissionGroups?.some((group) =>
+      group.every((permission) => hasPermission(user, permission)),
+    ) ?? false;
+    return hasAccess(item.roles) || (hasAnyPermission && hasAllRequiredPermissions) || hasPermissionGroup;
+  };
+
   const hasGroupAccess = (group: NavigationGroup) => {
     // Check if user has access to any item in the group
-    return group.items.some(item => hasAccess(item.roles));
+    return group.items.some(canAccessItem);
   };
 
   const toggleGroup = (groupName: string) => {
@@ -387,7 +439,7 @@ export function Layout({ children }: LayoutProps) {
 
         <nav className="flex-1 px-3 sm:px-4 py-4 sm:py-6 space-y-1 sm:space-y-2 overflow-y-auto h-[calc(100%-80px)] lg:h-[calc(100%-80px)]">
           {standaloneNavigation.map((item) => {
-            if (!hasAccess(item.roles)) return null;
+            if (!canAccessItem(item)) return null;
             const Icon = item.icon;
             
             return (
@@ -420,7 +472,7 @@ export function Layout({ children }: LayoutProps) {
                 {expandedGroups.includes(group.group) && (
                   <div className="pl-5">
                     {group.items.map((item) => {
-                      if (!hasAccess(item.roles)) return null;
+                      if (!canAccessItem(item)) return null;
                       const Icon = item.icon;
                       
                       return (

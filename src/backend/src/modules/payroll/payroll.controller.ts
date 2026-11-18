@@ -16,7 +16,7 @@ import { PayrollService } from './payroll.service';
 import { CreatePayrollBatchDto } from './dto/create-payroll-batch.dto';
 import { ApprovePayrollDto } from './dto/approve-payroll.dto';
 import { RolesGuard } from '@common/guards/roles.guard';
-import { Roles } from '@common/decorators/roles.decorator';
+import { Permissions } from '@common/decorators/permissions.decorator';
 import { SkipAudit } from '../../common/decorators/skip-audit.decorator';
 
 @ApiTags('Payroll')
@@ -27,7 +27,7 @@ export class PayrollController {
   constructor(private readonly payrollService: PayrollService) {}
 
   @Post('batches')
-  @Roles('policy_admin', 'payroll_officer', 'payroll_loader')
+  @Permissions('payroll.batch.create')
   @ApiOperation({ summary: 'Create new payroll batch' })
   @ApiResponse({ status: 201, description: 'Payroll batch created successfully' })
   createBatch(@Body() createDto: CreatePayrollBatchDto, @Request() req) {
@@ -35,7 +35,7 @@ export class PayrollController {
   }
 
   @Post('batches/:id/generate-lines')
-  @Roles('policy_admin', 'payroll_officer', 'payroll_loader')
+  @Permissions('payroll.batch.generate')
   @ApiOperation({ summary: 'Generate payroll lines for all eligible staff (BULK)' })
   @ApiResponse({ status: 200, description: 'Payroll lines generated successfully' })
   generateLines(@Param('id') id: string, @Request() req) {
@@ -43,7 +43,7 @@ export class PayrollController {
   }
 
   @Post('batches/:id/submit')
-  @Roles('policy_admin', 'payroll_officer', 'payroll_loader')
+  @Permissions('payroll.batch.submit')
   @SkipAudit()
   @ApiOperation({ summary: 'Submit batch for approval workflow' })
   @ApiResponse({ status: 200, description: 'Batch submitted successfully' })
@@ -55,7 +55,7 @@ export class PayrollController {
   }
 
   @Post('batches/:id/approve')
-  @Roles('policy_admin', 'payroll_officer', 'cpo', 'checking', 'auditor', 'hr_manager', 'payroll_loader')
+  @Permissions('payroll.batch.approve')
   @SkipAudit()
   @ApiOperation({ summary: 'Approve or reject payroll batch' })
   @ApiResponse({ status: 200, description: 'Batch approval action completed' })
@@ -64,7 +64,7 @@ export class PayrollController {
   }
 
   @Post('batches/:id/lock')
-  @Roles('policy_admin')
+  @Permissions('payroll.batch.lock')
   @ApiOperation({ summary: 'Lock approved payroll batch' })
   @ApiResponse({ status: 200, description: 'Batch locked successfully' })
   lockBatch(@Param('id') id: string, @Request() req) {
@@ -72,7 +72,7 @@ export class PayrollController {
   }
 
   @Get('pending-payments')
-  @Roles('policy_admin', 'cashier')
+  @Permissions('payroll.payment.read')
   @ApiOperation({ summary: 'Get pending payments' })
   @ApiResponse({ status: 200, description: 'List of pending payments' })
   getPendingPayments() {
@@ -80,7 +80,7 @@ export class PayrollController {
   }
 
   @Post('batches/:id/execute-payment')
-  @Roles('policy_admin', 'cashier')
+  @Permissions('payroll.payment.execute')
   @SkipAudit()
   @ApiOperation({ summary: 'Execute payment for a payroll batch' })
   @ApiResponse({ status: 200, description: 'Payment executed successfully' })
@@ -90,12 +90,14 @@ export class PayrollController {
   }
 
   @Get('batches')
+  @Permissions('payroll.batch.read')
   @ApiOperation({ summary: 'Get all payroll batches with filters' })
   findAllBatches(@Query() query: any) {
     return this.payrollService.findAll(query);
   }
 
   @Get('batches/:id')
+  @Permissions('payroll.batch.read')
   @ApiOperation({ summary: 'Get payroll batch by ID' })
   @ApiResponse({ status: 200, description: 'Batch found' })
   @ApiResponse({ status: 404, description: 'Batch not found' })
@@ -104,38 +106,42 @@ export class PayrollController {
   }
 
   @Get('batches/:id/lines')
+  @Permissions('payroll.batch.read')
   @ApiOperation({ summary: 'Get payroll lines for a batch' })
   getPayrollLines(@Param('id') id: string, @Query() query: any) {
     return this.payrollService.getPayrollLines(id, query);
   }
 
   @Get('batches/:id/payment-trace')
-  @Roles('policy_admin', 'payroll_officer', 'cashier')
+  @Permissions('payroll.payment.read')
   @ApiOperation({ summary: 'Get payment trace for a payroll batch' })
   getPaymentTrace(@Param('id') id: string) {
     return this.payrollService.getPaymentTrace(id);
   }
 
   @Get('payslips/staff/:staffId')
+  @Permissions('payslip.read')
   @ApiOperation({ summary: 'Get all payslips for a staff member' })
   getStaffPayslips(@Param('staffId') staffId: string, @Query('payrollMonth') payrollMonth?: string) {
     return this.payrollService.getStaffPayslips(staffId, payrollMonth);
   }
 
   @Get('payslips/batch/:batchId')
+  @Permissions('payslip.read')
   @ApiOperation({ summary: 'Get all payslips for a batch' })
   getBatchPayslips(@Param('batchId') batchId: string, @Query('payrollMonth') payrollMonth?: string) {
     return this.payrollService.getBatchPayslips(batchId, payrollMonth);
   }
 
   @Get('approvals/history')
+  @Permissions('payroll.batch.read')
   @ApiOperation({ summary: 'Get approval actions history for current user' })
   getApproverHistory(@Request() req) {
     return this.payrollService.getApproverHistory(req.user.userId, req.user.role);
   }
 
   @Delete('batches/:id')
-  @Roles('policy_admin')
+  @Permissions('payroll.batch.delete')
   @ApiOperation({ summary: 'Delete draft payroll batch' })
   @ApiResponse({ status: 200, description: 'Batch deleted successfully' })
   removeBatch(@Param('id') id: string, @Request() req) {

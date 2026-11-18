@@ -50,10 +50,14 @@ import { downloadPdfDocument } from '../utils/downloadPdf';
 import { formatStaffName } from '../lib/name-utils';
 import { isFeatureDisabledError } from '../lib/feature-toggle-errors';
 import { clearRequestIdempotencyKey, getRequestIdempotencyKey } from '../lib/request-idempotency';
+import { hasPermission } from '../lib/permissions';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../components/ui/dropdown-menu';
 
 export function StaffPortalPage() {
   const { user } = useAuth();
+  const canReadStaffRequests = hasPermission(user, 'staff.request.read');
+  const canCreateStaffRequests = hasPermission(user, 'staff.request.create');
+  const canReadStaffDocuments = hasPermission(user, 'staff.document.read');
   const { showToast } = useToast();
   const { loanManagementEnabled, cooperativeManagementEnabled } = useSystemSettings();
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
@@ -232,20 +236,22 @@ export function StaffPortalPage() {
         console.error('Leave requests error:', error);
       }
       
-      // Load staff requests
-      try {
-        const requests = await staffPortalAPI.getStaffRequests(user.staff_id);
-        setStaffRequests(requests);
-      } catch (error) {
-        console.error('Staff requests error:', error);
+      if (canReadStaffRequests) {
+        try {
+          const requests = await staffPortalAPI.getStaffRequests(user.staff_id);
+          setStaffRequests(requests);
+        } catch (error) {
+          console.error('Staff requests error:', error);
+        }
       }
       
-      // Load documents
-      try {
-        const docs = await staffPortalAPI.getStaffDocuments(user.staff_id);
-        setDocuments(docs);
-      } catch (error) {
-        console.error('Documents error:', error);
+      if (canReadStaffDocuments) {
+        try {
+          const docs = await staffPortalAPI.getStaffDocuments(user.staff_id);
+          setDocuments(docs);
+        } catch (error) {
+          console.error('Documents error:', error);
+        }
       }
       
       // Load payslips
@@ -759,7 +765,7 @@ export function StaffPortalPage() {
                   <span className="text-sm font-medium text-card-foreground">Payslips</span>
                 </button>
 
-                <button
+                {canCreateStaffRequests && <button
                   onClick={() => { setActiveTab('requests'); setShowRequestModal(true); }}
                   className="flex flex-col items-center justify-center p-6 bg-card hover:bg-orange-50 dark:hover:bg-orange-900/10 border border-border hover:border-orange-200 dark:hover:border-orange-800 rounded-xl shadow-sm hover:shadow-md transition-all group"
                 >
@@ -767,7 +773,7 @@ export function StaffPortalPage() {
                     <Send className="h-6 w-6 text-orange-600 dark:text-orange-400" />
                   </div>
                   <span className="text-sm font-medium text-card-foreground">New Request</span>
-                </button>
+                </button>}
 
                 {loanManagementEnabled && (
                   <button
@@ -1319,13 +1325,13 @@ export function StaffPortalPage() {
       <div className="space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <h3 className="text-lg text-card-foreground">Self-Service Requests</h3>
-          <button
+          {canCreateStaffRequests && <button
             onClick={() => setShowRequestModal(true)}
             className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 w-full sm:w-auto"
           >
             <Plus className="h-4 w-4" />
             New Request
-          </button>
+          </button>}
         </div>
 
         <div className="space-y-3">
@@ -2257,8 +2263,12 @@ export function StaffPortalPage() {
             ...(cooperativeManagementEnabled
               ? [{ id: 'cooperatives' as TabType, label: 'Cooperatives', icon: Building2 }]
               : []),
-            { id: 'requests' as TabType, label: 'Requests', icon: Send },
-            { id: 'documents' as TabType, label: 'Documents', icon: CreditCard },
+            ...(canReadStaffRequests || canCreateStaffRequests
+              ? [{ id: 'requests' as TabType, label: 'Requests', icon: Send }]
+              : []),
+            ...(canReadStaffDocuments
+              ? [{ id: 'documents' as TabType, label: 'Documents', icon: CreditCard }]
+              : []),
             { id: 'settings' as TabType, label: 'Settings', icon: Settings },
           ].map((tab) => {
             const Icon = tab.icon;

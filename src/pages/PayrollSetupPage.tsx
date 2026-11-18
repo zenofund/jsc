@@ -4,6 +4,7 @@ import { Breadcrumb } from '../components/Breadcrumb';
 import { useAuth } from '../contexts/AuthContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { salaryStructureAPI, allowanceAPI, deductionAPI } from '../lib/api-client';
+import { hasPermission } from '../lib/permissions';
 import { Plus, Edit, Trash2, Table, X, Save, Download, Check, AlertCircle, Upload, Loader2 } from 'lucide-react';
 import { StatusBadge } from '../components/StatusBadge';
 import { showToast } from '../utils/toast';
@@ -52,6 +53,25 @@ export function PayrollSetupPage() {
   const { user } = useAuth();
   const confirm = useConfirm();
   const [activeTab, setActiveTab] = useState<TabType>('structures');
+  const canReadStructures = hasPermission(user, 'payroll.structure.read');
+  const canCreateStructures = hasPermission(user, 'payroll.structure.create');
+  const canUpdateStructures = hasPermission(user, 'payroll.structure.update');
+  const canDeleteStructures = hasPermission(user, 'payroll.structure.delete');
+  const canReadAllowances = hasPermission(user, 'staff.allowance.catalog.read');
+  const canCreateAllowances = hasPermission(user, 'staff.allowance.catalog.create');
+  const canUpdateAllowances = hasPermission(user, 'staff.allowance.catalog.update');
+  const canDeleteAllowances = hasPermission(user, 'staff.allowance.catalog.delete');
+  const canReadDeductions = hasPermission(user, 'staff.deduction.catalog.read');
+  const canCreateDeductions = hasPermission(user, 'staff.deduction.catalog.create');
+  const canUpdateDeductions = hasPermission(user, 'staff.deduction.catalog.update');
+  const canDeleteDeductions = hasPermission(user, 'staff.deduction.catalog.delete');
+  const tabPermissions: Record<TabType, boolean> = {
+    structures: canReadStructures || canCreateStructures,
+    allowances: canReadAllowances || canCreateAllowances,
+    deductions: canReadDeductions || canCreateDeductions,
+  };
+  const availableTabs = (Object.keys(tabPermissions) as TabType[]).filter((tab) => tabPermissions[tab]);
+  const availableTabKey = availableTabs.join('|');
   const [structures, setStructures] = useState<any[]>([]);
   const [allowances, setAllowances] = useState<any[]>([]);
   const [deductions, setDeductions] = useState<any[]>([]);
@@ -115,6 +135,13 @@ export function PayrollSetupPage() {
   }, [activeTab]);
 
   useEffect(() => {
+    const tabs = availableTabKey ? availableTabKey.split('|') as TabType[] : [];
+    if (!tabs.includes(activeTab) && tabs.length > 0) {
+      setActiveTab(tabs[0]);
+    }
+  }, [activeTab, availableTabKey]);
+
+  useEffect(() => {
     // Auto-select first structure when structures load
     if (structures.length > 0 && !selectedStructure) {
       setSelectedStructure(structures[0]);
@@ -125,13 +152,13 @@ export function PayrollSetupPage() {
     setLoading(true);
     try {
       if (activeTab === 'structures') {
-        const data = await salaryStructureAPI.getAllStructures();
+        const data = canReadStructures ? await salaryStructureAPI.getAllStructures() : [];
         setStructures(data);
       } else if (activeTab === 'allowances') {
-        const data = await allowanceAPI.getAllAllowances();
+        const data = canReadAllowances ? await allowanceAPI.getAllAllowances() : [];
         setAllowances(data);
       } else if (activeTab === 'deductions') {
-        const data = await deductionAPI.getAllDeductions();
+        const data = canReadDeductions ? await deductionAPI.getAllDeductions() : [];
         setDeductions(data);
       }
     } catch (error) {
@@ -445,6 +472,10 @@ export function PayrollSetupPage() {
     return <PageSkeleton />;
   }
 
+  if (availableTabs.length === 0) {
+    return <div className="p-6 text-muted-foreground">You do not have permission to access Payroll Setup.</div>;
+  }
+
   return (
     <div className="space-y-6">
       <Breadcrumb items={[{ label: 'Payroll Setup' }]} />
@@ -461,7 +492,7 @@ export function PayrollSetupPage() {
       {/* Tabs */}
       <div className="border-b border-border">
         <div className="flex gap-4">
-          {['structures', 'allowances', 'deductions'].map((tab) => (
+          {availableTabs.map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab as TabType)}
@@ -506,14 +537,14 @@ export function PayrollSetupPage() {
             <div className="flex gap-2">
               {selectedStructure && !isEditMode && (
                 <>
-                  <button
+                  {canUpdateStructures && <button
                     onClick={() => setIsEditMode(true)}
                     className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2 rounded-lg transition-colors"
                   >
                     <Edit className="w-4 h-4" />
                     <span className="hidden sm:inline">Edit Salaries</span>
-                  </button>
-                  <button
+                  </button>}
+                  {canUpdateStructures && <button
                     onClick={() => {
                       setEditingItem(selectedStructure);
                       setStructureForm({
@@ -526,7 +557,7 @@ export function PayrollSetupPage() {
                   >
                     <Edit className="w-4 h-4" />
                     <span className="hidden sm:inline">Edit Details</span>
-                  </button>
+                  </button>}
                   <button
                     onClick={() => exportStructureToExcel(selectedStructure)}
                     className="flex items-center justify-center gap-2 px-3 sm:px-4 py-2 rounded-lg border border-border hover:bg-accent transition-colors"
@@ -535,7 +566,7 @@ export function PayrollSetupPage() {
                     <Download className="w-4 h-4" />
                     <span className="hidden sm:inline">Export Excel</span>
                   </button>
-                  <button
+                  {canDeleteStructures && <button
                     onClick={() => handleDeleteStructure(selectedStructure.id, selectedStructure.name)}
                     className="flex items-center justify-center gap-2 px-3 sm:px-4 py-2 rounded-lg border border-destructive text-destructive hover:bg-destructive/10 transition-colors"
                     title="Delete"
@@ -547,13 +578,13 @@ export function PayrollSetupPage() {
                       <Trash2 className="w-4 h-4" />
                     )}
                     <span className="hidden sm:inline">Delete</span>
-                  </button>
+                  </button>}
                 </>
               )}
               
-              {isEditMode && (
+              {isEditMode && canUpdateStructures && (
                 <>
-                  <button
+              <button
                     onClick={handleSaveChanges}
                     disabled={saving || Object.keys(editedSalaries).length === 0}
                     className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -572,7 +603,7 @@ export function PayrollSetupPage() {
                 </>
               )}
 
-              <button
+              {canCreateStructures && <button
                 onClick={() => {
                   setEditingItem(null);
                   resetStructureForm();
@@ -582,18 +613,18 @@ export function PayrollSetupPage() {
               >
                 <Plus className="w-4 h-4" />
                 <span className="hidden sm:inline">New Structure</span>
-              </button>
-              <button
+              </button>}
+              {canCreateStructures && <button
                 onClick={() => setShowUploadModal(true)}
                 className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2 rounded-lg transition-colors"
               >
                 <Upload className="w-4 h-4" />
                 <span className="hidden sm:inline">Upload Structure</span>
-              </button>
+              </button>}
             </div>
           </div>
 
-          {selectedStructure ? (
+          {canReadStructures && selectedStructure ? (
             <>
               {/* Structure Info */}
               <div className="bg-card border border-border rounded-lg p-4">
@@ -699,10 +730,14 @@ export function PayrollSetupPage() {
                 </div>
               </div>
             </>
-          ) : (
+          ) : canReadStructures ? (
             <div className="text-center py-12 bg-card border border-border rounded-lg">
               <Table className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
               <p className="text-muted-foreground">No salary structures found. Create one to get started.</p>
+            </div>
+          ) : (
+            <div className="text-center py-12 bg-card border border-border rounded-lg">
+              <p className="text-muted-foreground">You can manage salary structures, but do not have permission to view existing structures.</p>
             </div>
           )}
         </div>
@@ -711,11 +746,16 @@ export function PayrollSetupPage() {
       {/* Allowances Tab */}
       {activeTab === 'allowances' && (
         <div className="space-y-6">
+          {!canReadAllowances && (
+            <p className="text-sm text-muted-foreground">
+              You do not have permission to view existing allowance definitions.
+            </p>
+          )}
           <div className="flex justify-between items-center">
             <p className="text-sm text-muted-foreground">
               {allowances.length} allowance(s) configured
             </p>
-            <button
+            {canCreateAllowances && <button
               onClick={() => {
                 setEditingItem(null);
                 resetAllowanceForm();
@@ -725,7 +765,7 @@ export function PayrollSetupPage() {
             >
               <Plus className="w-4 h-4" />
               Add Allowance
-            </button>
+            </button>}
           </div>
 
           <div className="bg-card border border-border rounded-lg overflow-hidden">
@@ -749,7 +789,7 @@ export function PayrollSetupPage() {
                   {allowances.length === 0 ? (
                     <tr>
                       <td colSpan={10} className="px-6 py-12 text-center text-muted-foreground">
-                        No allowances configured
+                        {canReadAllowances ? 'No allowances configured' : 'Existing allowances are hidden because you do not have read permission.'}
                       </td>
                     </tr>
                   ) : (
@@ -802,7 +842,7 @@ export function PayrollSetupPage() {
                           <StatusBadge status={allowance.status} />
                         </td>
                         <td className="px-6 py-4">
-                          <DropdownMenu>
+                          {(canUpdateAllowances || canDeleteAllowances) && <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <ActionMenuEllipsis
                                 label={`Open actions for ${allowance.name}`}
@@ -810,7 +850,7 @@ export function PayrollSetupPage() {
                               />
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem
+                              {canUpdateAllowances && <DropdownMenuItem
                                 onClick={() => {
                                   setEditingItem(allowance);
                                   setAllowanceForm({
@@ -832,16 +872,16 @@ export function PayrollSetupPage() {
                               >
                                 <Edit className="w-4 h-4 mr-2" />
                                 Edit
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
+                              </DropdownMenuItem>}
+                              {canDeleteAllowances && <DropdownMenuItem
                                 onClick={() => handleDeleteAllowance(allowance.id, allowance.name)}
                                 className="text-destructive focus:text-destructive"
                               >
                                 <Trash2 className="w-4 h-4 mr-2" />
                                 Delete
-                              </DropdownMenuItem>
+                              </DropdownMenuItem>}
                             </DropdownMenuContent>
-                          </DropdownMenu>
+                          </DropdownMenu>}
                         </td>
                       </tr>
                     ))
@@ -856,11 +896,16 @@ export function PayrollSetupPage() {
       {/* Deductions Tab */}
       {activeTab === 'deductions' && (
         <div className="space-y-6">
+          {!canReadDeductions && (
+            <p className="text-sm text-muted-foreground">
+              You do not have permission to view existing deduction definitions.
+            </p>
+          )}
           <div className="flex justify-between items-center">
             <p className="text-sm text-muted-foreground">
               {deductions.length} deduction(s) configured
             </p>
-            <button
+            {canCreateDeductions && <button
               onClick={() => {
                 setEditingItem(null);
                 resetDeductionForm();
@@ -870,7 +915,7 @@ export function PayrollSetupPage() {
             >
               <Plus className="w-4 h-4" />
               Add Deduction
-            </button>
+            </button>}
           </div>
 
           <div className="bg-card border border-border rounded-lg overflow-hidden">
@@ -894,7 +939,7 @@ export function PayrollSetupPage() {
                   {deductions.length === 0 ? (
                     <tr>
                       <td colSpan={10} className="px-6 py-12 text-center text-muted-foreground">
-                        No deductions configured
+                        {canReadDeductions ? 'No deductions configured' : 'Existing deductions are hidden because you do not have read permission.'}
                       </td>
                     </tr>
                   ) : (
@@ -949,7 +994,7 @@ export function PayrollSetupPage() {
                           <StatusBadge status={deduction.status} />
                         </td>
                         <td className="px-6 py-4">
-                          <DropdownMenu>
+                          {(canUpdateDeductions || canDeleteDeductions) && <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <ActionMenuEllipsis
                                 label={`Open actions for ${deduction.name}`}
@@ -957,7 +1002,7 @@ export function PayrollSetupPage() {
                               />
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem
+                              {canUpdateDeductions && <DropdownMenuItem
                                 onClick={() => {
                                   setEditingItem(deduction);
                                   setDeductionForm({
@@ -981,16 +1026,16 @@ export function PayrollSetupPage() {
                               >
                                 <Edit className="w-4 h-4 mr-2" />
                                 Edit
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
+                              </DropdownMenuItem>}
+                              {canDeleteDeductions && <DropdownMenuItem
                                 onClick={() => handleDeleteDeduction(deduction.id, deduction.name)}
                                 className="text-destructive focus:text-destructive"
                               >
                                 <Trash2 className="w-4 h-4 mr-2" />
                                 Delete
-                              </DropdownMenuItem>
+                              </DropdownMenuItem>}
                             </DropdownMenuContent>
-                          </DropdownMenu>
+                          </DropdownMenu>}
                         </td>
                       </tr>
                     ))

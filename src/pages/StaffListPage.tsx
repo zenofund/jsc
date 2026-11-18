@@ -21,6 +21,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { formatStaffName, formatStaffFirstLastName } from '../lib/name-utils';
 import Papa from 'papaparse';
 import { NIGERIAN_BANKS } from '../constants/banks';
+import { hasPermission } from '../lib/permissions';
 
 export const normalizeGrade = (value: any) => String(value || '').trim().toUpperCase().replace(/[\s-]+/g, '');
 const normalizeStaffStatus = (value: unknown) =>
@@ -101,9 +102,11 @@ export function StaffListPage() {
   const [uploadSummary, setUploadSummary] = useState<{ success: number; failed: number; errors: { record: string; error: string }[] } | null>(null);
   const [statusFilter, setStatusFilter] = useState('all');
 
-  // Check if user can manage staff
-  const canManageStaff = user?.role === 'policy_admin' || user?.role === 'hr_manager';
-  const canEditStaffNumber = user?.role === 'policy_admin' || user?.role === 'hr_manager';
+  const canReadStaff = hasPermission(user, 'staff.record.read');
+  const canCreateStaff = hasPermission(user, 'staff.record.create');
+  const canUpdateStaff = hasPermission(user, 'staff.record.update');
+  const canDeleteStaff = hasPermission(user, 'staff.record.delete');
+  const canImportStaff = hasPermission(user, 'staff.record.import');
   const staffStatuses: Staff['status'][] = [
     'active',
     'suspended',
@@ -428,9 +431,11 @@ export function StaffListPage() {
 
   useEffect(() => {
     loadStaff();
-    loadDepartments();
-    loadSupportedBanks();
-    loadBankGroups();
+    if (canCreateStaff || canUpdateStaff) {
+      loadDepartments();
+      loadSupportedBanks();
+      loadBankGroups();
+    }
     // Load allowed grades from settings
     (async () => {
       try {
@@ -448,7 +453,7 @@ export function StaffListPage() {
         // Ignore, fallback to default
       }
     })();
-  }, []);
+  }, [canReadStaff, canCreateStaff, canUpdateStaff]);
 
   const loadSupportedBanks = async () => {
     try {
@@ -489,6 +494,10 @@ export function StaffListPage() {
   };
 
   const loadStaff = async () => {
+    if (!canReadStaff) {
+      setLoading(false);
+      return;
+    }
     try {
       const response = await staffAPI.getAllStaff({ fetchAll: true, limit: 500 });
       // Handle paginated response format from backend
@@ -582,6 +591,19 @@ export function StaffListPage() {
     resetForm();
     setIdempotencyKey(crypto.randomUUID());
     setShowFormModal(true);
+  };
+
+  const handleDeleteStaff = async (staff: Staff) => {
+    if (!window.confirm(`Delete the staff record for ${formatStaffName(staff)}?`)) {
+      return;
+    }
+    try {
+      await staffAPI.deleteStaff(staff.id);
+      showToast('success', 'Staff record deleted successfully');
+      if (canReadStaff) await loadStaff();
+    } catch (error: any) {
+      showToast('error', error.message || 'Failed to delete staff record');
+    }
   };
 
   const openUploadModal = () => {
@@ -716,7 +738,7 @@ export function StaffListPage() {
       
       if (result?.success > 0) {
         showToast('success', `Successfully uploaded ${result.success} records`);
-        await loadStaff();
+        if (canReadStaff) await loadStaff();
       }
       
       if (result?.failed > 0) {
@@ -1037,7 +1059,7 @@ export function StaffListPage() {
       showToast('success', `Staff created successfully`);
       setShowFormModal(false);
       setCurrentStep(1);
-      loadStaff();
+      if (canReadStaff) loadStaff();
       resetForm();
     } catch (error: any) {
       console.error('Create staff error:', error);
@@ -1135,7 +1157,7 @@ export function StaffListPage() {
       setShowFormModal(false);
       setCurrentStep(1);
       setEditingStaff(null);
-      loadStaff();
+      if (canReadStaff) loadStaff();
       resetForm();
     } catch (error) {
       console.error('Update staff error:', error);
@@ -1224,7 +1246,7 @@ export function StaffListPage() {
       header: 'Status',
       accessor: (row: Staff) => <StatusBadge status={row.status} />,
     },
-    ...(canManageStaff
+    ...(canReadStaff && (canUpdateStaff || canDeleteStaff)
       ? [
           {
             header: 'Actions',
@@ -1245,13 +1267,27 @@ export function StaffListPage() {
                     <Eye className="h-4 w-4" />
                     View details
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={(event) => {
-                    event.stopPropagation();
-                    openEditModal(row);
-                  }}>
-                    <Edit className="h-4 w-4" />
-                    Edit staff
-                  </DropdownMenuItem>
+                  {canUpdateStaff && (
+                    <DropdownMenuItem onClick={(event) => {
+                      event.stopPropagation();
+                      openEditModal(row);
+                    }}>
+                      <Edit className="h-4 w-4" />
+                      Edit staff
+                    </DropdownMenuItem>
+                  )}
+                  {canDeleteStaff && (
+                    <DropdownMenuItem
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void handleDeleteStaff(row);
+                      }}
+                      className="text-destructive focus:text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Delete staff
+                    </DropdownMenuItem>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             ),
@@ -1276,7 +1312,7 @@ export function StaffListPage() {
           <h1 className="page-title">Staff Management</h1>
           <p className="text-muted-foreground text-sm sm:text-base">Manage employee records and information</p>
         </div>
-        {canManageStaff && (
+        {canCreateStaff && (
           <button
             onClick={openCreateModal}
             className="bg-primary text-primary-foreground px-3 sm:px-4 py-2 rounded-lg hover:bg-primary/90 active:bg-primary/80 flex items-center gap-2 transition-colors text-sm sm:text-base whitespace-nowrap"
@@ -1286,7 +1322,7 @@ export function StaffListPage() {
             <span className="sm:hidden">Add Staff</span>
           </button>
         )}
-        {canManageStaff && (
+        {canImportStaff && (
           <button
             onClick={openUploadModal}
             className="bg-indigo-600 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-indigo-700 active:bg-indigo-800 flex items-center gap-2 transition-colors text-sm sm:text-base whitespace-nowrap"
@@ -1300,7 +1336,7 @@ export function StaffListPage() {
 
       {loading ? (
         <PageSkeleton mode="table" />
-      ) : (
+      ) : canReadStaff ? (
         <DataTable
           data={filteredStaff}
           columns={columns}
@@ -1323,6 +1359,10 @@ export function StaffListPage() {
             </select>
           }
         />
+      ) : (
+        <div className="rounded-lg border border-border p-6 text-sm text-muted-foreground">
+          You do not have permission to view staff records.
+        </div>
       )}
 
       {/* Create/Edit Staff Modal */}
@@ -1405,7 +1445,7 @@ export function StaffListPage() {
                     onChange={handleInputChange}
                     className={`w-full px-3 py-2 border ${formErrors.staff_number ? 'border-red-500' : 'border-border'} bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent`}
                     required
-                    disabled={!!editingStaff && !canEditStaffNumber}
+                    disabled={!!editingStaff && !canUpdateStaff}
                   />
                   {formErrors.staff_number && <p className="text-red-500 text-xs mt-1">{formErrors.staff_number}</p>}
                 </div>
@@ -1769,7 +1809,7 @@ export function StaffListPage() {
                     placeholder="dd/mm/yyyy"
                     inputMode="numeric"
                     required
-                    disabled={!!editingStaff && user?.role !== 'policy_admin'}
+                    disabled={!!editingStaff && !canUpdateStaff}
                   />
                   {formErrors.appointment_date && <p className="text-red-500 text-xs mt-1">{formErrors.appointment_date}</p>}
                 </div>

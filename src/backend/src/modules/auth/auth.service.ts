@@ -41,6 +41,35 @@ export class AuthService {
     return normalized || null;
   }
 
+  private async normalizePermissions(permissions: unknown): Promise<string[]> {
+    if (permissions === undefined || permissions === null) {
+      return [];
+    }
+    if (!Array.isArray(permissions)) {
+      throw new BadRequestException('Permissions must be an array');
+    }
+
+    const requested = Array.from(new Set(permissions.map((permission) => String(permission))));
+    if (requested.length === 0) {
+      return [];
+    }
+
+    const rows = await this.databaseService.query(
+      `SELECT permission_key
+       FROM app_permissions
+       WHERE is_active = TRUE
+         AND permission_key = ANY($1::TEXT[])`,
+      [requested],
+    );
+    const activePermissions = new Set(rows.map((row: any) => String(row.permission_key)));
+    const invalidPermissions = requested.filter((permission) => !activePermissions.has(permission));
+    if (invalidPermissions.length > 0) {
+      throw new BadRequestException(`Unknown or inactive permissions: ${invalidPermissions.join(', ')}`);
+    }
+
+    return requested;
+  }
+
   private async ensureEmailIsAvailable(
     email: string,
     options?: {
@@ -85,29 +114,23 @@ export class AuthService {
     }
   }
 
-  private async getRoleTemplatePermissions(role: string): Promise<string[]> {
-    const normalizedRole = this.normalizeRole(role);
-    if (!normalizedRole) return [];
-
-    const rows = await this.databaseService.query(
-      `SELECT arp.permission_key
-       FROM app_role_permissions arp
-       JOIN app_permissions ap ON ap.permission_key = arp.permission_key
-       WHERE LOWER(arp.role_key) = $1
-         AND ap.is_active = TRUE
-       ORDER BY arp.permission_key`,
-      [normalizedRole],
-    );
-
-    return rows.map((row: any) => String(row.permission_key));
-  }
-
   private async resolveUserPermissions(user: { id: string; role: string; permissions?: string[] | null }) {
-    if (Array.isArray(user.permissions) && user.permissions.length > 0) {
-      return user.permissions.map((p) => String(p));
+    const assigned = Array.isArray(user.permissions)
+      ? user.permissions.map((permission) => String(permission))
+      : [];
+    if (assigned.length === 0) {
+      return [];
     }
 
-    return this.getRoleTemplatePermissions(user.role);
+    const activeRows = await this.databaseService.query(
+      `SELECT permission_key
+       FROM app_permissions
+       WHERE is_active = TRUE
+         AND permission_key = ANY($1::TEXT[])
+       ORDER BY permission_key`,
+      [assigned],
+    );
+    return activeRows.map((row: any) => String(row.permission_key));
   }
 
   async getPermissionCatalog() {
@@ -119,9 +142,12 @@ export class AuthService {
     );
 
     const roleRows = await this.databaseService.query(
-      `SELECT role_key, permission_key
-       FROM app_role_permissions
-       ORDER BY role_key, permission_key`,
+      `SELECT arp.role_key, arp.permission_key
+       FROM app_role_permissions arp
+       JOIN app_permissions ap
+         ON ap.permission_key = arp.permission_key
+        AND ap.is_active = TRUE
+       ORDER BY arp.role_key, arp.permission_key`,
     );
 
     const roleTemplates: Record<string, string[]> = {};
@@ -135,6 +161,40 @@ export class AuthService {
       permissions,
       roleTemplates,
     };
+  }
+
+  async updateRolePermissionTemplate(role: string, permissions: unknown, updatedBy: string) {
+    const roleKey = this.normalizeRole(role);
+    if (!/^[a-z][a-z0-9_]*$/.test(roleKey)) {
+      throw new BadRequestException('A valid role key is required');
+    }
+    if (!Array.isArray(permissions)) {
+      throw new BadRequestException('Permissions must be an array');
+    }
+
+    const normalizedPermissions = await this.normalizePermissions(permissions);
+    await this.databaseService.transaction(async (client) => {
+      await client.query('DELETE FROM app_role_permissions WHERE LOWER(role_key) = $1', [roleKey]);
+      if (normalizedPermissions.length > 0) {
+        await client.query(
+          `INSERT INTO app_role_permissions (role_key, permission_key)
+           SELECT $1, permission.permission_key
+           FROM UNNEST($2::TEXT[]) AS permission(permission_key)`,
+          [roleKey, normalizedPermissions],
+        );
+      }
+    });
+
+    await this.auditService.log({
+      userId: updatedBy,
+      action: AuditAction.UPDATE,
+      entity: 'app_role_permissions',
+      entityId: roleKey,
+      description: `Updated permission template for ${roleKey}`,
+      newValues: { role: roleKey, permissions: normalizedPermissions },
+    });
+
+    return this.getPermissionCatalog();
   }
 
   /**
@@ -362,7 +422,16 @@ export class AuthService {
    */
   async getProfile(userId: string) {
     const user = await this.databaseService.queryOne(
-      `SELECT u.id, u.email, u.full_name, u.role, u.permissions, u.department_id, u.staff_id, u.status, u.last_login, u.must_change_password,
+      `SELECT u.id, u.email, u.full_name, u.role,
+              ARRAY(
+                SELECT assigned.permission_key
+                FROM UNNEST(COALESCE(u.permissions, '{}'::TEXT[])) AS assigned(permission_key)
+                JOIN app_permissions ap
+                  ON ap.permission_key = assigned.permission_key
+                 AND ap.is_active = TRUE
+                ORDER BY assigned.permission_key
+              ) AS permissions,
+              u.department_id, u.staff_id, u.status, u.last_login, u.must_change_password,
               d.name as department_name, d.code as department_code,
               s.staff_number, s.first_name, s.last_name, s.designation
        FROM users u
@@ -395,8 +464,6 @@ export class AuthService {
         user.designation = staff.designation;
       }
     }
-
-    user.permissions = await this.resolveUserPermissions(user);
 
     return user;
   }
@@ -490,19 +557,23 @@ export class AuthService {
 
   async getAllUsers() {
     const users = await this.databaseService.query(
-      `SELECT u.id, u.email, u.full_name, u.role, u.permissions, u.department_id, u.status, u.last_login,
+      `SELECT u.id, u.email, u.full_name, u.role,
+              ARRAY(
+                SELECT assigned.permission_key
+                FROM UNNEST(COALESCE(u.permissions, '{}'::TEXT[])) AS assigned(permission_key)
+                JOIN app_permissions ap
+                  ON ap.permission_key = assigned.permission_key
+                 AND ap.is_active = TRUE
+                ORDER BY assigned.permission_key
+              ) AS permissions,
+              u.department_id, u.status, u.last_login,
               d.name as department
        FROM users u
        LEFT JOIN departments d ON u.department_id = d.id
        ORDER BY u.created_at DESC`
     );
 
-    return Promise.all(
-      users.map(async (u: any) => ({
-        ...u,
-        permissions: await this.resolveUserPermissions(u),
-      })),
-    );
+    return users;
   }
 
   /**
@@ -527,11 +598,7 @@ export class AuthService {
     const staffId = createUserDto.staff_id || createUserDto.staffId || null;
     const mustChangePassword =
       createUserDto.must_change_password ?? createUserDto.mustChangePassword ?? true;
-    const requestedPermissions = Array.isArray(createUserDto.permissions)
-      ? createUserDto.permissions.map((p: string) => String(p))
-      : [];
-    const permissions =
-      requestedPermissions.length > 0 ? requestedPermissions : await this.getRoleTemplatePermissions(normalizedRole);
+    const permissions = await this.normalizePermissions(createUserDto.permissions);
 
     const result = await this.databaseService.transaction(async (client) => {
       await this.ensureEmailIsAvailable(normalizedEmail, {
@@ -643,13 +710,9 @@ export class AuthService {
       values.push(roleToSet);
     }
 
-    if (Array.isArray(updateUserDto.permissions)) {
+    if (Object.prototype.hasOwnProperty.call(updateUserDto, 'permissions')) {
       fields.push(`permissions = $${paramIndex++}`);
-      values.push(updateUserDto.permissions.map((p: string) => String(p)));
-    } else if (roleToSet) {
-      const rolePermissions = await this.getRoleTemplatePermissions(roleToSet);
-      fields.push(`permissions = $${paramIndex++}`);
-      values.push(rolePermissions);
+      values.push(await this.normalizePermissions(updateUserDto.permissions));
     }
 
     let deptId = updateUserDto.department_id !== undefined ? updateUserDto.department_id : updateUserDto.departmentId;

@@ -25,9 +25,18 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     const singleSessionOnly = Boolean(settingsRow?.value?.single_session_only);
 
     const userRow = await this.databaseService.queryOne(
-      `SELECT status, role, current_session_id
-       FROM users
-       WHERE id = $1`,
+      `SELECT u.status, u.role, u.staff_id,
+              ARRAY(
+                SELECT assigned.permission_key
+                FROM UNNEST(COALESCE(u.permissions, '{}'::TEXT[])) AS assigned(permission_key)
+                JOIN app_permissions ap
+                  ON ap.permission_key = assigned.permission_key
+                 AND ap.is_active = TRUE
+                ORDER BY assigned.permission_key
+              ) AS permissions,
+              u.current_session_id
+       FROM users u
+       WHERE u.id = $1`,
       [payload.sub],
     );
 
@@ -49,9 +58,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       userId: payload.sub,
       email: payload.email,
       role: userRow.role || payload.role,
-      permissions: payload.permissions || [],
+      permissions: Array.isArray(userRow.permissions)
+        ? userRow.permissions.map((permission: unknown) => String(permission))
+        : [],
       departmentId: payload.departmentId,
-      staffId: payload.staffId,
+      staffId: userRow.staff_id,
     };
   }
 }

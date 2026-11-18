@@ -15,6 +15,7 @@ import { Modal } from '../components/Modal';
 import { MergeArrearsModal } from '../components/MergeArrearsModal';
 import { CreateArrearsModal } from '../components/CreateArrearsModal';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../components/ui/dropdown-menu';
+import { hasPermission } from '../lib/permissions';
 
 function formatBreakdownMonth(monthValue: string) {
   const match = String(monthValue || '').match(/^(\d{4})-(\d{2})$/);
@@ -137,12 +138,23 @@ export function ArrearsPage() {
     }
   };
 
-  const canReviewArrears = ['policy_admin', 'payroll_officer', 'payroll_manager'].includes(user?.role || '');
-  const canMergeArrears = ['policy_admin', 'payroll_officer', 'payroll_manager', 'hr_manager'].includes(user?.role || '');
-  const canBulkSelectArrears = canReviewArrears || canMergeArrears;
+  const canCreateArrears = hasPermission(user, 'arrears.create');
+  const canDeleteArrearsPermission = hasPermission(user, 'arrears.delete');
+  const canApproveArrears = hasPermission(user, 'arrears.approve');
+  const canRejectArrears = hasPermission(user, 'arrears.reject');
+  const canBulkApproveArrears = hasPermission(user, 'arrears.bulk_approve');
+  const canBulkRejectArrears = hasPermission(user, 'arrears.bulk_reject');
+  const canMergeArrears = hasPermission(user, 'arrears.merge');
+  const canBulkMergeArrears = hasPermission(user, 'arrears.bulk_merge');
+  const canRecalculateArrears = hasPermission(user, 'arrears.recalculate');
+  const canBulkSelectArrears =
+    canApproveArrears || canRejectArrears || canBulkApproveArrears || canBulkRejectArrears ||
+    canMergeArrears || canBulkMergeArrears;
 
   const isSelectableArrears = (item: Arrears) =>
-    (item.status === 'pending' && canReviewArrears) || (item.status === 'approved' && canMergeArrears);
+    (item.status === 'pending' &&
+      (canApproveArrears || canRejectArrears || canBulkApproveArrears || canBulkRejectArrears)) ||
+    (item.status === 'approved' && (canMergeArrears || canBulkMergeArrears));
 
   const isPromotionApprovalBlocked = (item: Arrears) =>
     item.reason === 'promotion' && Boolean(item.staff_status) && item.staff_status !== 'active';
@@ -154,14 +166,15 @@ export function ArrearsPage() {
   );
 
   const canDeleteArrears = (item: Arrears) =>
-    item.status === 'pending' ||
-    (item.status === 'processed' &&
-      Boolean(item.payroll_batch_id) &&
-      draftPayrollBatchIds.has(item.payroll_batch_id as string));
+    canDeleteArrearsPermission &&
+    (item.status === 'pending' ||
+      (item.status === 'processed' &&
+        Boolean(item.payroll_batch_id) &&
+        draftPayrollBatchIds.has(item.payroll_batch_id as string)));
 
   const selectableArrearsIds = useMemo(
     () => arrears.filter((item) => isSelectableArrears(item)).map((item) => item.id),
-    [arrears, canReviewArrears, canMergeArrears],
+    [arrears, canApproveArrears, canRejectArrears, canBulkApproveArrears, canBulkRejectArrears, canMergeArrears, canBulkMergeArrears],
   );
 
   const selectedPendingArrears = useMemo(
@@ -184,7 +197,7 @@ export function ArrearsPage() {
       const allowedIds = new Set(arrears.filter((item) => isSelectableArrears(item)).map((item) => item.id));
       return currentSelection.filter((id) => allowedIds.has(id));
     });
-  }, [arrears, canReviewArrears, canMergeArrears]);
+  }, [arrears, canApproveArrears, canRejectArrears, canBulkApproveArrears, canBulkRejectArrears, canMergeArrears, canBulkMergeArrears]);
 
   if (loading) {
     return <PageSkeleton mode="table" />;
@@ -356,7 +369,8 @@ export function ArrearsPage() {
   };
 
   const handleBulkArrearsAction = async (action: 'approve' | 'reject') => {
-    if (!canReviewArrears || selectedPendingArrears.length === 0) {
+    const canPerformBulkAction = action === 'approve' ? canBulkApproveArrears : canBulkRejectArrears;
+    if (!canPerformBulkAction || selectedPendingArrears.length === 0) {
       return;
     }
 
@@ -496,10 +510,6 @@ export function ArrearsPage() {
     {
       header: 'Actions',
       accessor: (row: Arrears) => {
-        if (['payroll_loader'].includes(user?.role || '')) {
-          return <span className="text-muted-foreground text-xs italic">View Only</span>;
-        }
-
         const isProcessing =
           approvingId === row.id || rejectingId === row.id || recalculatingId === row.id || bulkActionLoading;
         const isApprovalBlocked = isPromotionApprovalBlocked(row);
@@ -523,7 +533,7 @@ export function ArrearsPage() {
                 <Eye className="w-4 h-4 mr-2 text-blue-600" />
                 View
               </DropdownMenuItem>
-              {row.status === 'pending' && (
+              {row.status === 'pending' && canApproveArrears && (
                 <DropdownMenuItem
                   onClick={(event) => {
                     event.stopPropagation();
@@ -535,7 +545,7 @@ export function ArrearsPage() {
                   {isApprovalBlocked ? `Approve Arrears (Staff ${row.staff_status})` : 'Approve Arrears'}
                 </DropdownMenuItem>
               )}
-              {row.status === 'pending' && canReviewArrears && (
+              {row.status === 'pending' && canRejectArrears && (
                 <DropdownMenuItem
                   onClick={() => handleRejectArrears(row.id)}
                   className="text-destructive focus:text-destructive"
@@ -557,7 +567,7 @@ export function ArrearsPage() {
                   Merge to Payroll
                 </DropdownMenuItem>
               )}
-              {(row.status === 'pending' || row.status === 'approved') && (
+              {(row.status === 'pending' || row.status === 'approved') && canRecalculateArrears && (
                 <DropdownMenuItem onClick={() => handleRecalculateArrears(row.id)}>
                   <RefreshCw className="w-4 h-4 mr-2 text-primary" />
                   Recalculate
@@ -613,7 +623,7 @@ export function ArrearsPage() {
           <h1 className="page-title">Arrears & Adjustments</h1>
           <p className="text-muted-foreground">Manage salary arrears from promotions, salary structure updates, and adjustments</p>
         </div>
-        {!['payroll_loader'].includes(user?.role || '') && (
+        {canCreateArrears && (
           <button
             onClick={() => setShowCreateModal(true)}
             className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
@@ -711,7 +721,7 @@ export function ArrearsPage() {
               >
                 Clear Selection
               </button>
-              {canReviewArrears && (
+              {canBulkApproveArrears && (
                 <button
                   type="button"
                   onClick={() => handleBulkArrearsAction('approve')}
@@ -722,7 +732,7 @@ export function ArrearsPage() {
                   Bulk Approve
                 </button>
               )}
-              {canReviewArrears && (
+              {canBulkRejectArrears && (
                 <button
                   type="button"
                   onClick={() => handleBulkArrearsAction('reject')}
@@ -733,7 +743,7 @@ export function ArrearsPage() {
                   Bulk Reject
                 </button>
               )}
-              {canMergeArrears && (
+              {canBulkMergeArrears && (
                 <button
                   type="button"
                   onClick={openBulkMergeModal}

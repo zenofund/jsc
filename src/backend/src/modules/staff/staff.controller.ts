@@ -9,6 +9,8 @@ import {
   Query,
   UseGuards,
   Request,
+  ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { StaffService } from './staff.service';
@@ -19,6 +21,7 @@ import { UpdateStaffDto } from './dto/update-staff.dto';
 import { QueryStaffDto } from './dto/query-staff.dto';
 import { RolesGuard } from '@common/guards/roles.guard';
 import { Roles } from '@common/decorators/roles.decorator';
+import { Permissions } from '@common/decorators/permissions.decorator';
 import { SkipAudit } from '../../common/decorators/skip-audit.decorator';
 
 @ApiTags('Staff')
@@ -33,7 +36,7 @@ export class StaffController {
   ) {}
 
   @Post()
-  @Roles('policy_admin', 'hr_manager')
+  @Permissions('staff.record.create')
   @SkipAudit()
   @ApiOperation({ summary: 'Create a new staff member' })
   @ApiResponse({ status: 201, description: 'Staff created successfully' })
@@ -43,7 +46,7 @@ export class StaffController {
   }
 
   @Get()
-  @Roles('policy_admin', 'hr_manager', 'payroll_officer', 'payroll_loader', 'coop_manager')
+  @Permissions('staff.record.read')
   @ApiOperation({ summary: 'Get all staff with pagination and filtering' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
@@ -56,12 +59,14 @@ export class StaffController {
   }
 
   @Get('next-staff-number')
+  @Permissions('staff.record.create')
   @ApiOperation({ summary: 'Get next available staff number' })
   getNextStaffNumber() {
     return this.staffService.getNextStaffNumber();
   }
 
   @Get('statistics')
+  @Permissions('staff.record.read')
   @ApiOperation({ summary: 'Get staff statistics' })
   getStatistics() {
     return this.staffService.getStatistics();
@@ -69,19 +74,21 @@ export class StaffController {
 
 
   @Get('payroll-eligible')
-  @Roles('policy_admin', 'payroll_officer', 'hr_manager', 'accountant', 'payroll_loader')
+  @Permissions('staff.record.read')
   @ApiOperation({ summary: 'Get staff eligible for payroll processing' })
   getPayrollEligible() {
     return this.staffService.getPayrollEligibleStaff();
   }
 
   @Get('by-number/:staffNumber')
+  @Permissions('staff.record.read')
   @ApiOperation({ summary: 'Get staff by staff number' })
   findByStaffNumber(@Param('staffNumber') staffNumber: string) {
     return this.staffService.findByStaffNumber(staffNumber);
   }
 
   @Get('allowances')
+  @Permissions('staff.allowance.read')
   @ApiOperation({ summary: 'Get allowances for a specific staff member' })
   @ApiQuery({ name: 'staff_id', required: true, type: String })
   findStaffAllowances(@Query('staff_id') staffId: string) {
@@ -89,6 +96,7 @@ export class StaffController {
   }
 
   @Get('deductions')
+  @Permissions('staff.deduction.read')
   @ApiOperation({ summary: 'Get deductions for a specific staff member' })
   @ApiQuery({ name: 'staff_id', required: true, type: String })
   findStaffDeductions(@Query('staff_id') staffId: string) {
@@ -96,6 +104,7 @@ export class StaffController {
   }
 
   @Get('dashboard-stats/:id')
+  @Permissions('staff.record.read')
   @ApiOperation({ summary: 'Get staff dashboard statistics' })
   getDashboardStats(@Param('id') id: string) {
     return this.staffService.getDashboardStats(id);
@@ -103,18 +112,21 @@ export class StaffController {
 
   @Get('requests/staff/:id')
   @ApiOperation({ summary: 'Get staff requests' })
-  getStaffRequests(@Param('id') id: string) {
+  getStaffRequests(@Param('id') id: string, @Request() req) {
+    this.assertOwnOrAllAccess(req.user, id, 'staff.request.read', 'staff.request.read.all');
     return this.staffService.getStaffRequests(id);
   }
 
   @Post('requests')
   @ApiOperation({ summary: 'Create staff request' })
   createStaffRequest(@Body() body: any, @Request() req) {
+    const staffId = String(body?.staff_id || '');
+    this.assertOwnOrAllAccess(req.user, staffId, 'staff.request.create', 'staff.request.create.all');
     return this.staffService.createStaffRequest(body, req.user.userId);
   }
 
   @Get('requests')
-  @Roles('policy_admin', 'hr_manager')
+  @Permissions('staff.request.read.all')
   @ApiOperation({ summary: 'List staff requests with filters' })
   @ApiQuery({ name: 'status', required: false, type: String })
   @ApiQuery({ name: 'page', required: false, type: Number })
@@ -124,14 +136,14 @@ export class StaffController {
   }
 
   @Post('requests/:id/approve')
-  @Roles('policy_admin', 'hr_manager')
+  @Permissions('staff.request.approve')
   @ApiOperation({ summary: 'Approve staff request' })
   approveRequest(@Param('id') id: string, @Body() body: { notes?: string }, @Request() req) {
     return this.staffService.processStaffRequest(id, 'approved', body?.notes, req.user.userId);
   }
 
   @Post('requests/:id/reject')
-  @Roles('policy_admin', 'hr_manager')
+  @Permissions('staff.request.reject')
   @ApiOperation({ summary: 'Reject staff request' })
   rejectRequest(@Param('id') id: string, @Body() body: { notes?: string }, @Request() req) {
     return this.staffService.processStaffRequest(id, 'rejected', body?.notes, req.user.userId);
@@ -139,17 +151,28 @@ export class StaffController {
 
   @Get('documents/:id')
   @ApiOperation({ summary: 'Get staff documents' })
-  getStaffDocuments(@Param('id') id: string) {
+  getStaffDocuments(@Param('id') id: string, @Request() req) {
+    this.assertOwnOrAllAccess(req.user, id, 'staff.document.read', 'staff.document.read.all');
     return this.staffService.getStaffDocuments(id);
   }
 
   @Post('documents')
   @ApiOperation({ summary: 'Upload staff document' })
   createStaffDocument(@Body() body: any, @Request() req) {
+    const staffId = String(body?.staff_id || '');
+    this.assertOwnOrAllAccess(req.user, staffId, 'staff.document.create', 'staff.document.create.all');
     return this.staffService.createStaffDocument(body, req.user.userId);
   }
 
+  @Delete('documents/:id')
+  @Permissions('staff.document.delete')
+  @ApiOperation({ summary: 'Delete staff document' })
+  removeStaffDocument(@Param('id') id: string) {
+    return this.staffService.removeStaffDocument(id);
+  }
+
   @Get(':id')
+  @Permissions('staff.record.read')
   @ApiOperation({ summary: 'Get staff by ID' })
   @ApiResponse({ status: 200, description: 'Staff found' })
   @ApiResponse({ status: 404, description: 'Staff not found' })
@@ -158,7 +181,7 @@ export class StaffController {
   }
 
   @Patch(':id')
-  @Roles('policy_admin', 'hr_manager')
+  @Permissions('staff.record.update')
   @SkipAudit()
   @ApiOperation({ summary: 'Update staff information' })
   @ApiResponse({ status: 200, description: 'Staff updated successfully' })
@@ -167,7 +190,7 @@ export class StaffController {
   }
 
   @Delete(':id')
-  @Roles('policy_admin')
+  @Permissions('staff.record.delete')
   @SkipAudit()
   @ApiOperation({ summary: 'Delete staff (soft delete)' })
   @ApiResponse({ status: 200, description: 'Staff deleted successfully' })
@@ -176,7 +199,7 @@ export class StaffController {
   }
 
   @Post('bulk-import')
-  @Roles('policy_admin', 'hr_manager')
+  @Permissions('staff.record.import')
   @ApiOperation({ summary: 'Bulk import staff records' })
   bulkImport(@Body() staffRecords: BulkCreateStaffDto[], @Request() req) {
     return this.staffService.bulkImport(staffRecords, req.user.userId);
@@ -199,5 +222,21 @@ export class StaffController {
     @Request() req,
   ) {
     return this.staffService.createUserAccount(id, body.role, req.user.userId);
+  }
+
+  private assertOwnOrAllAccess(
+    user: { staffId?: string; permissions?: string[] },
+    staffId: string,
+    ownAccessPermission: string,
+    allAccessPermission: string,
+  ) {
+    if (!staffId) {
+      throw new BadRequestException('Staff ID is required');
+    }
+    if (user.permissions?.includes(allAccessPermission) ||
+      (user.staffId === staffId && user.permissions?.includes(ownAccessPermission))) {
+      return;
+    }
+    throw new ForbiddenException('You do not have permission to access this staff record');
   }
 }

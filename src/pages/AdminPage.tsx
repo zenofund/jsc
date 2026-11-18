@@ -51,6 +51,10 @@ export function AdminPage() {
   const [allowedGradesError, setAllowedGradesError] = useState<string>('');
   const [auditTrail, setAuditTrail] = useState<any[]>([]);
   const [showUserModal, setShowUserModal] = useState(false);
+  const [showRoleTemplateModal, setShowRoleTemplateModal] = useState(false);
+  const [selectedTemplateRole, setSelectedTemplateRole] = useState('staff');
+  const [selectedTemplatePermissions, setSelectedTemplatePermissions] = useState<string[]>([]);
+  const [isSavingRoleTemplate, setIsSavingRoleTemplate] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -149,7 +153,11 @@ export function AdminPage() {
   };
 
   const getTemplatePermissions = (role: string) => {
-    return roleTemplates[normalizeRole(role)] || [];
+    const assignablePermissions = new Set(
+      Object.values(groupedPermissions).flat().map((permission) => permission.permission_key),
+    );
+    return (roleTemplates[normalizeRole(role)] || [])
+      .filter((permission) => assignablePermissions.has(permission));
   };
 
   const roleOptions = useMemo(() => {
@@ -296,11 +304,38 @@ export function AdminPage() {
       const config = await userAPI.getPermissionCatalog();
       setPermissionCatalog(Array.isArray(config?.permissions) ? config.permissions : []);
       setRoleTemplates((config?.roleTemplates || {}) as Record<string, string[]>);
-      setSelectedPermissions((config?.roleTemplates?.staff || []) as string[]);
+      setSelectedPermissions(
+        ((config?.roleTemplates?.staff || []) as string[]).filter((permission) =>
+          config?.permissions?.some((item: PermissionCatalogItem) =>
+            item.permission_key === permission &&
+            !(isSuperAdmin && /coop|cooperative|loan/i.test(
+              `${item.module_name || ''} ${item.permission_key} ${item.display_name}`,
+            )),
+          ),
+        ),
+      );
     } catch (error) {
       console.error('Failed to load permission catalog:', error);
       setPermissionCatalog([]);
       setRoleTemplates({});
+    }
+  };
+
+  const handleSaveRoleTemplate = async () => {
+    setIsSavingRoleTemplate(true);
+    try {
+      const config = await userAPI.updateRolePermissionTemplate(
+        selectedTemplateRole,
+        selectedTemplatePermissions,
+      );
+      setRoleTemplates((config?.roleTemplates || {}) as Record<string, string[]>);
+      setShowRoleTemplateModal(false);
+      showToast.success(`Default permissions updated for ${formatRoleLabel(selectedTemplateRole)}`);
+    } catch (error: any) {
+      console.error('Failed to update role permission template:', error);
+      showToast.error(error.message || 'Failed to update role template');
+    } finally {
+      setIsSavingRoleTemplate(false);
     }
   };
 
@@ -640,8 +675,10 @@ export function AdminPage() {
                 });
                 const existingPermissions = Array.isArray((row as any).permissions) ? (row as any).permissions : [];
                 const templatePermissions = getTemplatePermissions(row.role);
-                setSelectedPermissions(existingPermissions.length > 0 ? existingPermissions : templatePermissions);
-                setCustomPermissionsEnabled(existingPermissions.length > 0);
+                const usesRoleTemplate = existingPermissions.length === templatePermissions.length &&
+                  templatePermissions.every((permission) => existingPermissions.includes(permission));
+                setSelectedPermissions(existingPermissions);
+                setCustomPermissionsEnabled(!usesRoleTemplate);
                 setShowUserModal(true);
               }}
             >
@@ -704,6 +741,18 @@ export function AdminPage() {
         </div>
         {isSuperAdmin && activeTab === 'users' && (
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                const initialRole = roleOptions[0] || 'staff';
+                setSelectedTemplateRole(initialRole);
+                setSelectedTemplatePermissions(getTemplatePermissions(initialRole));
+                setShowRoleTemplateModal(true);
+              }}
+              className="border border-border px-4 py-2 rounded-lg hover:bg-accent flex items-center gap-2 transition-colors"
+            >
+              <Shield className="w-4 h-4" />
+              Role Templates
+            </button>
             <button
               onClick={() => {
                 setIdempotencyKey(crypto.randomUUID());
@@ -1425,7 +1474,7 @@ export function AdminPage() {
 
             {!customPermissionsEnabled && (
               <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                Using role template permissions for <span className="font-medium text-foreground">{formatRoleLabel(userForm.role)}</span>.
+                Copying the current role template into this account: <span className="font-medium text-foreground">{formatRoleLabel(userForm.role)}</span>.
               </div>
             )}
 
@@ -1500,6 +1549,93 @@ export function AdminPage() {
               </p>
             </div>
           )}
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={showRoleTemplateModal}
+        onClose={() => setShowRoleTemplateModal(false)}
+        title="Role Permission Templates"
+        size="lg"
+        footer={
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-xs text-muted-foreground">
+              {selectedTemplatePermissions.filter((permission) =>
+                Object.values(groupedPermissions).flat().some((item) => item.permission_key === permission),
+              ).length} selected
+            </span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setShowRoleTemplateModal(false)}
+                disabled={isSavingRoleTemplate}
+                className="px-4 py-2 border border-border rounded-lg hover:bg-accent disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveRoleTemplate}
+                disabled={isSavingRoleTemplate}
+                className="bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90 disabled:opacity-50 flex items-center gap-2"
+              >
+                {isSavingRoleTemplate && <Loader2 className="w-4 h-4 animate-spin" />}
+                Save Defaults
+              </button>
+            </div>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            These defaults are copied to new users and when an admin selects the role template for an account.
+            Existing users keep their current individual permissions.
+          </p>
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">Role</label>
+            <select
+              value={selectedTemplateRole}
+              onChange={(event) => {
+                const role = normalizeRole(event.target.value);
+                setSelectedTemplateRole(role);
+                setSelectedTemplatePermissions(getTemplatePermissions(role));
+              }}
+              className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg"
+            >
+              {roleOptions.map((role) => (
+                <option key={role} value={role}>{formatRoleLabel(role)}</option>
+              ))}
+            </select>
+          </div>
+          <div className="max-h-[55vh] overflow-y-auto rounded-lg border border-border p-3 space-y-4">
+            {Object.entries(groupedPermissions).map(([moduleName, permissions]) => (
+              <div key={moduleName} className="space-y-1">
+                <p className="text-xs font-semibold uppercase text-muted-foreground">{moduleName}</p>
+                {permissions.map((permission) => (
+                  <label key={permission.permission_key} className="flex items-start gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={selectedTemplatePermissions.includes(permission.permission_key)}
+                      onChange={(event) => {
+                        setSelectedTemplatePermissions((current) =>
+                          event.target.checked
+                            ? Array.from(new Set([...current, permission.permission_key]))
+                            : current.filter((key) => key !== permission.permission_key),
+                        );
+                      }}
+                      className="mt-0.5 w-4 h-4 rounded border-border"
+                    />
+                    <span className="text-foreground">
+                      {permission.display_name}
+                      {permission.description && (
+                        <span className="block text-xs text-muted-foreground">{permission.description}</span>
+                      )}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            ))}
+          </div>
         </div>
       </Modal>
     </div>

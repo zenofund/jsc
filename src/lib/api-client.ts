@@ -416,6 +416,12 @@ export const staffAPI = {
     });
   },
 
+  async deleteStaff(id: string) {
+    return makeApiRequest(`/staff/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
   async getStaff(id: string) {
     return makeApiRequest(`/staff/${id}`, {
       method: 'GET',
@@ -983,6 +989,13 @@ export const userAPI = {
   async getPermissionCatalog() {
     return makeApiRequest('/users/permission-catalog', {
       method: 'GET',
+    });
+  },
+
+  async updateRolePermissionTemplate(role: string, permissions: string[]) {
+    return makeApiRequest(`/users/permission-templates/${encodeURIComponent(role)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ permissions }),
     });
   },
 

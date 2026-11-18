@@ -11,6 +11,7 @@ import { PageSkeleton } from '../components/PageLoader';
 import { formatCurrency } from '../utils/format';
 import { formatStaffName } from '../lib/name-utils';
 import { isFeatureDisabledError } from '../lib/feature-toggle-errors';
+import { hasPermission } from '../lib/permissions';
 import { 
   payrollAPI, 
   loanApplicationAPI, 
@@ -88,6 +89,15 @@ export function ApprovalsPageEnhanced() {
   const [approvalPayrollSearch, setApprovalPayrollSearch] = useState('');
   const [approvalPayrollSort, setApprovalPayrollSort] = useState<'asc' | 'desc'>('desc');
   const approvalPayrollLinesRequestId = useRef(0);
+  const canReadAllowanceAdjustments = hasPermission(user, 'staff.allowance.read');
+  const canReadDeductionAdjustments = hasPermission(user, 'staff.deduction.read');
+  const canUpdateAllowanceStatus = hasPermission(user, 'staff.allowance.status.update');
+  const canUpdateDeductionStatus = hasPermission(user, 'staff.deduction.status.update');
+  const canViewAdjustmentApprovals = canReadAllowanceAdjustments || canReadDeductionAdjustments;
+  const canUpdateSelectedAdjustment = selectedItem?.type !== 'adjustment' ||
+    (selectedItem.data.adjustmentType === 'allowance'
+      ? canUpdateAllowanceStatus
+      : canUpdateDeductionStatus);
 
   // Stats
   const [stats, setStats] = useState({
@@ -118,10 +128,13 @@ export function ApprovalsPageEnhanced() {
 
   useEffect(() => {
     if (!isPayrollOnlyApproverRole) return;
-    if (!['all', 'payroll', 'history'].includes(activeTab)) {
+    if (
+      !['all', 'payroll', 'history'].includes(activeTab) &&
+      !(activeTab === 'adjustment' && canViewAdjustmentApprovals)
+    ) {
       setActiveTab('all');
     }
-  }, [activeTab, isPayrollOnlyApproverRole]);
+  }, [activeTab, isPayrollOnlyApproverRole, canViewAdjustmentApprovals]);
 
   useEffect(() => {
     if (activeTab === 'loan' && !loanManagementEnabled) {
@@ -288,15 +301,15 @@ export function ApprovalsPageEnhanced() {
           });
         });
 
-        // Load Staff Adjustments (Allowances)
+      }
+
+      if (canReadAllowanceAdjustments) {
         const allowancesResult = await staffAllowanceAPI.getAllStaffAllowances({ status: 'pending' });
-        const allowances = allowancesResult.data || [];
-        
-        allowances.forEach((a: any) => {
+        (allowancesResult.data || []).forEach((a: any) => {
           items.push({
             id: a.id,
             type: 'adjustment',
-            title: `Allowance Adjustment`,
+            title: 'Allowance Adjustment',
             subtitle: `${a.staff_name} - ${a.allowance_name}`,
             amount: a.amount,
             status: a.status,
@@ -305,16 +318,15 @@ export function ApprovalsPageEnhanced() {
             data: { ...a, adjustmentType: 'allowance' },
           });
         });
+      }
 
-        // Load Staff Adjustments (Deductions)
+      if (canReadDeductionAdjustments) {
         const deductionsResult = await staffDeductionAPI.getAllStaffDeductions({ status: 'pending' });
-        const deductions = deductionsResult.data || [];
-        
-        deductions.forEach((d: any) => {
+        (deductionsResult.data || []).forEach((d: any) => {
           items.push({
             id: d.id,
             type: 'adjustment',
-            title: `Deduction Adjustment`,
+            title: 'Deduction Adjustment',
             subtitle: `${d.staff_name} - ${d.deduction_name}`,
             amount: d.amount,
             status: d.status,
@@ -492,6 +504,10 @@ export function ApprovalsPageEnhanced() {
 
   const handleApprove = async () => {
     if (!selectedItem) return;
+    if (!canUpdateSelectedAdjustment) {
+      showToast('error', 'You do not have permission to approve this adjustment');
+      return;
+    }
 
     try {
       setActionLoading(true);
@@ -524,9 +540,9 @@ export function ApprovalsPageEnhanced() {
 
         case 'adjustment':
           if (selectedItem.data.adjustmentType === 'allowance') {
-            await staffAllowanceAPI.updateStaffAllowance(selectedItem.id, { status: 'active' }, user!.id, user!.email);
+            await staffAllowanceAPI.bulkUpdateStatus([selectedItem.id], 'active');
           } else {
-            await staffDeductionAPI.updateStaffDeduction(selectedItem.id, { status: 'active' }, user!.id, user!.email);
+            await staffDeductionAPI.bulkUpdateStatus([selectedItem.id], 'active');
           }
           break;
       }
@@ -546,6 +562,10 @@ export function ApprovalsPageEnhanced() {
   const handleReject = async () => {
     if (!selectedItem || !comments.trim()) {
       showToast('error', 'Please provide rejection comments');
+      return;
+    }
+    if (!canUpdateSelectedAdjustment) {
+      showToast('error', 'You do not have permission to reject this adjustment');
       return;
     }
 
@@ -576,9 +596,9 @@ export function ApprovalsPageEnhanced() {
 
         case 'adjustment':
           if (selectedItem.data.adjustmentType === 'allowance') {
-            await staffAllowanceAPI.updateStaffAllowance(selectedItem.id, { status: 'inactive' }, user!.id, user!.email);
+            await staffAllowanceAPI.bulkUpdateStatus([selectedItem.id], 'inactive');
           } else {
-            await staffDeductionAPI.updateStaffDeduction(selectedItem.id, { status: 'inactive' }, user!.id, user!.email);
+            await staffDeductionAPI.bulkUpdateStatus([selectedItem.id], 'inactive');
           }
           break;
 
@@ -686,6 +706,9 @@ export function ApprovalsPageEnhanced() {
       ? ([
           { id: 'all', label: 'All Approvals', count: stats.total },
           { id: 'payroll', label: 'Payroll', count: stats.payroll },
+          ...(canViewAdjustmentApprovals
+            ? [{ id: 'adjustment', label: 'Adjustments', count: stats.adjustments } as const]
+            : []),
           { id: 'history', label: 'My Actions', count: myActions.length },
         ] as const)
       : isPayrollOfficer
@@ -695,7 +718,9 @@ export function ApprovalsPageEnhanced() {
             ...(loanManagementEnabled ? [{ id: 'loan', label: 'Loans', count: stats.loans } as const] : []),
             { id: 'payment', label: 'Payments', count: stats.payments },
             { id: 'arrear', label: 'Arrears', count: stats.arrears },
-            { id: 'adjustment', label: 'Adjustments', count: stats.adjustments },
+            ...(canViewAdjustmentApprovals
+              ? [{ id: 'adjustment', label: 'Adjustments', count: stats.adjustments } as const]
+              : []),
             { id: 'history', label: 'My Actions', count: myActions.length },
           ] as const)
         : ([
@@ -706,7 +731,9 @@ export function ApprovalsPageEnhanced() {
             { id: 'payment', label: 'Payments', count: stats.payments },
             { id: 'arrear', label: 'Arrears', count: stats.arrears },
             { id: 'promotion', label: 'Promotions', count: stats.promotions },
-            { id: 'adjustment', label: 'Adjustments', count: stats.adjustments },
+            ...(canViewAdjustmentApprovals
+              ? [{ id: 'adjustment', label: 'Adjustments', count: stats.adjustments } as const]
+              : []),
             { id: 'history', label: 'My Actions', count: myActions.length },
           ] as const)),
   ];
@@ -1192,7 +1219,7 @@ export function ApprovalsPageEnhanced() {
               >
                 Cancel
               </button>
-              {selectedItem.type !== 'payment' && (
+              {selectedItem.type !== 'payment' && canUpdateSelectedAdjustment && (
                 <button
                   onClick={handleReject}
                   className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2"
@@ -1202,14 +1229,16 @@ export function ApprovalsPageEnhanced() {
                   {actionLoading ? 'Rejecting...' : 'Reject'}
                 </button>
               )}
-              <button
-                onClick={handleApprove}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
-                disabled={actionLoading}
-              >
-                <ThumbsUp className="w-4 h-4" />
-                {actionLoading ? 'Approving...' : 'Approve'}
-              </button>
+              {canUpdateSelectedAdjustment && (
+                <button
+                  onClick={handleApprove}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
+                  disabled={actionLoading}
+                >
+                  <ThumbsUp className="w-4 h-4" />
+                  {actionLoading ? 'Approving...' : 'Approve'}
+                </button>
+              )}
             </div>
           </div>
         )}

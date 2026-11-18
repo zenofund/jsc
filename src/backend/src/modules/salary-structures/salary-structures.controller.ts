@@ -13,7 +13,7 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger';
 import { SalaryStructuresService } from './salary-structures.service';
 import { RolesGuard } from '@common/guards/roles.guard';
-import { Roles } from '@common/decorators/roles.decorator';
+import { Permissions } from '@common/decorators/permissions.decorator';
 
 @ApiTags('Salary Structures')
 @ApiBearerAuth()
@@ -23,7 +23,7 @@ export class SalaryStructuresController {
   constructor(private readonly salaryStructuresService: SalaryStructuresService) {}
 
   @Post()
-  @Roles('policy_admin', 'hr_manager')
+  @Permissions('payroll.structure.create')
   @ApiOperation({ summary: 'Create salary structure' })
   @ApiResponse({ status: 201, description: 'Salary structure created successfully' })
   create(@Body() dto: any, @Request() req) {
@@ -31,6 +31,7 @@ export class SalaryStructuresController {
   }
 
   @Get()
+  @Permissions('payroll.structure.read')
   @ApiOperation({ summary: 'Get all salary structures' })
   @ApiResponse({ status: 200, description: 'List of salary structures with pagination' })
   findAll(@Query() query: any) {
@@ -38,6 +39,7 @@ export class SalaryStructuresController {
   }
 
   @Get('active')
+  @Permissions('payroll.structure.read')
   @ApiOperation({ summary: 'Get active salary structure' })
   @ApiResponse({ status: 200, description: 'Active salary structure found' })
   @ApiResponse({ status: 404, description: 'No active salary structure found' })
@@ -46,6 +48,7 @@ export class SalaryStructuresController {
   }
 
   @Get('code/:code')
+  @Permissions('payroll.structure.read')
   @ApiOperation({ summary: 'Get salary structure by code' })
   @ApiResponse({ status: 200, description: 'Salary structure found' })
   @ApiResponse({ status: 404, description: 'Salary structure not found' })
@@ -54,6 +57,7 @@ export class SalaryStructuresController {
   }
 
   @Get(':id')
+  @Permissions('payroll.structure.read')
   @ApiOperation({ summary: 'Get salary structure by ID' })
   @ApiResponse({ status: 200, description: 'Salary structure found' })
   @ApiResponse({ status: 404, description: 'Salary structure not found' })
@@ -62,6 +66,7 @@ export class SalaryStructuresController {
   }
 
   @Get(':id/salary/:gradeLevel/:step')
+  @Permissions('payroll.structure.read')
   @ApiOperation({ summary: 'Get salary for specific grade level and step' })
   @ApiResponse({ status: 200, description: 'Salary information retrieved' })
   @ApiResponse({ status: 404, description: 'Grade level or step not found' })
@@ -78,7 +83,7 @@ export class SalaryStructuresController {
   }
 
   @Patch(':id')
-  @Roles('policy_admin', 'hr_manager')
+  @Permissions('payroll.structure.update')
   @ApiOperation({ summary: 'Update salary structure' })
   @ApiResponse({ status: 200, description: 'Salary structure updated successfully' })
   update(@Param('id') id: string, @Body() dto: any, @Request() req) {
@@ -86,7 +91,7 @@ export class SalaryStructuresController {
   }
 
   @Delete(':id')
-  @Roles('policy_admin')
+  @Permissions('payroll.structure.delete')
   @ApiOperation({ summary: 'Deactivate salary structure (soft delete)' })
   @ApiResponse({ status: 200, description: 'Salary structure deactivated successfully' })
   remove(@Param('id') id: string, @Request() req) {
@@ -94,7 +99,7 @@ export class SalaryStructuresController {
   }
 
   @Delete(':id/permanent')
-  @Roles('policy_admin')
+  @Permissions('payroll.structure.delete')
   @ApiOperation({ summary: 'Permanently delete salary structure (hard delete)' })
   @ApiResponse({ status: 200, description: 'Salary structure permanently deleted' })
   hardDelete(@Param('id') id: string, @Request() req) {

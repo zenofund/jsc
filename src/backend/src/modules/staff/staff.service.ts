@@ -965,6 +965,17 @@ export class StaffService implements OnModuleInit {
     return result;
   }
 
+  async removeStaffDocument(id: string) {
+    const deleted = await this.databaseService.queryOne(
+      `DELETE FROM staff_documents WHERE id = $1 RETURNING id`,
+      [id],
+    );
+    if (!deleted) {
+      throw new NotFoundException('Staff document not found');
+    }
+    return { message: 'Staff document deleted successfully' };
+  }
+
   /**
    * Get staff dashboard statistics
    */

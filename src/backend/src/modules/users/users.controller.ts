@@ -27,6 +27,17 @@ export class UsersController {
     return this.authService.getPermissionCatalog();
   }
 
+  @Put('permission-templates/:role')
+  @Roles('super_admin')
+  @ApiOperation({ summary: 'Update a role permission template' })
+  async updateRolePermissionTemplate(
+    @Param('role') role: string,
+    @Body() body: { permissions?: string[] },
+    @Request() req,
+  ) {
+    return this.authService.updateRolePermissionTemplate(role, body?.permissions, req.user.userId);
+  }
+
   @Post()
   @Roles('super_admin')
   @ApiOperation({ summary: 'Create new user' })

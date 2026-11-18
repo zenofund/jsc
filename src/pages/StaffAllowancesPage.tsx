@@ -12,6 +12,7 @@ import { Breadcrumb } from '../components/Breadcrumb';
 import { PageSkeleton } from '../components/PageLoader';
 import { StaffSearch } from '../components/ui/StaffSearch';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../components/ui/dropdown-menu';
+import { hasPermission } from '../lib/permissions';
 
 type TabType = 'allowances' | 'deductions';
 type EntryMode = 'configured' | 'custom';
@@ -755,6 +756,15 @@ function StaffDeductionForm({
 
 export function StaffAllowancesPage() {
   const { user } = useAuth();
+  const canReadStaff = hasPermission(user, 'staff.record.read');
+  const canReadAllowances = hasPermission(user, 'staff.allowance.read');
+  const canCreateAllowance = hasPermission(user, 'staff.allowance.create');
+  const canUpdateAllowance = hasPermission(user, 'staff.allowance.update');
+  const canDeleteAllowance = hasPermission(user, 'staff.allowance.delete');
+  const canReadDeductions = hasPermission(user, 'staff.deduction.read');
+  const canCreateDeduction = hasPermission(user, 'staff.deduction.create');
+  const canUpdateDeduction = hasPermission(user, 'staff.deduction.update');
+  const canDeleteDeduction = hasPermission(user, 'staff.deduction.delete');
   const { showToast } = useToast();
   const confirm = useConfirm();
   
@@ -773,6 +783,14 @@ export function StaffAllowancesPage() {
   const [loading, setLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (activeTab === 'allowances' && !canReadAllowances && canReadDeductions) {
+      setActiveTab('deductions');
+    } else if (activeTab === 'deductions' && !canReadDeductions && canReadAllowances) {
+      setActiveTab('allowances');
+    }
+  }, [activeTab, canReadAllowances, canReadDeductions]);
 
   const unwrapApiData = <T,>(value: T[] | { data?: T[] } | null | undefined): T[] => {
     if (Array.isArray(value)) return value;
@@ -796,8 +814,8 @@ export function StaffAllowancesPage() {
     const loadCatalog = async () => {
       try {
         const [allowances, deductions] = await Promise.all([
-          allowanceAPI.getAllAllowances(),
-          deductionAPI.getAllDeductions(),
+          hasPermission(user, 'staff.allowance.catalog.read') ? allowanceAPI.getAllAllowances() : Promise.resolve([]),
+          hasPermission(user, 'staff.deduction.catalog.read') ? deductionAPI.getAllDeductions() : Promise.resolve([]),
         ]);
         const filteredAllowances = unwrapApiData<Allowance>(allowances).filter(
           (a: any) => isActive(a) && isStaffSpecificCatalogItem(a),
@@ -812,7 +830,7 @@ export function StaffAllowancesPage() {
       }
     };
     loadCatalog();
-  }, []);
+  }, [user]);
 
 // ... existing code ...
   const loadStaffItems = async () => {
@@ -820,8 +838,8 @@ export function StaffAllowancesPage() {
     
     try {
       const [allowances, deductions] = await Promise.all([
-        staffAllowanceAPI.getStaffAllowances(selectedStaff.id),
-        staffDeductionAPI.getStaffDeductions(selectedStaff.id),
+        canReadAllowances ? staffAllowanceAPI.getStaffAllowances(selectedStaff.id) : Promise.resolve([]),
+        canReadDeductions ? staffDeductionAPI.getStaffDeductions(selectedStaff.id) : Promise.resolve([]),
       ]);
       
       setStaffAllowances(unwrapApiData<StaffAllowance>(allowances));
@@ -1026,19 +1044,23 @@ export function StaffAllowancesPage() {
       </div>
 
       {/* Staff Selector */}
-      <div className="bg-card p-4 rounded-lg border border-border mb-6">
-        <StaffSearch 
-          onSelect={(staff) => setSelectedStaff(staff)} 
-          selectedStaff={selectedStaff}
-        />
-      </div>
+      {canReadStaff ? (
+        <div className="bg-card p-4 rounded-lg border border-border mb-6">
+          <StaffSearch
+            onSelect={(staff) => setSelectedStaff(staff)}
+            selectedStaff={selectedStaff}
+          />
+        </div>
+      ) : (
+        <p className="mb-6 text-sm text-muted-foreground">Staff record access is required to manage adjustments.</p>
+      )}
 
       {selectedStaff && (
         <>
           {/* Tabs */}
           <div className="border-b border-border mb-6">
             <div className="flex gap-4">
-              <button
+              {canReadAllowances && <button
                 onClick={() => setActiveTab('allowances')}
                 className={`px-4 py-2 border-b-2 transition-colors ${
                   activeTab === 'allowances'
@@ -1047,8 +1069,8 @@ export function StaffAllowancesPage() {
                 }`}
               >
                 Allowances ({staffAllowances.length})
-              </button>
-              <button
+              </button>}
+              {canReadDeductions && <button
                 onClick={() => setActiveTab('deductions')}
                 className={`px-4 py-2 border-b-2 transition-colors ${
                   activeTab === 'deductions'
@@ -1057,22 +1079,22 @@ export function StaffAllowancesPage() {
                 }`}
               >
                 Deductions ({staffDeductions.length})
-              </button>
+              </button>}
             </div>
           </div>
 
           {/* Allowances Tab */}
-          {activeTab === 'allowances' && (
+          {activeTab === 'allowances' && canReadAllowances && (
             <div>
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-lg font-medium text-foreground">Staff Allowances</h2>
-                <button
+                {canCreateAllowance && <button
                   onClick={handleCreateAllowance}
                   className="btn-primary flex items-center gap-2"
                 >
                   <Plus className="size-4" />
                   Add Allowance
-                </button>
+                </button>}
               </div>
 
               {staffAllowances.length === 0 ? (
@@ -1105,7 +1127,7 @@ export function StaffAllowancesPage() {
                           </div>
                           <p className="text-sm text-muted-foreground">Code: {allowance.allowance_code}</p>
                         </div>
-                        <DropdownMenu>
+                        {(canUpdateAllowance || canDeleteAllowance) && <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <ActionMenuEllipsis
                               label={`Open actions for ${allowance.allowance_name}`}
@@ -1113,19 +1135,19 @@ export function StaffAllowancesPage() {
                             />
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => handleEditAllowance(allowance)}>
+                            {canUpdateAllowance && <DropdownMenuItem onClick={() => handleEditAllowance(allowance)}>
                               <Edit className="size-4 mr-2" />
                               Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
+                            </DropdownMenuItem>}
+                            {canDeleteAllowance && <DropdownMenuItem
                               onClick={() => handleDelete('allowance', allowance.id, allowance.allowance_name)}
                               className="text-destructive focus:text-destructive"
                             >
                               <Trash2 className="size-4 mr-2" />
                               Delete
-                            </DropdownMenuItem>
+                            </DropdownMenuItem>}
                           </DropdownMenuContent>
-                        </DropdownMenu>
+                        </DropdownMenu>}
                       </div>
                       
                       <div className="grid grid-cols-4 gap-4 text-sm">
@@ -1164,17 +1186,17 @@ export function StaffAllowancesPage() {
           )}
 
           {/* Deductions Tab */}
-          {activeTab === 'deductions' && (
+          {activeTab === 'deductions' && canReadDeductions && (
             <div>
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-lg font-medium text-foreground">Staff Deductions</h2>
-                <button
+                {canCreateDeduction && <button
                   onClick={handleCreateDeduction}
                   className="btn-primary flex items-center gap-2"
                 >
                   <Plus className="size-4" />
                   Add Deduction
-                </button>
+                </button>}
               </div>
 
               {staffDeductions.length === 0 ? (
@@ -1202,7 +1224,7 @@ export function StaffAllowancesPage() {
                           </div>
                           <p className="text-sm text-muted-foreground">Code: {deduction.deduction_code}</p>
                         </div>
-                        <DropdownMenu>
+                        {(canUpdateDeduction || canDeleteDeduction) && <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <ActionMenuEllipsis
                               label={`Open actions for ${deduction.deduction_name}`}
@@ -1210,19 +1232,19 @@ export function StaffAllowancesPage() {
                             />
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => handleEditDeduction(deduction)}>
+                            {canUpdateDeduction && <DropdownMenuItem onClick={() => handleEditDeduction(deduction)}>
                               <Edit className="size-4 mr-2" />
                               Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
+                            </DropdownMenuItem>}
+                            {canDeleteDeduction && <DropdownMenuItem
                               onClick={() => handleDelete('deduction', deduction.id, deduction.deduction_name)}
                               className="text-destructive focus:text-destructive"
                             >
                               <Trash2 className="size-4 mr-2" />
                               Delete
-                            </DropdownMenuItem>
+                            </DropdownMenuItem>}
                           </DropdownMenuContent>
-                        </DropdownMenu>
+                        </DropdownMenu>}
                       </div>
                       
                       <div className="grid grid-cols-4 gap-4 text-sm">

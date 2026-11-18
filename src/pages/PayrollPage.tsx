@@ -16,6 +16,7 @@ import { Button } from '../components/ui/button';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '../components/ui/dropdown-menu';
 import { formatCurrency } from '../utils/format';
 import { useToast } from '../components/Toast';
+import { hasPermission } from '../lib/permissions';
 
 export function PayrollPage() {
   const { user } = useAuth();
@@ -45,23 +46,21 @@ export function PayrollPage() {
 
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
-  // Check if user can manage payroll
-  const canManagePayroll = user?.role === 'policy_admin' || user?.role === 'payroll_officer';
-  // Only Admin can lock payroll
-  const canLockPayroll = user?.role === 'policy_admin';
-  // Reviewer, Approver, Audit can only view and download
-  const role = String(user?.role || '').trim().toLowerCase();
-  const normalizedRole = role === 'reviewer' ? 'checking' : role === 'approver' ? 'cpo' : role;
-  const isReadOnlyRole = ['checking', 'cpo', 'auditor', 'audit'].includes(normalizedRole);
+  const canCreateBatch = hasPermission(user, 'payroll.batch.create');
+  const canReadPayroll = hasPermission(user, 'payroll.batch.read');
+  const canGenerateBatch = hasPermission(user, 'payroll.batch.generate');
+  const canSubmitBatch = hasPermission(user, 'payroll.batch.submit');
+  const canLockPayroll = hasPermission(user, 'payroll.batch.lock');
+  const canExecutePayment = hasPermission(user, 'payroll.payment.execute');
+  const canReadPayment = hasPermission(user, 'payroll.payment.read');
 
   useEffect(() => {
-    // Restrict cashier access
-    if (user?.role === 'cashier') {
+    if (user && !canReadPayroll) {
       (window as any).navigateTo?.('cashier-dashboard');
       return;
     }
-    loadBatches();
-  }, [user]);
+    if (canReadPayroll) loadBatches();
+  }, [user, canReadPayroll]);
 
   const loadBatches = async () => {
     try {
@@ -417,7 +416,7 @@ export function PayrollPage() {
                 <Eye className="mr-2 h-4 w-4 text-blue-600" />
                 <span>View Lines</span>
               </DropdownMenuItem>
-              {row.status === 'draft' && row.total_staff === 0 && !isReadOnlyRole && (
+              {row.status === 'draft' && row.total_staff === 0 && canGenerateBatch && (
                 <DropdownMenuItem
                   disabled={processingBatchId === row.id}
                   onClick={(e) => {
@@ -433,7 +432,7 @@ export function PayrollPage() {
                   <span>{processingBatchId === row.id && processingAction === 'generate' ? 'Generating...' : 'Generate'}</span>
                 </DropdownMenuItem>
               )}
-              {row.status === 'draft' && row.total_staff > 0 && !isReadOnlyRole && (
+              {row.status === 'draft' && row.total_staff > 0 && canGenerateBatch && (
                 <DropdownMenuItem
                   disabled={processingBatchId === row.id}
                   onClick={(e) => {
@@ -450,7 +449,7 @@ export function PayrollPage() {
                   <span>{processingBatchId === row.id && processingAction === 'regenerate' ? 'Regenerating...' : 'Regenerate'}</span>
                 </DropdownMenuItem>
               )}
-              {row.status === 'draft' && row.total_staff > 0 && !isReadOnlyRole && (
+              {row.status === 'draft' && row.total_staff > 0 && canSubmitBatch && (
                 <DropdownMenuItem
                   disabled={processingBatchId === row.id}
                   onClick={(e) => {
@@ -483,7 +482,7 @@ export function PayrollPage() {
                   <span>{processingBatchId === row.id && processingAction === 'lock' ? 'Locking...' : 'Lock'}</span>
                 </DropdownMenuItem>
               )}
-              {(row.status === 'locked' || row.status === 'paid' || row.status === 'ready_for_payment') && !row.payment_status && !isReadOnlyRole && (
+              {(row.status === 'locked' || row.status === 'paid' || row.status === 'ready_for_payment') && !row.payment_status && canExecutePayment && (
                 <DropdownMenuItem
                   onClick={(e) => {
                     e.stopPropagation();
@@ -494,7 +493,7 @@ export function PayrollPage() {
                   <span>Pay</span>
                 </DropdownMenuItem>
               )}
-              {(row.status === 'locked' || row.status === 'paid' || row.status === 'ready_for_payment') && (
+              {(row.status === 'locked' || row.status === 'paid' || row.status === 'ready_for_payment') && canReadPayment && (
                 <DropdownMenuItem
                   onClick={(e) => {
                     e.stopPropagation();
@@ -556,7 +555,7 @@ export function PayrollPage() {
           <h1 className="text-foreground mb-1 sm:mb-2 text-lg sm:text-2xl">Payroll Processing</h1>
           <p className="text-muted-foreground text-sm sm:text-base">Manage monthly payroll batches and processing</p>
         </div>
-        {canManagePayroll && (
+        {canCreateBatch && (
           <button
             onClick={() => setShowCreateModal(true)}
             className="bg-primary text-primary-foreground px-3 py-2 sm:px-4 sm:py-2 rounded-lg hover:bg-primary/90 active:bg-primary/80 flex items-center gap-2 transition-colors text-sm sm:text-base whitespace-nowrap"

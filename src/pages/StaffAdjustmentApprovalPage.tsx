@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 import { ActionMenuEllipsis } from '../components/ui/action-menu-trigger';
 import { 
   Check, 
@@ -7,6 +8,7 @@ import {
   Filter,
 } from 'lucide-react';
 import { staffAllowanceAPI, staffDeductionAPI } from '../lib/api-client';
+import { hasPermission } from '../lib/permissions';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { Breadcrumb } from '../components/Breadcrumb';
@@ -41,8 +43,17 @@ const StaffAdjustmentApprovalPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('pending'); // Default to pending items
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const { user } = useAuth();
   const { showToast } = useToast();
   const confirm = useConfirm();
+  const canReadAllowances = hasPermission(user, 'staff.allowance.read');
+  const canReadDeductions = hasPermission(user, 'staff.deduction.read');
+  const canUpdateAllowanceStatus = hasPermission(user, 'staff.allowance.status.update');
+  const canUpdateDeductionStatus = hasPermission(user, 'staff.deduction.status.update');
+  const canReadActiveTab = activeTab === 'allowances' ? canReadAllowances : canReadDeductions;
+  const canUpdateActiveTabStatus = activeTab === 'allowances'
+    ? canUpdateAllowanceStatus
+    : canUpdateDeductionStatus;
 
   const isPendingStatus = (status: unknown) => {
     const raw = String(status || '').trim().toLowerCase();
@@ -69,12 +80,20 @@ const StaffAdjustmentApprovalPage: React.FC = () => {
   const canShowRowActions = (status: unknown) => {
     const raw = String(status || '').trim().toLowerCase();
     const normalized = raw.replace(/[\s-]+/g, '_');
-    return isPendingStatus(status) || normalized === 'active';
+    return canUpdateActiveTabStatus && (isPendingStatus(status) || normalized === 'active');
   };
 
-  const isRowSelectable = (status: unknown) => !isFinalizedStatus(status);
+  const isRowSelectable = (status: unknown) =>
+    canUpdateActiveTabStatus && !isFinalizedStatus(status);
 
   const fetchItems = async () => {
+    if (!canReadActiveTab) {
+      setItems([]);
+      setTotalItems(0);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     // Clear selection when refreshing/changing filters
     setSelectedIds([]); 
@@ -141,7 +160,15 @@ const StaffAdjustmentApprovalPage: React.FC = () => {
 
   useEffect(() => {
     fetchItems();
-  }, [activeTab, page, limit, statusFilter]);
+  }, [activeTab, page, limit, statusFilter, canReadActiveTab]);
+
+  useEffect(() => {
+    if (activeTab === 'allowances' && !canReadAllowances && canReadDeductions) {
+      setActiveTab('deductions');
+    } else if (activeTab === 'deductions' && !canReadDeductions && canReadAllowances) {
+      setActiveTab('allowances');
+    }
+  }, [activeTab, canReadAllowances, canReadDeductions]);
 
   // Debounced search
   useEffect(() => {
@@ -159,11 +186,12 @@ const StaffAdjustmentApprovalPage: React.FC = () => {
   };
 
   const handleApprove = async (id: string) => {
+    if (!canUpdateActiveTabStatus) return;
     try {
       if (activeTab === 'allowances') {
-        await staffAllowanceAPI.updateStaffAllowance(id, { status: 'active' }, '', '');
+        await staffAllowanceAPI.bulkUpdateStatus([id], 'active');
       } else {
-        await staffDeductionAPI.updateStaffDeduction(id, { status: 'active' }, '', '');
+        await staffDeductionAPI.bulkUpdateStatus([id], 'active');
       }
       showToast('success', 'Item approved successfully');
       fetchItems();
@@ -174,14 +202,15 @@ const StaffAdjustmentApprovalPage: React.FC = () => {
   };
 
   const handleReject = async (id: string) => {
+    if (!canUpdateActiveTabStatus) return;
     const confirmed = await confirm('Are you sure you want to reject this item? It will be deactivated.');
     if (!confirmed) return;
     
     try {
       if (activeTab === 'allowances') {
-        await staffAllowanceAPI.updateStaffAllowance(id, { status: 'inactive' }, '', '');
+        await staffAllowanceAPI.bulkUpdateStatus([id], 'inactive');
       } else {
-        await staffDeductionAPI.updateStaffDeduction(id, { status: 'inactive' }, '', '');
+        await staffDeductionAPI.bulkUpdateStatus([id], 'inactive');
       }
       showToast('success', 'Item rejected/deactivated');
       fetchItems();
@@ -192,7 +221,7 @@ const StaffAdjustmentApprovalPage: React.FC = () => {
   };
 
   const handleBulkAction = async (action: 'approve' | 'reject') => {
-    if (selectedIds.length === 0) return;
+    if (!canUpdateActiveTabStatus || selectedIds.length === 0) return;
     
     const actionText = action === 'approve' ? 'approve' : 'reject';
     const status = action === 'approve' ? 'active' : 'inactive';
@@ -224,6 +253,7 @@ const StaffAdjustmentApprovalPage: React.FC = () => {
   };
 
   const toggleSelectOne = (id: string) => {
+    if (!canUpdateActiveTabStatus) return;
     if (selectedIds.includes(id)) {
       setSelectedIds(selectedIds.filter(sid => sid !== id));
     } else {
@@ -232,6 +262,10 @@ const StaffAdjustmentApprovalPage: React.FC = () => {
   };
 
   const totalPages = Math.ceil(totalItems / limit);
+
+  if (!canReadAllowances && !canReadDeductions) {
+    return <div className="p-6 text-muted-foreground">You do not have permission to view staff adjustments.</div>;
+  }
 
   return (
     <div className="space-y-6">
@@ -248,8 +282,8 @@ const StaffAdjustmentApprovalPage: React.FC = () => {
         <div className="p-4 border-b border-border space-y-4">
           <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
             <TabsList>
-              <TabsTrigger value="allowances">Allowances</TabsTrigger>
-              <TabsTrigger value="deductions">Deductions</TabsTrigger>
+              {canReadAllowances && <TabsTrigger value="allowances">Allowances</TabsTrigger>}
+              {canReadDeductions && <TabsTrigger value="deductions">Deductions</TabsTrigger>}
             </TabsList>
           </Tabs>
           
